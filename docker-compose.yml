@@ -1,0 +1,9 @@
+services:
+  alldebrid-proxy:
+    image: ghcr.io/macery12/alldebrid-proxy:latest
+    container_name: alldebrid-proxy
+    ports:
+      - "9732:9732"
+    env_file:
+      - .env
+    restart: unless-stopped
