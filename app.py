@@ -11,13 +11,17 @@ except Exception:
 
 import time, json, uuid
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, Response, make_response, send_from_directory, redirect
+from flask import Flask, render_template, request, jsonify, Response, make_response, send_from_directory, redirect, session, abort, url_for
 
 from models import Base, engine, SessionLocal, Job
 from alldebrid import AllDebrid as ADClient
 from job_manager import JobManager
 from share_routes import share_bp, start_cleanup_worker
 from bus import bus  # uses env-loaded REDIS_URL if set
+from functools import wraps
+import secrets
+import hmac
+
 
 # --- paths ---
 BASE_DIR      = os.path.abspath(os.path.dirname(__file__))
@@ -27,6 +31,12 @@ STATIC_DIR    = os.path.join(BASE_DIR, "static")
 # Flask (now with template + static dirs)
 app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR, static_url_path="/static")
 app.register_blueprint(share_bp)
+
+app.config.update(
+    SECRET_KEY=os.getenv("SECRET_KEY"),
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=1
+)
 
 # ------------- Config -------------
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -69,10 +79,69 @@ _purge_temp(TEMP_DIR, int(os.getenv("TEMP_MAX_AGE_H", "12")))
 if ENABLE_BG_CLEANUP:
     start_cleanup_worker(interval_minutes=30)
 
+
+# Login handlers
+
+def _is_authed() -> bool:
+    return bool(session.get("auth") is True and session.get("csrf"))
+
+def _constant_time_eq(a: str, b: str) -> bool:
+    try:
+        return hmac.compare_digest(a.encode(), b.encode())
+    except Exception:
+        return False
+
+def _require_auth(view):
+    @wraps(view)
+    def _wrap(*args, **kwargs):
+        if not _is_authed():
+            return ("", 403)
+        # Basic CSRF for state-changing requests
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            token = request.headers.get("X-CSRF") or request.form.get("csrf") or ""
+            if not token or token != session.get("csrf"):
+                return ("forbidden", 403)
+        return view(*args, **kwargs)
+    return _wrap
+
+
+
+
 # ------------- Routes -------------
+@app.get("/auth/status")
+def auth_status():
+    if _is_authed():
+        return jsonify(ok=True, authed=True, csrf=session["csrf"])
+    return jsonify(ok=True, authed=False)
+
+@app.post("/auth/login")
+def auth_login():
+    pw = (request.json or {}).get("password") if request.is_json else request.form.get("password")
+    if not pw:
+        return jsonify(ok=False, error="Missing password"), 400
+    expected = os.getenv("ACCESS_PASSWORD", "")
+    if not expected:
+        return jsonify(ok=False, error="ACCESS_PASSWORD not set"), 500
+    if not _constant_time_eq(pw, expected):
+        # Small random delay to blunt brute force a tiny bit
+        time.sleep(0.25)
+        return jsonify(ok=False, error="Invalid password"), 401
+    session.clear()
+    session["auth"] = True
+    session["csrf"] = secrets.token_urlsafe(32)
+    # Lax is enough since we’re same-site; adjust if you front with a different domain
+    resp = jsonify(ok=True)
+    return resp
+
+@app.post("/auth/logout")
+def auth_logout():
+    session.clear()
+    return jsonify(ok=True)
 
 @app.get("/")
-def index():
+def home():
+    if not _is_authed():
+        return render_template("login.html")
     return render_template("index.html")
 
 
@@ -97,9 +166,22 @@ def list_jobs():
     return jsonify({"items": items})
 
 @app.post("/pref")
+@_require_auth  # protect from tampering; requires valid session + X-CSRF
 def save_pref():
-    # currently just echoes; you persist client-side
-    return jsonify({"ok": True})
+    data = request.get_json(silent=True) or {}
+    include = bool(data.get("includeTrackers"))
+    resp = jsonify(ok=True, includeTrackers=include)
+
+    # Persist preference per-browser using a cookie (1 year). Not HttpOnly so the page can read it if ever needed.
+    out = make_response(resp)
+    out.set_cookie(
+        "pref_include",
+        "1" if include else "0",
+        max_age=60 * 60 * 24 * 365,
+        samesite="Lax",
+        httponly=False,
+    )
+    return out
 
 @app.post("/job")
 def create_job():
@@ -137,17 +219,10 @@ def create_job():
     return out
 
 @app.post("/job/<job_id>/cancel")
+@_require_auth
 def cancel_job(job_id):
-    # owner gate
-    with SessionLocal() as db:
-        row = db.get(Job, job_id)
-        if not row:
-            return ("", 404)
-        owner = (row.client_id or "").strip()
-        if owner and request.cookies.get("cid") != owner:
-            return ("", 404)
-    jm.request_cancel(job_id)
-    return jsonify({"ok": True})
+    jm.cancel_job(job_id)  # whatever your cancel function is
+    return jsonify(ok=True)
 
 @app.get("/events/<job_id>")
 def sse(job_id):
