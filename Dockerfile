@@ -18,9 +18,4 @@ COPY . .
 EXPOSE 9732
 
 # Run with Gunicorn using your preferred config
-CMD ["gunicorn", "app:app",
-     "-b", "0.0.0.0:9732",
-     "--worker-class", "gthread",
-     "--workers", "2",
-     "--threads", "16",
-     "--timeout", "120"]
+CMD ["gunicorn","app:app","-b","0.0.0.0:9732","--worker-class","gthread","--workers","1","--threads","16","--timeout","120"]
