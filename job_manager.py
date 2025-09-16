@@ -579,7 +579,6 @@ class JobManager:
                     except Exception: pass
 
             share_url = f"{PUBLIC_BASE}/d/{share_id}/" if PUBLIC_BASE else f"/d/{share_id}/"
-            self._emit(job_id, status='done')
             with SessionLocal() as db:
                 jj = db.get(Job, job_id)
                 if jj:

@@ -221,8 +221,14 @@ def create_job():
 @app.post("/job/<job_id>/cancel")
 @_require_auth
 def cancel_job(job_id):
-    jm.cancel_job(job_id)  # whatever your cancel function is
-    return jsonify(ok=True)
+    try:
+        # send the cancel request to the bus (your preferred path)
+        jm.request_cancel(job_id)
+        return jsonify(ok=True)
+    except Exception as e:
+        # optional: log + explicit error
+        # current_app.logger.exception("cancel failed")
+        return jsonify(ok=False, error=str(e)), 500
 
 @app.get("/events/<job_id>")
 def sse(job_id):
