@@ -11,12 +11,13 @@ import threading
 import typing as t
 import requests
 import traceback
+import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from alldebrid import AllDebrid
 from models import SessionLocal, Job
-from bus import bus  # multi-worker safe SSE + cancel
+from bus import bus
 
 # Optional: magnet conversion for .torrent
 try:
@@ -25,28 +26,37 @@ except Exception:
     torrent_to_magnet = None  # guarded
 
 
-# =================== Config ===================
+# =================== Config (ENV-driven) ===================
 SHARE_ROOT  = os.getenv("SHARE_ROOT", "/share").rstrip("/")
 PUBLIC_BASE = os.getenv("SHARE_PUBLIC_BASE", "").rstrip("/")
 
 # downloader tuning
-CHUNK               = int(os.getenv("DL_CHUNK_BYTES", str(16 * 1024 * 1024)))     # 16MB
-SEGMENT_MIN_BYTES   = int(os.getenv("SEGMENT_MIN_BYTES", str(512 * 1024 * 1024))) # 512MB
-DL_SEGMENTS         = int(os.getenv("DL_SEGMENTS", "4"))
-DL_MAX_POOL         = int(os.getenv("DL_MAX_POOL", "64"))
-DL_RETRIES          = int(os.getenv("DL_RETRIES", "2"))
+# smaller chunks => smoother progress bars; larger chunks => less overhead.
+CHUNK                 = int(os.getenv("DL_CHUNK_BYTES", str(2 * 1024 * 1024)))      # default 2 MB
+SEGMENT_MIN_BYTES     = int(os.getenv("SEGMENT_MIN_BYTES", str(512 * 1024 * 1024)))  # 512 MB
+DL_SEGMENTS           = int(os.getenv("DL_SEGMENTS", "4"))                           # parts per large file
+DL_CONC               = int(os.getenv("DL_CONC", "4"))                               # concurrent files per job
+DL_MAX_POOL           = int(os.getenv("DL_MAX_POOL", "64"))
+DL_RETRIES            = int(os.getenv("DL_RETRIES", "2"))
+
+# progress cadence (seconds)
+PROGRESS_MIN_INTERVAL = float(os.getenv("PROGRESS_MIN_INTERVAL", "0.10"))            # 100ms
 
 # disk guard
-MIN_FREE_BYTES      = int(os.getenv("MIN_FREE_BYTES", str(5 * 1024 * 1024 * 1024)))  # 5 GB floor
+MIN_FREE_BYTES        = int(os.getenv("MIN_FREE_BYTES", str(5 * 1024 * 1024 * 1024)))  # 5 GB floor
 
 # AllDebrid unlock parallelism + rate limit
-AD_UNLOCK_CONC      = int(os.getenv("AD_UNLOCK_CONC", "8"))
-AD_RATE             = int(os.getenv("AD_RATE", "10"))   # requests/sec
-AD_BURST            = int(os.getenv("AD_BURST", "10"))  # tokens in 1s window
+AD_UNLOCK_CONC        = int(os.getenv("AD_UNLOCK_CONC", "8"))
+AD_RATE               = int(os.getenv("AD_RATE", "10"))
+AD_BURST              = int(os.getenv("AD_BURST", "10"))
 
 # HEAD sizing parallelism/timeouts
-HEAD_CONC           = int(os.getenv("HEAD_CONC", "16"))
-HEAD_TIMEOUT        = float(os.getenv("HEAD_TIMEOUT", "5"))  # seconds per HEAD
+HEAD_CONC             = int(os.getenv("HEAD_CONC", "16"))
+HEAD_TIMEOUT          = float(os.getenv("HEAD_TIMEOUT", "5"))
+
+# index.json for duplicate detection
+INDEX_PATH = os.path.join(SHARE_ROOT, "index.json")
+_INDEX_LOCK = threading.Lock()
 
 
 # =================== Helpers ===================
@@ -56,8 +66,10 @@ def _walk_ids(obj):
             if isinstance(v, (dict, list)):
                 yield from _walk_ids(v)
             if k.lower() == 'id':
-                try: yield int(v)
-                except Exception: pass
+                try:
+                    yield int(v)
+                except Exception:
+                    pass
     elif isinstance(obj, list):
         for it in obj:
             yield from _walk_ids(it)
@@ -71,9 +83,9 @@ def _first_file_entries(m: dict) -> list[dict]:
         out = []
         for it in links:
             if isinstance(it, dict):
-                name = it.get('n') or it.get('name') or it.get('filename')
+                name = it.get('n') or it.get('name') or it.get('filename') or ''
                 page = it.get('l') or it.get('link') or it.get('url')
-                if page: out.append({'n': name or '', 'l': page})
+                if page: out.append({'n': name, 'l': page})
             elif isinstance(it, str):
                 out.append({'n': os.path.basename(it), 'l': it})
         return out
@@ -90,12 +102,12 @@ def _human(n: int) -> str:
     return f"{int(v) if (i == 0 or v >= 10) else f'{v:.1f}'} {units[i]}"
 
 
-# -------- Fixed rate limiter (no sleeping under lock) --------
+# -------- Fixed rate limiter --------
 class RateLimiter:
     def __init__(self, rate_per_sec=10, burst=10):
         self.rate = rate_per_sec
         self.burst = burst
-        self.ts = []                 # timestamps in last 1s
+        self.ts: list[float] = []
         self.lk = threading.Lock()
 
     def acquire(self):
@@ -103,7 +115,6 @@ class RateLimiter:
             now = time.time()
             wait = 0.0
             with self.lk:
-                # keep only events from the last 1s window
                 self.ts = [t for t in self.ts if now - t < 1.0]
                 if len(self.ts) < self.burst:
                     self.ts.append(now)
@@ -113,19 +124,94 @@ class RateLimiter:
                 time.sleep(wait)
 
 
+# ---------- Simple “btih:...&” extractor (your rule) ----------
+def _btih_from_magnet_simple(magnet: str) -> t.Optional[str]:
+    if not magnet:
+        return None
+    s = magnet
+    i = s.lower().find("btih:")
+    if i == -1:
+        # try percent-decoded once
+        try:
+            from urllib.parse import unquote
+            s2 = unquote(s)
+            i = s2.lower().find("btih:")
+            if i == -1:
+                return None
+            s = s2
+        except Exception:
+            return None
+    start = i + len("btih:")
+    j = s.find("&", start)
+    raw = s[start:] if j == -1 else s[start:j]
+    raw = raw.strip()
+    if not raw:
+        return None
+    return raw.lower()
+
+
+# ---------- index.json helpers ----------
+def _index_read() -> dict:
+    try:
+        with open(INDEX_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def _index_write(data: dict):
+    tmp = INDEX_PATH + ".tmp"
+    os.makedirs(SHARE_ROOT, exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, INDEX_PATH)
+
+def _index_put(btih_key: str, share_id: str):
+    if not btih_key or not share_id: return
+    with _INDEX_LOCK:
+        data = _index_read()
+        data[btih_key] = {"share_id": share_id, "ts": int(time.time())}
+        _index_write(data)
+
+def _index_lookup(btih_key: str) -> t.Optional[str]:
+    if not btih_key: return None
+    data = _index_read()
+    ent = data.get(btih_key)
+    sid = ent.get("share_id") if isinstance(ent, dict) else None
+    if not sid: return None
+    path = os.path.join(SHARE_ROOT, sid)
+    if os.path.isdir(path):
+        # ensure there is content
+        for _, dirs, files in os.walk(path):
+            if any(not d.startswith('.') for d in dirs) or any(not f.startswith('.') for f in files):
+                return sid
+        # empty -> stale
+    # stale: purge
+    with _INDEX_LOCK:
+        data2 = _index_read()
+        if data2.get(btih_key, {}).get("share_id") == sid:
+            data2.pop(btih_key, None)
+            _index_write(data2)
+    return None
+
+
 # =================== Job Manager ===================
 class JobManager:
-    def __init__(self, ad: AllDebrid, temp_dir: str, max_size: int, max_conc: int = 5):
+    def __init__(self, ad: AllDebrid, temp_dir: str, max_size: int, max_conc: int | None = None):
         self.ad = ad
         self.temp = temp_dir
         os.makedirs(self.temp, exist_ok=True)
         os.makedirs(SHARE_ROOT, exist_ok=True)
         self.max_size = max_size
-        self.pool = ThreadPoolExecutor(max_workers=max_conc)
 
+        # prefer env override; fall back to ctor arg; then to DL_CONC
+        self.file_conc = int(os.getenv("DL_CONC", str(max_conc or DL_CONC)))
+
+        # HTTP session tuned for many parallel connections
         self.http = requests.Session()
+        pool_sz = max(DL_MAX_POOL, self.file_conc * max(2, DL_SEGMENTS) + 8)
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=DL_MAX_POOL, pool_maxsize=DL_MAX_POOL, max_retries=DL_RETRIES
+            pool_connections=pool_sz, pool_maxsize=pool_sz, max_retries=DL_RETRIES
         )
         self.http.mount("http://", adapter)
         self.http.mount("https://", adapter)
@@ -159,6 +245,7 @@ class JobManager:
             db.commit()
 
     def _emit(self, job_id: str, **payload):
+        """Publish to SSE and also persist status/error into DB when present."""
         if 'status' in payload or 'error' in payload:
             self._update(job_id, **{k: v for k, v in payload.items() if k in ('status', 'error')})
         bus.publish(job_id, payload)
@@ -207,7 +294,7 @@ class JobManager:
 
     def _ensure_space(self, need: int, job_id: str, context: str):
         total, used, free = self._disk_usage()
-        bus.publish(job_id, {"message": f"{context} — Disk: free {_human(free)} / total {_human(total)}"})
+        self._emit(job_id, message=f"{context} — Disk: free {_human(free)} / total {_human(total)}")
         if free < need:
             raise RuntimeError(f"Not enough disk space ({_human(free)} free, need >= {_human(need)})")
 
@@ -242,7 +329,7 @@ class JobManager:
     def _unlock_many(self, files: list[dict], job_id: str) -> list[tuple[str, str]]:
         """Unlock many Alldebrid file pages concurrently with rate limiting."""
         total = len(files)
-        bus.publish(job_id, {"type": "unlock", "unlocked": 0, "total": total})
+        self._emit(job_id, type="unlock", unlocked=0, total=total)
         results: list[tuple[str, str] | None] = [None] * total
 
         def work(idx: int, f: dict):
@@ -269,7 +356,7 @@ class JobManager:
             finally:
                 done = sum(1 for x in results if x is not None)
                 if done == total or done % 2 == 0:
-                    bus.publish(job_id, {"type": "unlock", "unlocked": done, "total": total})
+                    self._emit(job_id, type="unlock", unlocked=done, total=total)
 
         workers = max(1, min(AD_UNLOCK_CONC, 16))
         with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -277,7 +364,7 @@ class JobManager:
             for fut in as_completed(futs):
                 fut.result()
 
-        bus.publish(job_id, {"message": f"Retrieved {sum(r is not None for r in results)}/{total} download links"})
+        self._emit(job_id, message=f"Retrieved {sum(r is not None for r in results)}/{total} download links")
         return [r for r in results if r]
 
     def _wait_and_unlock(self, magnet_id: int, job_id: str, timeout_sec: int = 900) -> list[tuple[str, str]]:
@@ -297,7 +384,6 @@ class JobManager:
 
             key = (status, code, len(files))
             if key not in announced:
-                # removed 'links:0' noise
                 self._emit(job_id, message=f"Debrid status: {status} (code={code}) • files:{len(files)}")
                 announced.add(key)
 
@@ -316,7 +402,7 @@ class JobManager:
     def _sizes_parallel(self, urls: list[str], job_id: str) -> dict[str, int | None]:
         total = len(urls)
         out: dict[str, int | None] = {}
-        bus.publish(job_id, {"message": f"Preparing downloads (sizing files)… {0}/{total}"})
+        self._emit(job_id, message=f"Preparing downloads (sizing files)… {0}/{total}")
 
         def work(u: str):
             try:
@@ -335,7 +421,7 @@ class JobManager:
                 out[u] = fut.result()
                 done += 1
                 if done % 4 == 0 or done == total:
-                    bus.publish(job_id, {"message": f"Preparing downloads (sizing files)… {done}/{total}"})
+                    self._emit(job_id, message=f"Preparing downloads (sizing files)… {done}/{total}")
         return out
 
     # ---------- HTTP download ----------
@@ -367,9 +453,10 @@ class JobManager:
 
         received = 0
         lock = threading.Lock()
+        last_emit = 0.0
 
         def _dl_part(idx: int, start: int, end: int):
-            nonlocal received
+            nonlocal received, last_emit
             headers = {"Range": f"bytes={start}-{end}"}
             with self.http.get(url, headers=headers, stream=True, timeout=60) as r:
                 r.raise_for_status()
@@ -378,12 +465,16 @@ class JobManager:
                     for chunk in r.iter_content(chunk_size=CHUNK):
                         if self._is_cancelled(job_id):
                             raise RuntimeError("cancelled")
-                        if not chunk: continue
+                        if not chunk:
+                            continue
                         f.write(chunk)
                         with lock:
                             received += len(chunk)
-                            pct = int(received * 100 / size)
-                            bus.publish(job_id, {"type": "progress","file": name,"received": received,"total": size,"pct": pct})
+                            now = time.time()
+                            if (now - last_emit) >= PROGRESS_MIN_INTERVAL:
+                                pct = int(received * 100 / size)
+                                self._emit(job_id, type="progress", file=name, received=received, total=size, pct=pct)
+                                last_emit = now
 
         part_size = math.ceil(size / parts)
         ranges = []
@@ -398,7 +489,7 @@ class JobManager:
             futs = [ex.submit(_dl_part, i, s, e) for (i, s, e) in ranges]
             for fut in as_completed(futs): fut.result()
 
-        bus.publish(job_id, {"type": "progress","file": name,"received": size,"total": size,"pct": 100})
+        self._emit(job_id, type="progress", file=name, received=size, total=size, pct=100)
         return dest
 
     def _download_one(self, url: str, dest: str, job_id: str, display_name: str) -> str:
@@ -436,21 +527,20 @@ class JobManager:
                         for chunk in r.iter_content(chunk_size=CHUNK):
                             if self._is_cancelled(job_id):
                                 raise RuntimeError("cancelled")
-                            if not chunk: continue
+                            if not chunk:
+                                continue
                             if total is None and self._free_bytes() < MIN_FREE_BYTES + CHUNK:
                                 raise RuntimeError("Not enough disk space during download")
                             f.write(chunk)
                             got += len(chunk)
-                            if self.max_size and got > self.max_size:
-                                raise RuntimeError(f"File too large while streaming: {got} > {self.max_size}")
                             pct = int(got * 100 / total) if total else None
                             now = time.time()
-                            if (now - last_emit) >= 0.1 and (pct is None or pct != last_pct):
-                                bus.publish(job_id, {"type": "progress","file": display_name,"received": got,"total": total,"pct": pct})
+                            if (now - last_emit) >= PROGRESS_MIN_INTERVAL and (pct is None or pct != last_pct):
+                                self._emit(job_id, type="progress", file=display_name, received=got, total=total, pct=pct)
                                 last_emit = now
                                 last_pct = pct if pct is not None else last_pct
                 if total:
-                    bus.publish(job_id, {"type": "progress","file": display_name,"received": total,"total": total,"pct": 100})
+                    self._emit(job_id, type="progress", file=display_name, received=total, total=total, pct=100)
                 return dest
             except Exception as e:
                 last_exc = e; time.sleep(1.0)
@@ -461,7 +551,7 @@ class JobManager:
         local_items: list[tuple[str, str]] = []
         try:
             self._emit(job_id, status='running', message='Starting')
-            bus.publish(job_id, {"type": "meta", "startedAt": int(time.time() * 1000)})
+            self._emit(job_id, type="meta", startedAt=int(time.time() * 1000))
 
             total, used, free = self._disk_usage()
             self._emit(job_id, message=f"Disk: free {_human(free)} / total {_human(total)}")
@@ -477,17 +567,61 @@ class JobManager:
 
             downloads: list[tuple[str, str]] = []
             base_name_for_id: str = "share"
+            duplicate_btih: str | None = None
 
-            if input_type == 'torrent':
+            # ---------- Duplicate check ----------
+            if input_type == 'magnet':
+                duplicate_btih = _btih_from_magnet_simple(source_input)
+                if duplicate_btih:
+                    self._emit(job_id, message="Checking duplicates…")
+                    sid = _index_lookup(duplicate_btih)
+                    if sid:
+                        self._emit(job_id, message="found duplicate")
+                        self._emit(job_id, message="finding link…")
+                        share_url = f"{PUBLIC_BASE}/d/{sid}/" if PUBLIC_BASE else f"/d/{sid}/"
+                        # persist results to DB
+                        with SessionLocal() as db:
+                            jj = db.get(Job, job_id)
+                            if jj:
+                                if hasattr(jj, "sharry_share_id"):  jj.sharry_share_id = sid
+                                if hasattr(jj, "sharry_public_web"): jj.sharry_public_web = share_url
+                                jj.status = 'done'
+                                db.commit()
+                        # stream + persist final
+                        self._emit(job_id, status="done", public={"shareId": sid, "pid": sid}, share_url=share_url, duplicate=True)
+                        self._schedule_clear(job_id, 300)
+                        return
+
+            elif input_type == 'torrent':
                 if not torrent_to_magnet: raise RuntimeError("Torrent conversion not available")
                 with open(source_input, 'rb') as f:
                     magnet = torrent_to_magnet(f.read(), include_trackers=include_trackers)
+                duplicate_btih = _btih_from_magnet_simple(magnet)
+                if duplicate_btih:
+                    self._emit(job_id, message="Checking duplicates…")
+                    sid = _index_lookup(duplicate_btih)
+                    if sid:
+                        self._emit(job_id, message="found duplicate")
+                        self._emit(job_id, message="finding link…")
+                        share_url = f"{PUBLIC_BASE}/d/{sid}/" if PUBLIC_BASE else f"/d/{sid}/"
+                        with SessionLocal() as db:
+                            jj = db.get(Job, job_id)
+                            if jj:
+                                if hasattr(jj, "sharry_share_id"):  jj.sharry_share_id = sid
+                                if hasattr(jj, "sharry_public_web"): jj.sharry_public_web = share_url
+                                jj.status = 'done'
+                                db.commit()
+                        self._emit(job_id, status="done", public={"shareId": sid, "pid": sid}, share_url=share_url, duplicate=True)
+                        self._schedule_clear(job_id, 300)
+                        return
+                # No duplicate: proceed using the generated magnet
                 mid = self._magnet_upload_get_id(magnet)
                 self._emit(job_id, message='Debriding (magnet)…')
                 downloads = self._wait_and_unlock(mid, job_id)
                 base_name_for_id = os.path.splitext(os.path.basename(source_input))[0] or "share"
 
-            elif input_type == 'magnet':
+            # ---------- Normal flow ----------
+            if input_type == 'magnet' and not downloads:
                 mid = self._magnet_upload_get_id(source_input)
                 self._emit(job_id, message='Debriding (magnet)…')
                 downloads = self._wait_and_unlock(mid, job_id)
@@ -520,51 +654,52 @@ class JobManager:
                     downloads.append((url, name))
                 base_name_for_id = "urls"
 
-            else:
-                raise RuntimeError(f"Unknown input type: {input_type}")
-
             if not downloads:
                 raise RuntimeError("No downloadable files resolved")
 
-            share_id = self._make_share_id(base_name_for_id)
-            bus.publish(job_id, {"type": "meta", "name": share_id})
-
-            # ---- NEW: parallel sizing (HEAD) with progress ----
+            # ---- parallel sizing (HEAD) ----
             urls_only = [u for (u, _) in downloads]
             sizes_map = self._sizes_parallel(urls_only, job_id)
             total_known = sum(sz for sz in sizes_map.values() if isinstance(sz, int) and sz > 0)
+
+            # Prime UI rows (client caps to 5 visible)
+            primelist = [{"name": name, "key": name, "received": 0, "total": sizes_map.get(u)} for (u, name) in downloads]
+            self._emit(job_id, downloads=primelist)
 
             need = max(total_known, 0) + MIN_FREE_BYTES
             self._ensure_space(need, job_id, "Before downloading")
 
             if total_known:
-                bus.publish(job_id, {"type": "overall", "phase": "downloading", "received": 0, "total": total_known, "pct": 0})
+                self._emit(job_id, type="overall", phase="downloading", received=0, total=total_known, pct=0)
             else:
-                bus.publish(job_id, {"message": "Starting downloads (size unknown)…"})
+                self._emit(job_id, message="Starting downloads (size unknown)…")
 
-            # Download concurrently
+            # Download concurrently (per-job pool, honoring env DL_CONC)
             def _one(u: str, i: int, name: str):
                 dest = os.path.join(self.temp, f"{uuid.uuid4()}_{name}")
                 self._download_one(u, dest, job_id, name)
                 return dest, name
 
-            futures = [self.pool.submit(_one, u, i, name) for i, (u, name) in enumerate(downloads)]
-
+            workers = max(1, min(self.file_conc, len(downloads)))
             received_sum = 0
-            for fut in as_completed(futures):
-                if self._is_cancelled(job_id): raise RuntimeError("cancelled")
-                p, fname = fut.result()
-                local_items.append((p, fname))
-                try: received_sum += os.path.getsize(p)
-                except Exception: pass
-                if total_known:
-                    pct = min(99, int(received_sum * 100 / total_known))
-                    bus.publish(job_id, {"type": "overall", "phase": "downloading", "received": received_sum, "total": total_known, "pct": pct})
-                self._emit(job_id, message=f"Downloaded {len(local_items)}/{len(downloads)}")
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = [pool.submit(_one, u, i, name) for i, (u, name) in enumerate(downloads)]
+                for fut in as_completed(futs):
+                    if self._is_cancelled(job_id): raise RuntimeError("cancelled")
+                    p, fname = fut.result()
+                    local_items.append((p, fname))
+                    try: received_sum += os.path.getsize(p)
+                    except Exception: pass
+                    if total_known:
+                        pct = min(99, int(received_sum * 100 / total_known))
+                        self._emit(job_id, type="overall", phase="downloading", received=received_sum, total=total_known, pct=pct)
+                    self._emit(job_id, message=f"Downloaded {len(local_items)}/{len(downloads)}")
 
             if self._is_cancelled(job_id): raise RuntimeError("cancelled")
 
             # Move to /share/<ID>/
+            share_id = self._make_share_id(base_name_for_id)
+            self._emit(job_id, type="meta", name=share_id)
             self._emit(job_id, status='uploading', message=f"Preparing share folder {share_id}")
             dst = os.path.join(SHARE_ROOT, share_id)
             os.makedirs(dst, mode=0o750, exist_ok=False)
@@ -586,14 +721,19 @@ class JobManager:
                     if hasattr(jj, "sharry_public_web"): jj.sharry_public_web = share_url
                     db.commit()
 
-            bus.publish(job_id, {"status": "done", "public": {"shareId": share_id}, "share_url": share_url})
+            # Update index for future duplicate hits
+            if duplicate_btih:
+                _index_put(duplicate_btih, share_id)
+
+            # Final — use _emit so DB status is persisted as 'done'
+            self._emit(job_id, status="done", public={"shareId": share_id, "pid": share_id}, share_url=share_url)
             self._schedule_clear(job_id, 300)
 
         except Exception as e:
             msg = str(e).lower()
             if "cancelled" in msg or "canceled" in msg:
                 self._emit(job_id, status='cancelled', error='')
-                bus.publish(job_id, {"status":"cancelled", "message":"Cancelled"})
+                self._emit(job_id, status="cancelled", message="Cancelled")
                 self._schedule_clear(job_id, 5)
             else:
                 traceback.print_exc()
