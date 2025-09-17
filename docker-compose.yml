@@ -1,12 +1,34 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: alldebrid-redis
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
   alldebrid-proxy:
     image: ghcr.io/macery12/alldebrid-proxy:latest
     container_name: alldebrid-proxy
     ports:
-      - 9732:9732
+      - "9732:9732"
     env_file:
       - .env
-    restart: unless-stopped
+    # Default to the internal Redis service unless overridden in .env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - /share:/share   # host:/container
-networks: {}
+    restart: unless-stopped
+
+volumes:
+  redis-data:
