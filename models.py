@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Boolean, Integer, DateTime, Text
+from sqlalchemy import create_engine, Column, String, Boolean, Integer, DateTime, Text, UniqueConstraint
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Default SQLite file in current working dir
@@ -14,6 +14,19 @@ engine = create_engine(
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
+
+class MagnetIndex(Base):
+    __tablename__ = "magnet_index"
+    id           = Column(String, primary_key=True)   # uuid
+    magnet_hash  = Column(String, nullable=False, index=True)  # 40-char hex (preferred) or base32
+    share_id     = Column(String, nullable=False)     # /d/<share_id> lives under SHARE_ROOT
+    share_url    = Column(String, nullable=False)     # public URL we handed back
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('magnet_hash', name='uq_magnet_index_hash'),
+    )
 
 class Job(Base):
     __tablename__ = "jobs"
