@@ -30,7 +30,7 @@ jobs:
 
       # 🧱 Build only the app images (api, worker, frontend)
       - name: Build and push multi-arch images
-        uses: docker/bake-action@v4
+        uses: docker/bake-action@v5
         with:
           files: docker-compose.yml
           push: true
