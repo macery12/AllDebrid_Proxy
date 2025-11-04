@@ -34,15 +34,19 @@ jobs:
         with:
           files: docker-compose.yml
           push: true
-          # Only build the 3 relevant services
           targets: |
             api
             worker
             frontend
           set: |
             api.platform=linux/amd64,linux/arm64
+            api.tags=ghcr.io/${{ github.repository_owner }}/adproxy-api:latest
+            api.tags=ghcr.io/${{ github.repository_owner }}/adproxy-api:${{ github.sha }}
+
             worker.platform=linux/amd64,linux/arm64
+            worker.tags=ghcr.io/${{ github.repository_owner }}/adproxy-worker:latest
+            worker.tags=ghcr.io/${{ github.repository_owner }}/adproxy-worker:${{ github.sha }}
+
             frontend.platform=linux/amd64,linux/arm64
-            api.tags=ghcr.io/${{ github.repository_owner }}/adproxy-api:latest,ghcr.io/${{ github.repository_owner }}/adproxy-api:${{ github.sha }}
-            worker.tags=ghcr.io/${{ github.repository_owner }}/adproxy-worker:latest,ghcr.io/${{ github.repository_owner }}/adproxy-worker:${{ github.sha }}
-            frontend.tags=ghcr.io/${{ github.repository_owner }}/adproxy-frontend:latest,ghcr.io/${{ github.repository_owner }}/adproxy-frontend:${{ github.sha }}
+            frontend.tags=ghcr.io/${{ github.repository_owner }}/adproxy-frontend:latest
+            frontend.tags=ghcr.io/${{ github.repository_owner }}/adproxy-frontend:${{ github.sha }}
