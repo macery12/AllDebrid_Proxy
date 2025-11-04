@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}alldebrid-proxy — Frontend V1{% endblock %}</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a34; --muted:#8aa0c7; --text:#e8f0ff; --accent:#7aa2ff; --accent-2:#22c55e; --danger:#ef4444; --warn:#f59e0b; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Roboto,Arial}
+    a{color:var(--accent)}
+    header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#0e1530;border-bottom:1px solid #1d294f;position:sticky;top:0;z-index:10}
+    header h1{font-size:18px;margin:0}
+    .wrap{max-width:900px;margin:20px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid #1e2a50;border-radius:14px;padding:14px;margin-bottom:14px}
+    .card h2{font-size:16px;margin:0 0 8px}
+    label{display:block;font-weight:600;color:var(--muted);margin:11px 0 6px}
+    input[type=text], textarea, select{width:100%;padding:10px 12px;background:#0f1530;border:1px solid #2a3a69;border-radius:10px;color:var(--text)}
+    textarea{min-height:88px;resize:vertical}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1}
+    .btn{display:inline-flex;gap:8px;align-items:center;padding:9px 12px;border-radius:10px;border:1px solid #2a3a69;background:#0f1530;color:var(--text);cursor:pointer;text-decoration:none}
+    .btn:hover{border-color:#3a4f90}
+    .btn.primary{background:linear-gradient(180deg,#2a48a6,#1b2f73);border-color:#3959b3}
+    .btn.good{background:linear-gradient(180deg,#1e8a46,#166a35);border-color:#25a24f}
+    .btn.warn{background:linear-gradient(180deg,#9e6b15,#7a510f);border-color:#c2871b}
+    .btn.danger{background:linear-gradient(180deg,#a6222a,#74171c);border-color:#c42a34}
+    .muted{color:var(--muted)} .small{font-size:13px}
+    .pill{border:1px solid #2a3a69;border-radius:999px;padding:2px 10px;font-size:12px;display:inline-block}
+    .pill.good{background:#13321d;border-color:#1e5a34;color:#a7e8b9}
+    .pill.warn{background:#3a2c10;border-color:#6c521a;color:#ffd58d}
+    .pill.bad{background:#3a1013;border-color:#6c1a21;color:#ffb4bb}
+    .files table{width:100%;border-collapse:collapse}
+    .files th,.files td{border-bottom:1px solid #1a2547;padding:6px 4px;text-align:left}
+    .files td.size{width:140px;text-align:right;color:#9fb2e0}
+    .progress{background:#0c1430;border:1px solid #253a73;border-radius:999px;height:10px;overflow:hidden}
+    .progress > i{display:block;height:100%;background:linear-gradient(90deg,#2a48a6,#1b2f73)}
+    details summary{cursor:pointer;color:#8aa0c7}
+    details{margin-top:8px}
+    code.kbd{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;background:#0a1024;border:1px solid #22305e;padding:2px 6px;border-radius:6px;color:#b8c7ee}
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <h1>alldebrid-proxy</h1>
+    {% if health %}
+    <div class="small">
+      {% set is_ok = health.get('ok') %}
+      <span class="pill {{ 'good' if is_ok else 'bad' }}">
+        Health: {{ 'OK' if is_ok else 'DOWN' }}
+      </span>
+    </div>
+    {% endif %}
+  </header>
+
+  <div class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="card" style="border-color: {% if cat=='error' %}#c42a34{% elif cat=='ok' %}#25a24f{% else %}#3959b3{% endif %};">
+            {{ msg }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+# Avoid Python buffering and bytecode
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# System deps (curl for healthcheck)
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for layer cache
+COPY frontend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir gunicorn==23.0.0
+
+# Copy app
+COPY frontend/app.py ./app.py
+COPY frontend/templates ./templates
+
+EXPOSE 5000
+
+# Healthcheck: confirm frontend is up
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS http://localhost:5000/debug/config || exit 1
+
+# Run with gunicorn app factory
+CMD ["python","-m","gunicorn","--worker-class","gthread","-b","0.0.0.0:5000","--workers","3","--threads","4","--timeout","3600","--graceful-timeout","30","--keep-alive","65","--max-requests","2000","--max-requests-jitter","200","--access-logfile","-","--error-logfile","-","app:app"]
