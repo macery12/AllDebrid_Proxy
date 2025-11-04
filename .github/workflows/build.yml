@@ -28,23 +28,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 🧱 Build only the app images (api, worker, frontend)
+      # ✅ Build and push the app images using docker-compose
       - name: Build and push multi-arch images
         uses: docker/bake-action@v5
         with:
           files: docker-compose.yml
           push: true
+          # Only build the 3 relevant services
           targets: |
             api
             worker
             frontend
-          no-cache: true
           set: |
-            *.platform=linux/amd64,linux/arm64
-            *.args=FRONTEND_PORT=5000
-            api.tags=ghcr.io/${{ github.repository_owner }}/adproxy-api:latest
-            api.tags=ghcr.io/${{ github.repository_owner }}/adproxy-api:${{ github.sha }}
-            worker.tags=ghcr.io/${{ github.repository_owner }}/adproxy-worker:latest
-            worker.tags=ghcr.io/${{ github.repository_owner }}/adproxy-worker:${{ github.sha }}
-            frontend.tags=ghcr.io/${{ github.repository_owner }}/adproxy-frontend:latest
-            frontend.tags=ghcr.io/${{ github.repository_owner }}/adproxy-frontend:${{ github.sha }}
+            api.platform=linux/amd64,linux/arm64
+            worker.platform=linux/amd64,linux/arm64
+            frontend.platform=linux/amd64,linux/arm64
+            api.tags=ghcr.io/${{ github.repository_owner }}/adproxy-api:latest,ghcr.io/${{ github.repository_owner }}/adproxy-api:${{ github.sha }}
+            worker.tags=ghcr.io/${{ github.repository_owner }}/adproxy-worker:latest,ghcr.io/${{ github.repository_owner }}/adproxy-worker:${{ github.sha }}
+            frontend.tags=ghcr.io/${{ github.repository_owner }}/adproxy-frontend:latest,ghcr.io/${{ github.repository_owner }}/adproxy-frontend:${{ github.sha }}
