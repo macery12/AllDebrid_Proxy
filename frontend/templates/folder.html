@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Folder {{ task_id }} — alldebrid-proxy V1{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Folder {{ task_id }}</h2>
+  <div class="row" style="gap:8px">
+    <a class="btn" href="/d/{{ task_id }}.tar.gz">Download all (.tar.gz)</a>
+    <a class="btn" href="/d/{{ task_id }}/links.txt">links.txt</a>
+    <a class="btn" href="{{ url_for('task_view', task_id=task_id) }}">Back to task</a>
+  </div>
+  {% if entries|length == 0 %}
+    <div class="muted" style="margin-top:10px">No files found.</div>
+  {% else %}
+    <div class="files" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Path</th><th class="size">Size</th><th style="width:120px"></th></tr></thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td>{{ e.rel }}</td>
+            <td class="size">{{ e.size|hbytes }}</td>
+            <td><a class="btn" href="/d/{{ task_id }}/raw/{{ e.rel }}" target="_blank">Download</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

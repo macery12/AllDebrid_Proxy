@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Create task — alldebrid-proxy V1{% endblock %}
+{% block content %}
+
+<style>
+/* ---------- SCOPED: index only ---------- */
+#adp-create {
+  --adp-card-bg: rgba(20, 24, 33, 0.75);
+  --adp-border: rgba(255,255,255,0.08);
+  --adp-muted: #9aa4b2;
+  display: grid;
+  gap: 1rem;
+}
+
+#adp-create .adp-hero {
+  border-radius: 14px;
+  padding: 1.25rem 1rem;
+  background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(16,185,129,.12));
+  border: 1px solid var(--adp-border);
+}
+
+#adp-create .adp-hero h1 {
+  margin: 0 0 .25rem 0;
+  line-height: 1.15;
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+}
+
+#adp-create .adp-hero p {
+  margin: 0;
+  color: var(--adp-muted);
+}
+
+/* Card base */
+#adp-create .adp-card {
+  background: var(--adp-card-bg);
+  border: 1px solid var(--adp-border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+#adp-create h2 {
+  margin: 0 0 .4rem 0;
+  font-size: 1.1rem;
+}
+#adp-create .adp-muted { color: var(--adp-muted); }
+
+#adp-create form {
+  display: grid;
+  gap: .9rem;
+  margin-top: .6rem;
+}
+
+#adp-create label {
+  display: block;
+  font-size: .92rem;
+  margin: 0 0 .35rem 0;
+  color: var(--adp-muted);
+}
+
+#adp-create textarea,
+#adp-create select {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--adp-border);
+  border-radius: 10px;
+  padding: .8rem .9rem;
+}
+
+#adp-create textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+/* Responsive row: mode + actions */
+#adp-create .adp-row {
+  display: grid;
+  gap: .8rem;
+}
+@media (min-width: 720px) {
+  #adp-create .adp-row {
+    grid-template-columns: 1fr auto;
+    align-items: end;
+  }
+}
+
+/* Actions cluster */
+#adp-create .adp-actions {
+  display: flex;
+  gap: .6rem;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+#adp-create select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #111827 !important; /* Force dark bg */
+  color: #f1f5f9 !important; /* Light text */
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 0.75rem 2.5rem 0.75rem 0.9rem;
+  font-size: 0.95rem;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  background-image: linear-gradient(45deg, transparent 50%, #a5b4fc 50%),
+                    linear-gradient(135deg, #a5b4fc 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(1.2em + 2px), calc(100% - 13px) calc(1.2em + 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+#adp-create select:hover {
+  background-color: #1f2937 !important; /* slightly lighter on hover */
+  border-color: rgba(99,102,241,0.45);
+}
+
+#adp-create select:focus {
+  outline: none;
+  border-color: rgba(99,102,241,0.7);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
+}
+
+/* Hide the default arrow on Windows browsers */
+#adp-create select::-ms-expand {
+  display: none;
+}
+
+/* Firefox fix */
+#adp-create select:-moz-focusring {
+  color: transparent;
+  text-shadow: 0 0 0 #f1f5f9;
+}
+</style>
+
+<div id="adp-create">
+  <div class="adp-hero">
+    <h1>Spin up a download task</h1>
+    <p>Paste a magnet or direct link, pick a mode, and we’ll send it to your worker then redirect you to the live status.</p>
+  </div>
+
+  <section class="adp-card">
+    <h2>Create download task</h2>
+    <div class="adp-muted">Server posts to your worker and redirects to live status.</div>
+
+    <form method="post" action="{{ url_for('create_task') }}">
+      <div>
+        <label for="source">Magnet / Link</label>
+        <textarea id="source" name="source" placeholder="magnet:?xt=urn:btih:...  or  https://..."></textarea>
+      </div>
+
+      <div class="adp-row">
+        <div>
+          <label for="mode">Mode</label>
+          <select id="mode" name="mode">
+            <option value="auto">auto</option>
+            <option value="select">select</option>
+          </select>
+        </div>
+
+        <div class="adp-actions">
+          <button class="btn primary" type="submit">Create task</button>
+          {# health pill moved to base.html #}
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+
+{% endblock %}

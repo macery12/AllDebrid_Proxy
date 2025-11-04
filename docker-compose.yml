@@ -1,34 +1,104 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: alldebrid-redis
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-
-  alldebrid-proxy:
-    image: ghcr.io/macery12/alldebrid-proxy:latest
-    container_name: alldebrid-proxy
-    ports:
-      - "9732:9732"
+  db:
+    image: postgres:15
+    container_name: adproxy_db
     env_file:
       - .env
-    # Default to the internal Redis service unless overridden in .env
-    environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-    depends_on:
-      redis:
-        condition: service_healthy
     volumes:
-      - /share:/share   # host:/container
+      - db_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  redis:
+    image: redis:alpine
+    container_name: adproxy_redis
+    restart: unless-stopped
+
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: adproxy_migrations
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    depends_on:
+      - db
+    restart: "no"
+    volumes:
+      - /srv/storage:/srv/storage
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: adproxy_api
+    environment:
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    volumes:
+      - /srv/storage:/srv/storage
+    ports:
+      - "9731:8080"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: adproxy_worker
+    environment:
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+      - api
+    volumes:
+      - /srv/storage:/srv/storage
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: adproxy_frontend
+    ports:
+      - "${FRONTEND_PORT:-5000}:5000"
+    #environment:
+   #   - PYTHONPATH=/app
+    env_file:
+      - .env
+    depends_on:
+      - api
+    volumes:
+      - /srv/storage:/srv/storage
+    restart: unless-stopped
+
+  aria2:
+    image: p3terx/aria2-pro:latest
+    container_name: aria2
+    restart: unless-stopped
+    environment:
+      - PUID=0               # or your host uid
+      - PGID=0               # or your host gid
+      - UMASK_SET=022
+      - TZ=UTC      
+      - RPC_SECRET=${ARIA2_RPC_SECRET:-change-me}
+      - RPC_PORT=16800     
+    volumes:
+      - /srv/storage:/srv/storage  
+    ports:
+      - "16800:16800"
+
+
 volumes:
-  redis-data:
+  db_data:
