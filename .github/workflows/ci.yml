@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
     
     strategy:
       matrix:
@@ -62,6 +68,9 @@ jobs:
   security-scan:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: read
+    
     steps:
     - uses: actions/checkout@v4
     
@@ -88,6 +97,9 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
     
     steps:
     - uses: actions/checkout@v4

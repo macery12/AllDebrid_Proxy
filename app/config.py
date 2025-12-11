@@ -43,8 +43,10 @@ class Settings(BaseSettings):
         if v == "change-me":
             env = os.getenv("ENVIRONMENT", "development")
             if env == "production":
-                print("ERROR: WORKER_API_KEY must be changed from default in production!", file=sys.stderr)
-                sys.exit(1)
+                raise ValueError(
+                    "WORKER_API_KEY must be changed from default value in production! "
+                    "Set a strong random key in your .env file."
+                )
             else:
                 print("WARNING: WORKER_API_KEY is using default value. Change it for production!", file=sys.stderr)
         return v
