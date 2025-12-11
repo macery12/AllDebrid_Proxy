@@ -1,10 +1,22 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 
 class CreateTaskRequest(BaseModel):
-    mode: str = Field(pattern="^(auto|select)$")
-    source: str
-    label: Optional[str] = None
+    """Request model for creating a new download task."""
+    
+    mode: str = Field(pattern="^(auto|select)$", description="Download mode: 'auto' downloads all files, 'select' waits for user selection")
+    source: str = Field(max_length=10000, description="Magnet link (must start with 'magnet:')")
+    label: Optional[str] = Field(None, max_length=200, description="Optional human-readable label for the task")
+    
+    @field_validator('source')
+    @classmethod
+    def validate_magnet_link(cls, v: str) -> str:
+        """Validate that source is a magnet link."""
+        if not v.startswith('magnet:'):
+            raise ValueError('Source must be a magnet link (starting with "magnet:")')
+        if len(v) < 20:
+            raise ValueError('Magnet link appears to be too short or invalid')
+        return v
 
 class FileItem(BaseModel):
     fileId: str
