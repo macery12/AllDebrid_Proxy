@@ -120,7 +120,7 @@ docker-compose up worker
 - Ensure PyLoad service is running: `docker-compose ps`
 - Check PyLoad logs: `docker-compose logs pyload`
 - Verify PyLoad credentials in `.env`
-- **Authentication**: PyLoad uses session-based authentication with CSRF tokens. The provider handles this automatically.
+- **Authentication**: LinuxServer PyLoad-NG uses HTTP Basic Auth (CSRF disabled by default)
 
 ### AllDebrid Not Working
 - Verify AllDebrid account is configured in PyLoad
@@ -134,7 +134,6 @@ docker-compose up worker
 
 ### API Errors
 - **401 Unauthorized**: Check PyLoad credentials in `.env` - username/password must match your PyLoad account
-- **CSRF Errors**: The provider automatically handles CSRF tokens; if errors persist, verify PyLoad is accessible
 - **Connection refused**: Ensure PyLoad container is running and accessible at the configured URL
 
 ## License
