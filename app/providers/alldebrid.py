@@ -61,24 +61,25 @@ class AllDebrid:
         POST /magnet/upload  (expects magnets[] fields)
         Returns a list of string IDs.
         
-        v4.1 API response (same as v4):
+        API response format (consistent across v4 and v4.1):
         - data.magnets: array of magnet objects, each with an 'id' field
         
-        Includes fallback support for dict format (if magnets is a single object)
-        for maximum backward/forward compatibility.
+        Note: The v4.1 update primarily affects other endpoints and error handling.
+        This endpoint's response structure remains the same, but we include
+        fallback support for dict format for maximum compatibility.
         """
         payload: Dict[str, Any] = {f"magnets[{i}]": m for i, m in enumerate(magnets)}
         data = self._post("/magnet/upload", data=payload)
         ids: List[str] = []
         
-        # v4.1 returns magnets as an array
+        # Standard format: magnets as an array
         magnets_data = data.get("magnets", [])
         if isinstance(magnets_data, list):
             for m in magnets_data:
                 mid = m.get("id")
                 if mid is not None:
                     ids.append(str(mid))
-        # Fallback: check if magnets is a dict (older format)
+        # Fallback: handle dict format (edge case / non-standard response)
         elif isinstance(magnets_data, dict):
             mid = magnets_data.get("id")
             if mid is not None:
