@@ -9,3 +9,4 @@ redis==5.0.8
 python-dotenv==1.0.1
 requests==2.32.3
 flask==3.0.3
+pyloadapi==1.4.1

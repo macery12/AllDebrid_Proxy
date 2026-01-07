@@ -5,8 +5,10 @@ class Settings(BaseSettings):
 
     WORKER_API_KEY: str = "change-me"
 
-    ALLDEBRID_API_KEY: str = ""
-    ALLDEBRID_AGENT: str = "alldebrid-proxy"
+    # PyLoad Configuration
+    PYLOAD_URL: str = "http://pyload:8000"
+    PYLOAD_USERNAME: str = "admin"
+    PYLOAD_PASSWORD: str = "password"
 
     STORAGE_ROOT: str = "/srv/storage"
     LOW_SPACE_FLOOR_GB: int = 10
@@ -14,7 +16,6 @@ class Settings(BaseSettings):
     GLOBAL_QUEUE_LIMIT: int = 25
     PER_TASK_MAX_ACTIVE: int = 3
     PER_TASK_MAX_QUEUED: int = 9
-    ARIA2_SPLITS: int = 4
 
     RETENTION_DAYS: int = 7
     PARTIAL_MAX_AGE_HOURS: int = 24

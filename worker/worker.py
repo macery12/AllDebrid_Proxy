@@ -1,23 +1,16 @@
 
-import os, time, uuid, threading, logging, traceback, urllib.error, json
+import os, time, uuid, threading, logging, traceback, json
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Task, TaskFile
 from app.utils import ensure_task_dirs, append_log, write_metadata
 from worker.scheduler import publish, can_start_task, count_active_and_queued
-from worker.downloader import aria2_add_uri  # RPC enqueue (non-blocking)
-
-# Optional RPC accessor for startup handshake (if present in your downloader.py)
-try:
-    from worker.downloader import get_aria2
-except Exception:
-    get_aria2 = None
 
 try:
-    from app.providers.alldebrid import AllDebrid
+    from app.providers.pyload_provider import PyLoadProvider
 except Exception:
-    AllDebrid = None
+    PyLoadProvider = None
 
 # -------------------- Logging --------------------
 DEBUG = bool(int(os.getenv("DEBUG_DOWNLOADS", "0")))
@@ -51,11 +44,15 @@ def _log(task_id: str, level: str, event: str, **fields):
     else:
         log.info(_jdump(msg))
 
-# -------------------- AllDebrid client --------------------
+# -------------------- PyLoad client --------------------
 def get_client():
-    if AllDebrid is None:
-        raise RuntimeError("AllDebrid client not found. Ensure app/providers/alldebrid.py exists.")
-    return AllDebrid(api_key=settings.ALLDEBRID_API_KEY, agent=settings.ALLDEBRID_AGENT)
+    if PyLoadProvider is None:
+        raise RuntimeError("PyLoadProvider not found. Ensure app/providers/pyload_provider.py exists.")
+    return PyLoadProvider(
+        url=settings.PYLOAD_URL,
+        username=settings.PYLOAD_USERNAME,
+        password=settings.PYLOAD_PASSWORD
+    )
 
 # -------------------- Filesystem-based progress monitor --------------------
 _monitor_started = False
@@ -75,9 +72,7 @@ def _progress_monitor_loop():
                 files = s.execute(q).scalars().all()
                 for f in files:
                     out_path = os.path.join(settings.STORAGE_ROOT, f.task_id, "files", f.name)
-                    tmp_path = f"{out_path}.aria2"
-                    size_path = out_path if os.path.exists(out_path) else tmp_path
-                    cur = os.path.getsize(size_path) if os.path.exists(size_path) else 0
+                    cur = os.path.getsize(out_path) if os.path.exists(out_path) else 0
                     total = f.size_bytes or 0
 
                     if cur != (f.bytes_downloaded or 0):
@@ -85,7 +80,7 @@ def _progress_monitor_loop():
                         s.commit()
                         publish(f.task_id, {"type":"file.progress","fileId":f.id,"bytesDownloaded":cur,"total":total})
                         if DEBUG:
-                            _log(f.task_id, "debug", "file_progress", fileId=f.id, downloaded=cur, total=total, path=size_path)
+                            _log(f.task_id, "debug", "file_progress", fileId=f.id, downloaded=cur, total=total, path=out_path)
 
                     # done = final file exists AND (unknown size OR size >= expected)
                     if os.path.exists(out_path) and ((total == 0) or (cur >= total)):
@@ -95,25 +90,30 @@ def _progress_monitor_loop():
                             s.commit()
                             publish(f.task_id, {"type":"file.done","fileId":f.id,"localPath":f.local_path})
                             _log(f.task_id, "info", "file_done", fileId=f.id, path=f.local_path)
-                    else:
-                        if DEBUG and not os.path.exists(out_path) and not os.path.exists(tmp_path):
-                            _log(f.task_id, "debug", "no_progress_file_missing", fileId=f.id, expected=out_path, tmp=tmp_path)
         except Exception as e:
             _log("", "error", "progress_monitor_error", err=str(e), tb=traceback.format_exc())
         time.sleep(1)
 
-# -------------------- Resolve + start logic (matches your old flow) --------------------
+# -------------------- Resolve + start logic (using PyLoad) --------------------
 def resolve_task(session, task: Task, client):
     base, files_dir = ensure_task_dirs(settings.STORAGE_ROOT, task.id)
 
     if not task.provider_ref:
-        _log(task.id, "info", "ad_upload_begin")
-        magnet_id = client.upload_magnets([task.source])
-        if isinstance(magnet_id, (list, tuple)):
-            magnet_id = magnet_id[0]
-        task.provider_ref = str(magnet_id)
+        _log(task.id, "info", "pyload_upload_begin")
+        # Determine if it's a magnet or direct link
+        if task.source.startswith("magnet:"):
+            package_ids = client.upload_magnets([task.source])
+        else:
+            package_ids = client.upload_links([task.source])
+        
+        if isinstance(package_ids, (list, tuple)):
+            package_id = package_ids[0]
+        else:
+            package_id = str(package_ids)
+        
+        task.provider_ref = package_id
         session.commit()
-        _log(task.id, "info", "ad_upload_ok", provider_ref=task.provider_ref)
+        _log(task.id, "info", "pyload_upload_ok", provider_ref=task.provider_ref)
 
     # Mark 'resolving'
     task.status = "resolving"
@@ -121,11 +121,11 @@ def resolve_task(session, task: Task, client):
     publish(task.id, {"type":"state","status":"resolving"})
     _log(task.id, "info", "task_resolving")
 
-    # Poll AllDebrid for files
+    # Poll PyLoad for files
     for _ in range(240):  # ~20 minutes at 5s
-        status = client.get_magnet_status(task.provider_ref)
+        status = client.get_package_status(task.provider_ref)
         if DEBUG:
-            _log(task.id, "debug", "ad_status_raw", payload=status.get("raw"))
+            _log(task.id, "debug", "pyload_status_raw", payload=status.get("raw"))
 
         files = status.get("files") or []
         if files:
@@ -215,46 +215,53 @@ def start_next_files(session, task: Task, client):
         if started >= to_start:
             break
 
-        # 1) Unlock HTTPS link
+        # 1) Get download link from PyLoad (already unlocked via AllDebrid plugin)
         try:
             url = client.download_link(task.provider_ref, f.index)
             if not url or not url.startswith("http"):
-                raise RuntimeError("unlock returned no http(s) link")
+                raise RuntimeError("PyLoad returned no http(s) link")
             if DEBUG:
-                _log(task.id, "info", "unlock_ok", fileId=f.id, index=f.index)
+                _log(task.id, "info", "pyload_link_ok", fileId=f.id, index=f.index)
         except Exception as e:
             f.state = "failed"
             session.commit()
-            publish(task.id, {"type":"file.failed","fileId":f.id,"reason":f"unlock_failed: {e}"})
-            _log(task.id, "error", "unlock_failed", fileId=f.id, index=f.index, err=str(e), tb=traceback.format_exc())
+            publish(task.id, {"type":"file.failed","fileId":f.id,"reason":f"link_failed: {e}"})
+            _log(task.id, "error", "pyload_link_failed", fileId=f.id, index=f.index, err=str(e), tb=traceback.format_exc())
             continue
 
-        # 2) Flip to downloading BEFORE enqueue
+        # 2) Download directly using requests (PyLoad has already unlocked the link)
         f.unlocked_url = url
         f.state = "downloading"
         session.commit()
         publish(task.id, {"type":"file.state","fileId":f.id,"state":"downloading"})
-        if DEBUG:
-            _log(task.id, "debug", "enqueue_pre", fileId=f.id, dir=out_dir, name=f.name, rpc=os.getenv("ARIA2_RPC_URL"))
-
-        # 3) Enqueue in aria2 RPC
+        
+        # 3) Start download in background thread
         try:
-            aria2_add_uri(url, out_dir, f.name, splits=settings.ARIA2_SPLITS)
+            import requests
+            out_path = os.path.join(out_dir, f.name)
+            
+            def download_file():
+                try:
+                    with requests.get(url, stream=True, timeout=(10, 300)) as r:
+                        r.raise_for_status()
+                        with open(out_path, 'wb') as file:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                if chunk:
+                                    file.write(chunk)
+                    _log(task.id, "info", "download_complete", fileId=f.id, path=out_path)
+                except Exception as e:
+                    _log(task.id, "error", "download_failed", fileId=f.id, err=str(e), tb=traceback.format_exc())
+            
+            threading.Thread(target=download_file, daemon=True).start()
             started += 1
             if DEBUG:
-                _log(task.id, "info", "enqueue_ok", fileId=f.id)
-        except urllib.error.HTTPError as e:
-            f.state = "failed"
-            session.commit()
-            reason = f"enqueue_failed_http: {e.code} {e.reason}"
-            publish(task.id, {"type":"file.failed","fileId":f.id,"reason":reason})
-            _log(task.id, "error", "enqueue_failed_http", fileId=f.id, code=e.code, reason=e.reason, url=os.getenv("ARIA2_RPC_URL"))
-            continue
+                _log(task.id, "info", "download_started", fileId=f.id)
         except Exception as e:
             f.state = "failed"
             session.commit()
-            publish(task.id, {"type":"file.failed","fileId":f.id,"reason":f"enqueue_failed: {e}"})
-            _log(task.id, "error", "enqueue_failed", fileId=f.id, err=str(e), tb=traceback.format_exc(), url=os.getenv("ARIA2_RPC_URL"))
+            reason = f"download_start_failed: {e}"
+            publish(task.id, {"type":"file.failed","fileId":f.id,"reason":reason})
+            _log(task.id, "error", "download_start_failed", fileId=f.id, err=str(e), tb=traceback.format_exc())
             continue
 
     # Only mark ready if ALL files are done
@@ -269,14 +276,12 @@ def worker_loop():
     _start_monitor_once()
     client = get_client()
 
-    # One-time aria2 RPC version check
-    if get_aria2:
-        try:
-            rpc = get_aria2()
-            ver = rpc._call("getVersion", [])
-            _log("", "info", "aria2_rpc_ok", url=os.getenv("ARIA2_RPC_URL"), version=ver)
-        except Exception as e:
-            _log("", "error", "aria2_rpc_fail", url=os.getenv("ARIA2_RPC_URL"), error=str(e), tb=traceback.format_exc())
+    # Test PyLoad connection
+    try:
+        _log("", "info", "pyload_connection_test", url=settings.PYLOAD_URL)
+        # Connection will be tested on first use
+    except Exception as e:
+        _log("", "error", "pyload_connection_fail", url=settings.PYLOAD_URL, error=str(e), tb=traceback.format_exc())
 
     while True:
         with SessionLocal() as s:

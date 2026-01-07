@@ -13,6 +13,18 @@ services:
     container_name: adproxy_redis
     restart: unless-stopped
 
+  pyload:
+    image: pyload/pyload:latest-ubuntu
+    container_name: adproxy_pyload
+    environment:
+      - TZ=UTC
+    ports:
+      - "8000:8000"
+    volumes:
+      - pyload_config:/config
+      - /srv/storage:/srv/storage
+    restart: unless-stopped
+
   migrations:
     build:
       context: .
@@ -43,6 +55,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_started
+      pyload:
+        condition: service_started
     volumes:
       - /srv/storage:/srv/storage
     ports:
@@ -62,6 +76,7 @@ services:
       - db
       - redis
       - api
+      - pyload
     volumes:
       - /srv/storage:/srv/storage
     restart: unless-stopped
@@ -83,22 +98,7 @@ services:
       - /srv/storage:/srv/storage
     restart: unless-stopped
 
-  aria2:
-    image: p3terx/aria2-pro:latest
-    container_name: aria2
-    restart: unless-stopped
-    environment:
-      - PUID=0               # or your host uid
-      - PGID=0               # or your host gid
-      - UMASK_SET=022
-      - TZ=UTC      
-      - RPC_SECRET=${ARIA2_RPC_SECRET:-change-me}
-      - RPC_PORT=16800     
-    volumes:
-      - /srv/storage:/srv/storage  
-    ports:
-      - "16800:16800"
-
 
 volumes:
   db_data:
+  pyload_config:

@@ -66,7 +66,7 @@ def create_task(req: CreateTaskRequest):
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         t = Task(
             id=task_id, mode=req.mode, source=req.source, infohash=infohash,
-            provider="alldebrid", status="queued", label=req.label or None
+            provider="pyload", status="queued", label=req.label or None
         )
         s.add(t)
         s.commit()
