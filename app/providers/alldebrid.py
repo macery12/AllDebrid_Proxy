@@ -9,7 +9,7 @@ class ADHTTPError(RuntimeError):
 
 class AllDebrid:
     """
-    Minimal AllDebrid client matching the worker's expected interface.
+    AllDebrid v4.1 API client matching the worker's expected interface.
 
     Methods:
       - upload_magnets(magnets: List[str]) -> List[str]
@@ -17,7 +17,7 @@ class AllDebrid:
       - download_link(magnet_id: str, file_index: int) -> str  # unlocked direct URL
     """
 
-    def __init__(self, api_key: str, agent: str = "alldebrid-proxy", base_url: str = "https://api.alldebrid.com/v4"):
+    def __init__(self, api_key: str, agent: str = "alldebrid-proxy", base_url: str = "https://api.alldebrid.com/v4.1"):
         if not api_key:
             raise ValueError("AllDebrid: api_key is required")
         self.api_key = api_key
@@ -60,14 +60,25 @@ class AllDebrid:
         """
         POST /magnet/upload  (expects magnets[] fields)
         Returns a list of string IDs.
+        In v4.1, the response has magnets as an array under data.magnets
         """
         payload: Dict[str, Any] = {f"magnets[{i}]": m for i, m in enumerate(magnets)}
         data = self._post("/magnet/upload", data=payload)
         ids: List[str] = []
-        for m in data.get("magnets", []):
-            mid = m.get("id")
+        
+        # v4.1 returns magnets as an array
+        magnets_data = data.get("magnets", [])
+        if isinstance(magnets_data, list):
+            for m in magnets_data:
+                mid = m.get("id")
+                if mid is not None:
+                    ids.append(str(mid))
+        # Fallback: check if magnets is a dict (older format)
+        elif isinstance(magnets_data, dict):
+            mid = magnets_data.get("id")
             if mid is not None:
                 ids.append(str(mid))
+        
         return ids
 
     def _normalize_items(self, arr: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -91,9 +102,10 @@ class AllDebrid:
         """
         GET /magnet/status?id=<magnet_id>
         Returns {"raw": <full payload>, "files": [{name,size,link?}, ...]}
-        Handles:
-          - data.magnets (dict or list)
-          - data.files / data.links (top level)
+        
+        v4.1 API returns data structured as:
+        - data.magnets (dict or list) containing files/links
+        - Falls back to top-level data.files / data.links if needed
         """
         data = self._get("/magnet/status", id=str(magnet_id))
         files_out: List[Dict[str, Any]] = []
