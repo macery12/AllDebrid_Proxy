@@ -31,6 +31,8 @@ class PyLoadProvider:
         self._session: Optional[requests.Session] = None
         self._session_id: Optional[str] = None
         self._timeout = (10, 60)
+        self._login_attempts = 0
+        self._max_login_attempts = 2
 
     def _get_session(self) -> requests.Session:
         """Get or create requests session and login."""
@@ -60,6 +62,7 @@ class PyLoadProvider:
         session = self._get_session()
         url = f"{self.url}/api/{endpoint}"
         
+        response = None
         try:
             if method == "GET":
                 response = session.get(url, params=params, timeout=self._timeout)
@@ -69,11 +72,14 @@ class PyLoadProvider:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            # Try to re-login once on auth failure
-            if response.status_code == 401:
+            # Try to re-login once on auth failure (with limit to prevent infinite recursion)
+            if response and response.status_code == 401 and self._login_attempts < self._max_login_attempts:
+                self._login_attempts += 1
                 self._session = None
                 self._session_id = None
-                return self._api_call(endpoint, method, **params)
+                result = self._api_call(endpoint, method, **params)
+                self._login_attempts = 0  # Reset on success
+                return result
             raise PyLoadProviderError(f"PyLoad API error: {e}")
 
     def upload_magnets(self, magnets: List[str]) -> List[str]:

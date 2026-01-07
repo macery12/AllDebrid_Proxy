@@ -1,5 +1,4 @@
-
-import os, time, uuid, threading, logging, traceback, json
+import os, time, uuid, threading, logging, traceback, json, requests
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
@@ -237,19 +236,29 @@ def start_next_files(session, task: Task, client):
         
         # 3) Start download in background thread
         try:
-            import requests
             out_path = os.path.join(out_dir, f.name)
             
             def download_file():
                 try:
+                    # Download to temporary file first to avoid partial downloads
+                    temp_path = f"{out_path}.tmp"
                     with requests.get(url, stream=True, timeout=(10, 300)) as r:
                         r.raise_for_status()
-                        with open(out_path, 'wb') as file:
+                        with open(temp_path, 'wb') as file:
                             for chunk in r.iter_content(chunk_size=8192):
                                 if chunk:
                                     file.write(chunk)
+                    # Move temp file to final location atomically
+                    os.rename(temp_path, out_path)
                     _log(task.id, "info", "download_complete", fileId=f.id, path=out_path)
                 except Exception as e:
+                    # Clean up temp file on error
+                    temp_path = f"{out_path}.tmp"
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
                     _log(task.id, "error", "download_failed", fileId=f.id, err=str(e), tb=traceback.format_exc())
             
             threading.Thread(target=download_file, daemon=True).start()
