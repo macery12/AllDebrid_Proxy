@@ -37,19 +37,22 @@ Edit `.env` and configure the following:
 
 - `WORKER_API_KEY`: Set a secure API key for worker authentication
 - `PYLOAD_URL`: PyLoad service URL (default: http://pyload:8000)
-- `PYLOAD_USERNAME`: PyLoad admin username (default: admin)
-- `PYLOAD_PASSWORD`: Set a secure password for PyLoad
+- `PYLOAD_USERNAME`: PyLoad username (default: pyload - change via web UI after first login)
+- `PYLOAD_PASSWORD`: PyLoad password (default: pyload - change via web UI after first login)
 - `LOGIN_USERS`: Set username:password pairs for frontend access
 - `FLASK_SECRET`: Set a secure secret key
+
+**Note**: PyLoad configuration is saved in `./config/pyload` directory. The default PyLoad credentials are `pyload/pyload` and should be changed via the web interface after first login.
 
 ### 3. Configure PyLoad AllDebrid Plugin
 
 After starting the services, you'll need to configure PyLoad with your AllDebrid account:
 
 1. Access PyLoad web interface at `http://localhost:8000`
-2. Login with the credentials set in `.env` (default: admin/password)
-3. Go to Settings → Accounts
-4. Add your AllDebrid account:
+2. Login with default credentials: **username: `pyload`, password: `pyload`**
+3. **Change your password** in Settings → General → Password
+4. Go to Settings → Accounts
+5. Add your AllDebrid account:
    - Click "Add Account"
    - Select "AllDebrid" from the provider list
    - Enter your AllDebrid API key or credentials

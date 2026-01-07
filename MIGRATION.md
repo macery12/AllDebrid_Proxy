@@ -39,21 +39,24 @@ ARIA2_SPLITS=...
 Add these new variables:
 ```env
 PYLOAD_URL=http://pyload:8000
-PYLOAD_USERNAME=admin
-PYLOAD_PASSWORD=your_secure_password
+PYLOAD_USERNAME=pyload
+PYLOAD_PASSWORD=pyload
 ```
+
+**Note**: PyLoad uses default credentials `pyload/pyload`. Change these via the web interface after first login. The configuration is saved in `./config/pyload` directory.
 
 ### 2. Configure PyLoad with AllDebrid
 
 After starting the services with `docker-compose up -d`:
 
 1. Access PyLoad at `http://localhost:8000`
-2. Login with your PyLoad credentials (from `.env`)
-3. Go to **Settings → Accounts**
-4. Click **Add Account**
-5. Select **AllDebrid** from the provider list
-6. Enter your AllDebrid API key (get it from https://alldebrid.com/account/)
-7. Save the configuration
+2. Login with default credentials: **username: `pyload`, password: `pyload`**
+3. **Change your password** in Settings → General → Password
+4. Go to **Settings → Accounts**
+5. Click **Add Account**
+6. Select **AllDebrid** from the provider list
+7. Enter your AllDebrid API key (get it from https://alldebrid.com/account/)
+8. Save the configuration
 
 ### 3. Restart Services
 

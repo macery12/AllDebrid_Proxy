@@ -7,8 +7,8 @@ class Settings(BaseSettings):
 
     # PyLoad Configuration
     PYLOAD_URL: str = "http://pyload:8000"
-    PYLOAD_USERNAME: str = "admin"
-    PYLOAD_PASSWORD: str = "password"
+    PYLOAD_USERNAME: str = "pyload"
+    PYLOAD_PASSWORD: str = "pyload"
 
     STORAGE_ROOT: str = "/srv/storage"
     LOW_SPACE_FLOOR_GB: int = 10

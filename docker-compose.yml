@@ -14,15 +14,18 @@ services:
     restart: unless-stopped
 
   pyload:
-    image: pyload/pyload:latest-ubuntu
+    image: lscr.io/linuxserver/pyload-ng:latest
     container_name: adproxy_pyload
     environment:
+      - PUID=1000
+      - PGID=1000
       - TZ=UTC
     ports:
       - "8000:8000"
+      - "9666:9666"  # Optional click'n'load port
     volumes:
-      - pyload_config:/config
-      - /srv/storage:/srv/storage
+      - ./config/pyload:/config
+      - /srv/storage:/downloads
     restart: unless-stopped
 
   migrations:
@@ -101,4 +104,3 @@ services:
 
 volumes:
   db_data:
-  pyload_config:
