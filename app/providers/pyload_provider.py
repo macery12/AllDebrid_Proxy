@@ -52,8 +52,11 @@ class PyLoadProvider:
         try:
             if method == "GET":
                 response = session.get(url, params=params, timeout=self._timeout)
+            elif method == "PUT":
+                # LSIO PyLoad-NG uses PUT for addPackage
+                response = session.put(url, json=params, timeout=self._timeout)
             else:
-                # LSIO PyLoad-NG expects JSON payloads for POST requests
+                # POST for other endpoints
                 response = session.post(url, json=params, timeout=self._timeout)
             
             response.raise_for_status()
@@ -69,10 +72,10 @@ class PyLoadProvider:
         package_ids = []
         for magnet in magnets:
             try:
-                # Add package with magnet link
+                # Add package with magnet link (uses PUT method)
                 result = self._api_call(
                     "addPackage",
-                    method="POST",
+                    method="PUT",
                     name="Magnet Download",
                     links=[magnet]
                 )
@@ -92,10 +95,10 @@ class PyLoadProvider:
         package_ids = []
         for link in links:
             try:
-                # Add package with link
+                # Add package with link (uses PUT method)
                 result = self._api_call(
                     "addPackage",
-                    method="POST",
+                    method="PUT",
                     name="Direct Download",
                     links=[link]
                 )
