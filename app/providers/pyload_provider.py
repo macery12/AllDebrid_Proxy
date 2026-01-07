@@ -16,9 +16,9 @@ class PyLoadProvider:
     This provider manages packages, files, and download status through PyLoad's JSON API.
     
     Features:
-    - HTTP Basic Auth for PyLoad 0.5+ (no separate login endpoint needed)
-    - Session management with automatic connection handling
-    - Retry logic for transient failures
+    - Session-based authentication with CSRF token handling
+    - Automatic re-authentication on session expiry
+    - Support for magnets and direct file URLs
     
     Methods:
       - upload_magnets(magnets: List[str]) -> List[str]
@@ -34,30 +34,116 @@ class PyLoadProvider:
         self.username = username
         self.password = password
         self._session: Optional[requests.Session] = None
+        self._csrf_token: Optional[str] = None
         self._timeout = (10, 60)
+        self._authenticated = False
 
     def _get_session(self) -> requests.Session:
-        """Get or create requests session with HTTP Basic Auth."""
+        """Get or create requests session and authenticate if needed."""
         if self._session is None:
             self._session = requests.Session()
-            # PyLoad 0.5+ uses HTTP Basic Auth instead of login endpoint
-            self._session.auth = (self.username, self.password)
+        if not self._authenticated:
+            self._authenticate()
         return self._session
 
+    def _get_csrf_token(self) -> str:
+        """Extract CSRF token from cookies."""
+        if self._session:
+            # Try common CSRF cookie names
+            csrf_token = (
+                self._session.cookies.get('csrftoken') or
+                self._session.cookies.get('csrf_token') or
+                self._session.cookies.get('CSRF-TOKEN') or
+                self._session.cookies.get('_csrf_token')
+            )
+            if csrf_token:
+                return csrf_token
+        return ""
+
+    def _authenticate(self):
+        """Authenticate with PyLoad using session-based login."""
+        try:
+            # Step 1: GET the login page to establish session and get CSRF token
+            resp = self._session.get(f"{self.url}/login", timeout=self._timeout)
+            resp.raise_for_status()
+            
+            # Extract CSRF token from cookies
+            csrf_token = self._get_csrf_token()
+            
+            # Step 2: POST login credentials with CSRF token
+            headers = {}
+            if csrf_token:
+                headers['X-CSRFToken'] = csrf_token
+                headers['Referer'] = f"{self.url}/login"
+            
+            # PyLoad expects form data, not JSON for login
+            login_data = {
+                "username": self.username,
+                "password": self.password
+            }
+            
+            resp = self._session.post(
+                f"{self.url}/login",
+                data=login_data,
+                headers=headers,
+                timeout=self._timeout,
+                allow_redirects=True
+            )
+            resp.raise_for_status()
+            
+            # Update CSRF token after login
+            self._csrf_token = self._get_csrf_token()
+            self._authenticated = True
+            
+        except requests.RequestException as e:
+            raise PyLoadProviderError(f"Authentication failed: {e}")
+
     def _api_call(self, endpoint: str, method: str = "GET", **params) -> Any:
-        """Make API call to PyLoad using HTTP Basic Auth."""
+        """Make API call to PyLoad with session and CSRF token."""
         session = self._get_session()
         url = f"{self.url}/api/{endpoint}"
         
         try:
+            headers = {}
+            # Include CSRF token for POST requests
+            if method == "POST":
+                csrf_token = self._get_csrf_token()
+                if csrf_token:
+                    headers['X-CSRFToken'] = csrf_token
+                    headers['Referer'] = self.url
+            
             if method == "GET":
-                response = session.get(url, params=params, timeout=self._timeout)
+                response = session.get(url, params=params, headers=headers, timeout=self._timeout)
             else:
-                response = session.post(url, json=params, timeout=self._timeout)
+                response = session.post(url, json=params, headers=headers, timeout=self._timeout)
             
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
+            # If we get 401, try re-authenticating once
+            if hasattr(e, 'response') and e.response and e.response.status_code == 401:
+                self._authenticated = False
+                self._csrf_token = None
+                # Retry once after re-authentication
+                try:
+                    session = self._get_session()
+                    headers = {}
+                    if method == "POST":
+                        csrf_token = self._get_csrf_token()
+                        if csrf_token:
+                            headers['X-CSRFToken'] = csrf_token
+                            headers['Referer'] = self.url
+                    
+                    if method == "GET":
+                        response = session.get(url, params=params, headers=headers, timeout=self._timeout)
+                    else:
+                        response = session.post(url, json=params, headers=headers, timeout=self._timeout)
+                    
+                    response.raise_for_status()
+                    return response.json()
+                except requests.RequestException:
+                    pass  # Fall through to raise original error
+            
             raise PyLoadProviderError(f"PyLoad API error: {e}")
 
     def upload_magnets(self, magnets: List[str]) -> List[str]:
