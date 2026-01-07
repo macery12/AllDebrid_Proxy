@@ -90,17 +90,19 @@ class AllDebrid:
     def _normalize_items(self, arr: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Normalize any of these shapes into [{name, size, link?}]:
-          {name|filename, size|filesize, link|url?}
+          {name|filename|n, size|filesize|s, link|url|l?}
+        
+        v4.1 API sometimes uses abbreviated field names: n, s, l
         """
         out: List[Dict[str, Any]] = []
         for f in arr:
-            name = f.get("name") or f.get("filename") or ""
-            size = f.get("size") or f.get("filesize") or 0
+            name = f.get("name") or f.get("filename") or f.get("n") or ""
+            size = f.get("size") or f.get("filesize") or f.get("s") or 0
             try:
                 size = int(size)
             except Exception:
                 size = 0
-            link = f.get("link") or f.get("url") or None
+            link = f.get("link") or f.get("url") or f.get("l") or None
             out.append({"name": name, "size": size, "link": link})
         return out
 
@@ -158,7 +160,7 @@ class AllDebrid:
             raise IndexError(f"download_link: file_index {file_index} out of range (0..{len(files)-1})")
 
         fi = files[file_index]
-        url_candidate = fi.get("link") or fi.get("url")
+        url_candidate = fi.get("link") or fi.get("url") or fi.get("l")
 
         if not url_candidate:
             # Fall back to raw shape at the same index
@@ -168,20 +170,20 @@ class AllDebrid:
             mags = raw.get("magnets")
             if isinstance(mags, dict):
                 if isinstance(mags.get("links"), list) and file_index < len(mags["links"]):
-                    candidates.append(mags["links"][file_index].get("link") or mags["links"][file_index].get("url"))
+                    candidates.append(mags["links"][file_index].get("link") or mags["links"][file_index].get("url") or mags["links"][file_index].get("l"))
                 if isinstance(mags.get("files"), list) and file_index < len(mags["files"]):
-                    candidates.append(mags["files"][file_index].get("link") or mags["files"][file_index].get("url"))
+                    candidates.append(mags["files"][file_index].get("link") or mags["files"][file_index].get("url") or mags["files"][file_index].get("l"))
             elif isinstance(mags, list) and mags:
                 m = mags[0]
                 if isinstance(m.get("links"), list) and file_index < len(m["links"]):
-                    candidates.append(m["links"][file_index].get("link") or m["links"][file_index].get("url"))
+                    candidates.append(m["links"][file_index].get("link") or m["links"][file_index].get("url") or m["links"][file_index].get("l"))
                 if isinstance(m.get("files"), list) and file_index < len(m["files"]):
-                    candidates.append(m["files"][file_index].get("link") or m["files"][file_index].get("url"))
+                    candidates.append(m["files"][file_index].get("link") or m["files"][file_index].get("url") or m["files"][file_index].get("l"))
 
             if isinstance(raw.get("links"), list) and file_index < len(raw["links"]):
-                candidates.append(raw["links"][file_index].get("link") or raw["links"][file_index].get("url"))
+                candidates.append(raw["links"][file_index].get("link") or raw["links"][file_index].get("url") or raw["links"][file_index].get("l"))
             if isinstance(raw.get("files"), list) and file_index < len(raw["files"]):
-                candidates.append(raw["files"][file_index].get("link") or raw["files"][file_index].get("url"))
+                candidates.append(raw["files"][file_index].get("link") or raw["files"][file_index].get("url") or raw["files"][file_index].get("l"))
 
             url_candidate = next((c for c in candidates if c), None)
 
