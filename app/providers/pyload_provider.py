@@ -30,6 +30,7 @@ class PyLoadProvider:
         self.password = password
         self._session: Optional[requests.Session] = None
         self._session_id: Optional[str] = None
+        self._csrf_token: Optional[str] = None
         self._timeout = (10, 60)
         self._login_attempts = 0
         self._max_login_attempts = 2
@@ -41,17 +42,48 @@ class PyLoadProvider:
             self._login()
         return self._session
 
+    def _get_csrf_token(self) -> str:
+        """Get CSRF token from session cookies."""
+        if self._session:
+            # Try common CSRF cookie names
+            csrf_token = (
+                self._session.cookies.get('csrftoken') or
+                self._session.cookies.get('csrf_token') or
+                self._session.cookies.get('CSRF-TOKEN')
+            )
+            if csrf_token:
+                return csrf_token
+        return ""
+
     def _login(self):
         """Login to PyLoad and get session."""
         try:
+            # First, make a GET request to obtain CSRF token
+            self._session.get(f"{self.url}/login", timeout=self._timeout)
+            
+            # Get CSRF token from cookies
+            csrf_token = self._get_csrf_token()
+            
+            # Prepare headers with CSRF token
+            headers = {}
+            if csrf_token:
+                headers['X-CSRFToken'] = csrf_token
+                headers['Referer'] = f"{self.url}/login"
+            
+            # Now login with CSRF token
             response = self._session.post(
                 f"{self.url}/api/login",
                 json={"username": self.username, "password": self.password},
+                headers=headers,
                 timeout=self._timeout
             )
             response.raise_for_status()
             data = response.json()
             self._session_id = data.get("session")
+            
+            # Update CSRF token after login
+            self._csrf_token = self._get_csrf_token()
+            
             if not self._session_id:
                 raise PyLoadProviderError("Login failed: no session ID returned")
         except requests.RequestException as e:
@@ -64,19 +96,28 @@ class PyLoadProvider:
         
         response = None
         try:
+            headers = {}
+            # Add CSRF token to headers for POST requests
+            if method == "POST":
+                csrf_token = self._get_csrf_token()
+                if csrf_token:
+                    headers['X-CSRFToken'] = csrf_token
+                    headers['Referer'] = self.url
+            
             if method == "GET":
-                response = session.get(url, params=params, timeout=self._timeout)
+                response = session.get(url, params=params, timeout=self._timeout, headers=headers)
             else:
-                response = session.post(url, json=params, timeout=self._timeout)
+                response = session.post(url, json=params, timeout=self._timeout, headers=headers)
             
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
             # Try to re-login once on auth failure (with limit to prevent infinite recursion)
-            if response and response.status_code == 401 and self._login_attempts < self._max_login_attempts:
+            if response and response.status_code in (401, 400) and self._login_attempts < self._max_login_attempts:
                 self._login_attempts += 1
                 self._session = None
                 self._session_id = None
+                self._csrf_token = None
                 result = self._api_call(endpoint, method, **params)
                 self._login_attempts = 0  # Reset on success
                 return result
