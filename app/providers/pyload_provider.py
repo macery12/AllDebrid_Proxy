@@ -15,6 +15,11 @@ class PyLoadProvider:
     PyLoad handles the AllDebrid integration internally via its AllDebrid plugin.
     This provider manages packages, files, and download status through PyLoad's JSON API.
     
+    Features:
+    - Automatic CSRF token handling for PyLoad-ng security
+    - Session management with automatic re-authentication
+    - Retry logic for transient failures
+    
     Methods:
       - upload_magnets(magnets: List[str]) -> List[str]
       - upload_links(links: List[str]) -> List[str]

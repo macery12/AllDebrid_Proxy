@@ -120,6 +120,7 @@ docker-compose up worker
 - Ensure PyLoad service is running: `docker-compose ps`
 - Check PyLoad logs: `docker-compose logs pyload`
 - Verify PyLoad credentials in `.env`
+- **CSRF Errors**: The provider automatically handles CSRF tokens. If you see "CSRF token is missing" errors, ensure PyLoad is running the latest version and the session cookies are being preserved.
 
 ### AllDebrid Not Working
 - Verify AllDebrid account is configured in PyLoad
@@ -130,6 +131,11 @@ docker-compose up worker
 - Check worker logs: `docker-compose logs worker`
 - Verify storage permissions
 - Ensure sufficient disk space
+
+### API Errors
+- **400 Bad Request**: Usually CSRF-related; the provider handles this automatically by re-authenticating
+- **401 Unauthorized**: Check PyLoad credentials in `.env`
+- **Connection refused**: Ensure PyLoad container is running
 
 ## License
 
