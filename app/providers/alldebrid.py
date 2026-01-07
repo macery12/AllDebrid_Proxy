@@ -60,7 +60,12 @@ class AllDebrid:
         """
         POST /magnet/upload  (expects magnets[] fields)
         Returns a list of string IDs.
-        In v4.1, the response has magnets as an array under data.magnets
+        
+        v4.1 API response (same as v4):
+        - data.magnets: array of magnet objects, each with an 'id' field
+        
+        Includes fallback support for dict format (if magnets is a single object)
+        for maximum backward/forward compatibility.
         """
         payload: Dict[str, Any] = {f"magnets[{i}]": m for i, m in enumerate(magnets)}
         data = self._post("/magnet/upload", data=payload)
@@ -103,9 +108,14 @@ class AllDebrid:
         GET /magnet/status?id=<magnet_id>
         Returns {"raw": <full payload>, "files": [{name,size,link?}, ...]}
         
-        v4.1 API returns data structured as:
-        - data.magnets (dict or list) containing files/links
-        - Falls back to top-level data.files / data.links if needed
+        v4.1 API structure (similar to v4):
+        - data.magnets: dict or list containing files/links
+        - Fallbacks to top-level data.files / data.links if magnets not present
+        
+        The method handles various response shapes for maximum compatibility:
+        1. data.magnets as dict with .files or .links arrays
+        2. data.magnets as list with first element containing .files or .links
+        3. Top-level data.files or data.links arrays (legacy/fallback)
         """
         data = self._get("/magnet/status", id=str(magnet_id))
         files_out: List[Dict[str, Any]] = []
