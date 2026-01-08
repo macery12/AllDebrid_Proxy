@@ -129,7 +129,7 @@ def delete_task(task_id: str, purge_files: bool = False):
     shutil.rmtree(os.path.join(base, "files"))
     return {"ok": True}
 
-@router.get("/tasks/{task_id}/events", dependencies=[Depends(verify_worker_key)])
+@router.get("/tasks/{task_id}/events")
 async def task_events(task_id: str):
     with SessionLocal() as s:
         t = s.get(Task, task_id)
