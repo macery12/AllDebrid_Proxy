@@ -450,24 +450,41 @@ def stream_video(task_id, relpath):
         resp.headers["Last-Modified"] = last_mod
         return resp
     
-    # Parse Range header
+    # Parse Range header (simple byte range only, ignore multi-range)
     try:
-        byte_range = range_header.replace('bytes=', '').split('-')
-        start = int(byte_range[0]) if byte_range[0] else 0
-        end = int(byte_range[1]) if len(byte_range) > 1 and byte_range[1] else file_size - 1
+        # Extract byte range - expect format like "bytes=0-1023" or "bytes=1024-"
+        if not range_header.startswith('bytes='):
+            abort(416)
+        
+        byte_range = range_header[6:].split(',')[0].strip()  # Take first range only
+        parts = byte_range.split('-')
+        
+        if len(parts) != 2:
+            abort(416)
+        
+        start = int(parts[0]) if parts[0] else 0
+        end = int(parts[1]) if parts[1] else file_size - 1
         
         # Ensure valid range
-        if start >= file_size or end >= file_size or start > end:
+        if start < 0 or start >= file_size or end >= file_size or start > end:
             abort(416)  # Range Not Satisfiable
         
         length = end - start + 1
         
-        # Read the requested range
-        with open(full, 'rb') as f:
-            f.seek(start)
-            data = f.read(length)
+        # Stream the requested range in chunks to avoid memory issues
+        def generate():
+            with open(full, 'rb') as f:
+                f.seek(start)
+                remaining = length
+                chunk_size = 64 * 1024  # 64KB chunks
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
         
-        resp = make_response(data)
+        resp = make_response(generate())
         resp.status_code = 206  # Partial Content
         resp.headers["Content-Type"] = mime
         resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
@@ -479,7 +496,7 @@ def stream_video(task_id, relpath):
         
         return resp
     except (ValueError, IndexError):
-        abort(400, "Invalid Range header")
+        abort(416, "Invalid Range header")
 
 # ------------------------------------------------------------------------------
 # Dev server entrypoint
