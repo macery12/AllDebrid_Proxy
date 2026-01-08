@@ -16,13 +16,12 @@
         <thead><tr><th>Path</th><th class="size">Size</th><th style="width:200px">Actions</th></tr></thead>
         <tbody>
           {% for e in entries %}
-          {% set is_video = e.rel.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ogv')) %}
           <tr>
             <td>{{ e.rel }}</td>
             <td class="size">{{ e.size|hbytes }}</td>
             <td>
               <div class="row" style="gap:6px">
-                {% if is_video %}
+                {% if e.is_video %}
                 <a class="btn good" href="/d/{{ task_id }}/play/{{ e.rel }}" style="padding:6px 10px">▶ Play</a>
                 {% endif %}
                 <a class="btn" href="/d/{{ task_id }}/raw/{{ e.rel }}" target="_blank" style="padding:6px 10px">Download</a>

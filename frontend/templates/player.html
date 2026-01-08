@@ -32,11 +32,16 @@
   // Store playback position in localStorage
   const storageKey = 'video-position-' + {{ task_id|tojson }} + '-' + {{ relpath|tojson }};
   
-  // Restore last position
-  const savedTime = localStorage.getItem(storageKey);
-  if (savedTime && !isNaN(savedTime)) {
-    video.currentTime = parseFloat(savedTime);
-  }
+  // Restore last position after metadata is loaded
+  video.addEventListener('loadedmetadata', function() {
+    const savedTime = localStorage.getItem(storageKey);
+    if (savedTime && !isNaN(savedTime)) {
+      const time = parseFloat(savedTime);
+      if (time > 0 && time < video.duration) {
+        video.currentTime = time;
+      }
+    }
+  });
   
   // Save position every 5 seconds while playing
   let saveInterval;
