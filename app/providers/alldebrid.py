@@ -157,31 +157,12 @@ class AllDebrid:
         locked_link = fi.get("link")
         
         if not locked_link:
-            # If no link in normalized files, try to find it in the raw response
-            raw = st.get("raw") or {}
-            mags = raw.get("magnets")
-            
-            if isinstance(mags, dict) and isinstance(mags.get("files"), list):
-                # Flatten all e[] entries to find the file at file_index
-                all_entries = []
-                for f in mags["files"]:
-                    if "e" in f and isinstance(f["e"], list):
-                        all_entries.extend(f["e"])
-                    else:
-                        all_entries.append(f)
-                
-                if file_index < len(all_entries):
-                    entry = all_entries[file_index]
-                    locked_link = entry.get("l") or entry.get("link") or entry.get("url")
-        
-        if not locked_link:
             raise RuntimeError(
                 f"download_link: couldn't locate a locked link for file_index {file_index}. "
                 f"The magnet may not be ready or the file structure is unexpected."
             )
 
         # Unlock the locked link to get the final direct URL
-        # Note: Using POST as specified in the comment, though GET also works
         unlocked = self._get("/link/unlock", link=locked_link)
         direct = unlocked.get("link") or unlocked.get("download") or unlocked.get("url")
         if not direct:
