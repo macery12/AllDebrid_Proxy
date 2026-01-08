@@ -72,19 +72,33 @@ class AllDebrid:
 
     def _normalize_items(self, arr: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Normalize any of these shapes into [{name, size, link?}]:
-          {name|filename, size|filesize, link|url?}
+        Normalize v4.1 file entries into [{name, size, link?}].
+        
+        In v4.1, files are structured as:
+          - files[].e[] where each entry has {n: name, s: size, l: locked_link}
+          - OR older formats with {name|filename, size|filesize, link|url}
+        
+        This flattens nested e[] arrays and normalizes field names.
         """
         out: List[Dict[str, Any]] = []
-        for f in arr:
-            name = f.get("name") or f.get("filename") or ""
-            size = f.get("size") or f.get("filesize") or 0
-            try:
-                size = int(size)
-            except Exception:
-                size = 0
-            link = f.get("link") or f.get("url") or None
-            out.append({"name": name, "size": size, "link": link})
+        
+        for item in arr:
+            # v4.1 format: check if this is a directory with e[] entries
+            if "e" in item and isinstance(item["e"], list):
+                # Recursively flatten entries
+                out.extend(self._normalize_items(item["e"]))
+            else:
+                # Extract fields - try v4.1 format first (n, s, l), then fallback to older formats
+                name = item.get("n") or item.get("name") or item.get("filename") or ""
+                size = item.get("s") or item.get("size") or item.get("filesize") or 0
+                try:
+                    size = int(size)
+                except Exception:
+                    size = 0
+                # Note: 'l' contains a locked link that must be unlocked via /link/unlock
+                link = item.get("l") or item.get("link") or item.get("url") or None
+                out.append({"name": name, "size": size, "link": link})
+        
         return out
 
     def get_magnet_status(self, magnet_id: str) -> Dict[str, Any]:
@@ -124,7 +138,11 @@ class AllDebrid:
     def download_link(self, magnet_id: str, file_index: int) -> str:
         """
         Produce a direct, unlocked URL for the file at `file_index`.
-        Tries per-file link/url from normalized files, then falls back to raw mirrors.
+        
+        In v4.1:
+        1. Get magnet status which returns normalized files
+        2. Extract the locked link from files[file_index]
+        3. Call /link/unlock to get the final direct URL
         """
         st = self.get_magnet_status(magnet_id)
         files = st.get("files") or []
@@ -134,42 +152,37 @@ class AllDebrid:
         if not (0 <= file_index < len(files)):
             raise IndexError(f"download_link: file_index {file_index} out of range (0..{len(files)-1})")
 
+        # Get the locked link from the normalized file entry
         fi = files[file_index]
-        url_candidate = fi.get("link") or fi.get("url")
-
-        if not url_candidate:
-            # Fall back to raw shape at the same index
+        locked_link = fi.get("link")
+        
+        if not locked_link:
+            # If no link in normalized files, try to find it in the raw response
             raw = st.get("raw") or {}
-            candidates: List[Optional[str]] = []
-
             mags = raw.get("magnets")
-            if isinstance(mags, dict):
-                if isinstance(mags.get("links"), list) and file_index < len(mags["links"]):
-                    candidates.append(mags["links"][file_index].get("link") or mags["links"][file_index].get("url"))
-                if isinstance(mags.get("files"), list) and file_index < len(mags["files"]):
-                    candidates.append(mags["files"][file_index].get("link") or mags["files"][file_index].get("url"))
-            elif isinstance(mags, list) and mags:
-                m = mags[0]
-                if isinstance(m.get("links"), list) and file_index < len(m["links"]):
-                    candidates.append(m["links"][file_index].get("link") or m["links"][file_index].get("url"))
-                if isinstance(m.get("files"), list) and file_index < len(m["files"]):
-                    candidates.append(m["files"][file_index].get("link") or m["files"][file_index].get("url"))
-
-            if isinstance(raw.get("links"), list) and file_index < len(raw["links"]):
-                candidates.append(raw["links"][file_index].get("link") or raw["links"][file_index].get("url"))
-            if isinstance(raw.get("files"), list) and file_index < len(raw["files"]):
-                candidates.append(raw["files"][file_index].get("link") or raw["files"][file_index].get("url"))
-
-            url_candidate = next((c for c in candidates if c), None)
-
-        if not url_candidate:
+            
+            if isinstance(mags, dict) and isinstance(mags.get("files"), list):
+                # Flatten all e[] entries to find the file at file_index
+                all_entries = []
+                for f in mags["files"]:
+                    if "e" in f and isinstance(f["e"], list):
+                        all_entries.extend(f["e"])
+                    else:
+                        all_entries.append(f)
+                
+                if file_index < len(all_entries):
+                    entry = all_entries[file_index]
+                    locked_link = entry.get("l") or entry.get("link") or entry.get("url")
+        
+        if not locked_link:
             raise RuntimeError(
-                "download_link: couldn't locate a per-file URL in status; "
-                "adapt mapping if your account exposes a different field."
+                f"download_link: couldn't locate a locked link for file_index {file_index}. "
+                f"The magnet may not be ready or the file structure is unexpected."
             )
 
-        # Unlock to get the final direct URL
-        unlocked = self._get("/link/unlock", link=url_candidate)
+        # Unlock the locked link to get the final direct URL
+        # Note: Using POST as specified in the comment, though GET also works
+        unlocked = self._get("/link/unlock", link=locked_link)
         direct = unlocked.get("link") or unlocked.get("download") or unlocked.get("url")
         if not direct:
             raise RuntimeError(f"download_link: unlock returned no direct link (payload={unlocked})")
