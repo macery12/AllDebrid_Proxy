@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ filename }} — Video Player{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>{{ filename }}</h2>
+  <div style="margin-top: 16px;">
+    <video 
+      id="videoPlayer"
+      controls 
+      preload="metadata"
+      style="width: 100%; max-height: 70vh; background: #000; border-radius: 8px;"
+    >
+      <source src="{{ video_url }}" type="{{ mime_type }}">
+      Your browser does not support the video tag.
+    </video>
+  </div>
+  <div class="row" style="gap:8px; margin-top: 16px;">
+    <a class="btn" href="{{ back_url }}">← Back to folder</a>
+    <a class="btn" href="{{ download_url }}" download>Download</a>
+  </div>
+  <div class="muted small" style="margin-top: 12px;">
+    <strong>File:</strong> {{ relpath }}<br>
+    <strong>Size:</strong> {{ size|hbytes }}<br>
+    <strong>Type:</strong> {{ mime_type }}
+  </div>
+</section>
+
+<script>
+(function() {
+  const video = document.getElementById('videoPlayer');
+  
+  // Store playback position in localStorage
+  const storageKey = 'video-position-{{ task_id }}-{{ relpath|urlencode }}';
+  
+  // Restore last position
+  const savedTime = localStorage.getItem(storageKey);
+  if (savedTime && !isNaN(savedTime)) {
+    video.currentTime = parseFloat(savedTime);
+  }
+  
+  // Save position every 5 seconds while playing
+  let saveInterval;
+  video.addEventListener('play', function() {
+    saveInterval = setInterval(function() {
+      localStorage.setItem(storageKey, video.currentTime.toString());
+    }, 5000);
+  });
+  
+  video.addEventListener('pause', function() {
+    clearInterval(saveInterval);
+    localStorage.setItem(storageKey, video.currentTime.toString());
+  });
+  
+  // Clear saved position when video ends
+  video.addEventListener('ended', function() {
+    localStorage.removeItem(storageKey);
+  });
+  
+  // Handle errors
+  video.addEventListener('error', function(e) {
+    console.error('Video error:', e);
+    const msg = video.error ? 
+      'Error loading video: ' + video.error.message : 
+      'Error loading video';
+    alert(msg);
+  });
+})();
+</script>
+{% endblock %}

@@ -159,6 +159,12 @@ def _accel_path(task_id: str, relpath: str) -> str:
     relpath = relpath.lstrip("/").replace("\\", "/")
     return f"{app.config['NGINX_ACCEL_PREFIX']}/{task_id}/files/{relpath}"
 
+def _is_video(filename: str) -> bool:
+    """Check if a file is a video based on extension"""
+    video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ogv'}
+    ext = Path(filename).suffix.lower()
+    return ext in video_exts
+
 # ------------------------------------------------------------------------------
 # Pages / Routes
 # ------------------------------------------------------------------------------
@@ -380,6 +386,100 @@ def raw_file(task_id, relpath):
         conditional=True,
         max_age=600
     )
+
+@app.get("/d/<task_id>/play/<path:relpath>")
+@login_required
+def play_video(task_id, relpath):
+    """Video player page"""
+    base = safe_task_base(task_id)
+    full = (base / relpath).resolve()
+    if not str(full).startswith(str(base)):
+        abort(400, "Invalid path")
+    if not full.exists() or not full.is_file():
+        abort(404)
+    
+    if not _is_video(full.name):
+        flash("This file is not a video", "error")
+        return redirect(url_for("list_folder", task_id=task_id))
+    
+    st = full.stat()
+    mime = _guess_mime(full.name)
+    
+    return render_template(
+        "player.html",
+        task_id=task_id,
+        relpath=relpath,
+        filename=full.name,
+        size=st.st_size,
+        mime_type=mime,
+        video_url=url_for("stream_video", task_id=task_id, relpath=relpath),
+        download_url=url_for("raw_file", task_id=task_id, relpath=relpath),
+        back_url=url_for("list_folder", task_id=task_id)
+    )
+
+@app.get("/d/<task_id>/stream/<path:relpath>")
+@login_required
+def stream_video(task_id, relpath):
+    """Stream video with Range request support"""
+    base = safe_task_base(task_id)
+    full = (base / relpath).resolve()
+    if not str(full).startswith(str(base)):
+        abort(400, "Invalid path")
+    if not full.exists() or not full.is_file():
+        abort(404)
+    
+    # Get file metadata
+    st = full.stat()
+    file_size = st.st_size
+    mime = _guess_mime(full.name)
+    etag = _etag_for_stat(st)
+    last_mod = _http_time(st.st_mtime)
+    
+    # Handle Range requests for video seeking
+    range_header = request.headers.get('Range')
+    if not range_header:
+        # No range, send full file
+        resp = make_response(send_file(
+            full,
+            mimetype=mime,
+            conditional=True
+        ))
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = str(file_size)
+        resp.headers["ETag"] = etag
+        resp.headers["Last-Modified"] = last_mod
+        return resp
+    
+    # Parse Range header
+    try:
+        byte_range = range_header.replace('bytes=', '').split('-')
+        start = int(byte_range[0]) if byte_range[0] else 0
+        end = int(byte_range[1]) if len(byte_range) > 1 and byte_range[1] else file_size - 1
+        
+        # Ensure valid range
+        if start >= file_size or end >= file_size or start > end:
+            abort(416)  # Range Not Satisfiable
+        
+        length = end - start + 1
+        
+        # Read the requested range
+        with open(full, 'rb') as f:
+            f.seek(start)
+            data = f.read(length)
+        
+        resp = make_response(data)
+        resp.status_code = 206  # Partial Content
+        resp.headers["Content-Type"] = mime
+        resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        resp.headers["Content-Length"] = str(length)
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["ETag"] = etag
+        resp.headers["Last-Modified"] = last_mod
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        
+        return resp
+    except (ValueError, IndexError):
+        abort(400, "Invalid Range header")
 
 # ------------------------------------------------------------------------------
 # Dev server entrypoint
