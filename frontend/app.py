@@ -474,19 +474,16 @@ def stream_video(task_id, relpath):
         
         # Stream the requested range in chunks to avoid memory issues
         def generate():
-            try:
-                with open(full, 'rb') as f:
-                    f.seek(start)
-                    remaining = length
-                    chunk_size = 64 * 1024  # 64KB chunks
-                    while remaining > 0:
-                        chunk = f.read(min(chunk_size, remaining))
-                        if not chunk:
-                            break
-                        remaining -= len(chunk)
-                        yield chunk
-            finally:
-                pass  # File is automatically closed by context manager
+            with open(full, 'rb') as f:
+                f.seek(start)
+                remaining = length
+                chunk_size = 64 * 1024  # 64KB chunks
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
         
         resp = make_response(generate())
         resp.status_code = 206  # Partial Content
