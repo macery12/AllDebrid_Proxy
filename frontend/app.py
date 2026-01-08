@@ -289,6 +289,37 @@ def debug_config():
     })
 
 # ------------------------------------------------------------------------------
+# SSE Proxy for task events
+# ------------------------------------------------------------------------------
+@app.get("/api/tasks/<task_id>/events")
+@login_required
+def task_events_proxy(task_id):
+    """Proxy SSE endpoint to backend with authentication"""
+    import requests
+    
+    url = w_url(f"/api/tasks/{task_id}/events")
+    headers = w_headers()
+    
+    def event_stream():
+        try:
+            with requests.get(url, headers=headers, stream=True, timeout=None) as r:
+                r.raise_for_status()
+                for line in r.iter_lines(decode_unicode=True):
+                    if line:
+                        yield f"{line}\n"
+                    else:
+                        yield "\n"
+        except Exception as e:
+            log.error(f"SSE proxy error: {e}")
+            yield f"data: {{'error': '{str(e)}'}}\n\n"
+    
+    response = make_response(event_stream())
+    response.headers['Content-Type'] = 'text/event-stream'
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
+
+# ------------------------------------------------------------------------------
 # Fileshare
 # ------------------------------------------------------------------------------
 def safe_task_base(task_id: str) -> Path:
