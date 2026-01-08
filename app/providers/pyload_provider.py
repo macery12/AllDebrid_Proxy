@@ -73,16 +73,27 @@ class PyLoadProvider:
         for magnet in magnets:
             try:
                 # Add package with magnet link (uses PUT method)
+                # JSON payload: {"name": "...", "links": ["magnet:..."]}
                 result = self._api_call(
                     "addPackage",
                     method="PUT",
                     name="Magnet Download",
                     links=[magnet]
                 )
-                # Result is typically the package ID
-                pkg_id = result if isinstance(result, (int, str)) else result.get("id")
+                # PyLoad API may return package_id, pid, or the ID directly
+                pkg_id = None
+                if isinstance(result, (int, str)):
+                    pkg_id = str(result)
+                elif isinstance(result, dict):
+                    # Try common response field names
+                    raw_id = result.get("package_id") or result.get("pid") or result.get("id")
+                    if raw_id is not None:
+                        pkg_id = str(raw_id)
+                
                 if pkg_id:
-                    package_ids.append(str(pkg_id))
+                    package_ids.append(pkg_id)
+                else:
+                    raise PyLoadProviderError(f"PyLoad returned no package ID: {result}")
             except Exception as e:
                 raise PyLoadProviderError(f"Failed to upload magnet: {e}")
         return package_ids
@@ -96,15 +107,27 @@ class PyLoadProvider:
         for link in links:
             try:
                 # Add package with link (uses PUT method)
+                # JSON payload: {"name": "...", "links": ["http://..."]}
                 result = self._api_call(
                     "addPackage",
                     method="PUT",
                     name="Direct Download",
                     links=[link]
                 )
-                pkg_id = result if isinstance(result, (int, str)) else result.get("id")
+                # PyLoad API may return package_id, pid, or the ID directly
+                pkg_id = None
+                if isinstance(result, (int, str)):
+                    pkg_id = str(result)
+                elif isinstance(result, dict):
+                    # Try common response field names
+                    raw_id = result.get("package_id") or result.get("pid") or result.get("id")
+                    if raw_id is not None:
+                        pkg_id = str(raw_id)
+                
                 if pkg_id:
-                    package_ids.append(str(pkg_id))
+                    package_ids.append(pkg_id)
+                else:
+                    raise PyLoadProviderError(f"PyLoad returned no package ID: {result}")
             except Exception as e:
                 raise PyLoadProviderError(f"Failed to upload link: {e}")
         return package_ids
