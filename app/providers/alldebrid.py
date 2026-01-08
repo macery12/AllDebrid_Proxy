@@ -17,7 +17,7 @@ class AllDebrid:
       - download_link(magnet_id: str, file_index: int) -> str  # unlocked direct URL
     """
 
-    def __init__(self, api_key: str, agent: str = "alldebrid-proxy", base_url: str = "https://api.alldebrid.com/v4"):
+    def __init__(self, api_key: str, agent: str = "alldebrid-proxy", base_url: str = "https://api.alldebrid.com/v4.1"):
         if not api_key:
             raise ValueError("AllDebrid: api_key is required")
         self.api_key = api_key
