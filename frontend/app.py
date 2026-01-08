@@ -314,7 +314,11 @@ def list_folder(task_id):
     for p in sorted(base.rglob("*")):
         if p.is_file():
             rel = p.relative_to(base).as_posix()
-            items.append({"rel": rel, "size": p.stat().st_size})
+            items.append({
+                "rel": rel, 
+                "size": p.stat().st_size,
+                "is_video": _is_video(p.name)
+            })
     return render_template("folder.html", task_id=task_id, entries=items)
 
 @app.get("/d/<task_id>/links.txt")
@@ -438,17 +442,13 @@ def stream_video(task_id, relpath):
     # Handle Range requests for video seeking
     range_header = request.headers.get('Range')
     if not range_header:
-        # No range, send full file
-        resp = make_response(send_file(
+        # No range, send full file with Flask's built-in conditional support
+        return send_file(
             full,
             mimetype=mime,
-            conditional=True
-        ))
-        resp.headers["Accept-Ranges"] = "bytes"
-        resp.headers["Content-Length"] = str(file_size)
-        resp.headers["ETag"] = etag
-        resp.headers["Last-Modified"] = last_mod
-        return resp
+            conditional=True,
+            max_age=3600
+        )
     
     # Parse Range header (simple byte range only, ignore multi-range)
     try:
@@ -462,8 +462,9 @@ def stream_video(task_id, relpath):
         if len(parts) != 2:
             abort(416)
         
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if parts[1] else file_size - 1
+        # Parse start and end, handling empty strings
+        start = int(parts[0]) if parts[0].strip() else 0
+        end = int(parts[1]) if parts[1].strip() else file_size - 1
         
         # Ensure valid range
         if start < 0 or start >= file_size or end >= file_size or start > end:
