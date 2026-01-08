@@ -43,12 +43,12 @@
     }
   });
   
-  // Save position every 5 seconds while playing
+  // Save position every 10 seconds while playing
   let saveInterval;
   video.addEventListener('play', function() {
     saveInterval = setInterval(function() {
       localStorage.setItem(storageKey, video.currentTime.toString());
-    }, 5000);
+    }, 10000);
   });
   
   video.addEventListener('pause', function() {
