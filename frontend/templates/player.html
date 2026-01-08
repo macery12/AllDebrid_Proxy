@@ -30,7 +30,7 @@
   const video = document.getElementById('videoPlayer');
   
   // Store playback position in localStorage
-  const storageKey = 'video-position-{{ task_id }}-{{ relpath|urlencode }}';
+  const storageKey = 'video-position-' + {{ task_id|tojson }} + '-' + {{ relpath|tojson }};
   
   // Restore last position
   const savedTime = localStorage.getItem(storageKey);
