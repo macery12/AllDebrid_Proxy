@@ -203,17 +203,26 @@ table.admin-table tbody tr:hover {
 
 <script>
 let allTasks = [];
+const workerBaseUrl = {{ worker_base_url|tojson }};
+const workerKey = {{ worker_key|tojson }};
 
 async function loadTasks() {
   const container = document.getElementById('tasksContainer');
   container.innerHTML = '<div class="loading">Loading tasks...</div>';
   
   try {
-    const response = await fetch('/api/admin/tasks');
+    const headers = {};
+    if (workerKey) {
+      headers['X-Worker-Key'] = workerKey;
+    }
+    
+    const response = await fetch(`${workerBaseUrl}/api/tasks`, {
+      headers: headers
+    });
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to fetch tasks');
+      throw new Error(errorData.error || errorData.detail || 'Failed to fetch tasks');
     }
     
     const data = await response.json();
@@ -339,13 +348,19 @@ async function deleteTask(taskId) {
   }
   
   try {
-    const response = await fetch(`/api/admin/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
-      method: 'DELETE'
+    const headers = {};
+    if (workerKey) {
+      headers['X-Worker-Key'] = workerKey;
+    }
+    
+    const response = await fetch(`${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
+      method: 'DELETE',
+      headers: headers
     });
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to delete task');
+      throw new Error(errorData.error || errorData.detail || 'Failed to delete task');
     }
     
     alert('Task deleted successfully');

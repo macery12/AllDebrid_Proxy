@@ -281,37 +281,9 @@ def create_task():
 def admin_page():
     """Admin dashboard to view and manage all tasks"""
     log.info("Admin page accessed")
-    return render_template("admin.html")
-
-@app.route("/api/admin/tasks", methods=["GET"])
-@login_required
-def admin_list_tasks():
-    """Proxy endpoint for admin to list tasks"""
-    status = request.args.get("status")
-    limit = request.args.get("limit", 100, type=int)
-    offset = request.args.get("offset", 0, type=int)
-    
-    params = {"limit": min(limit, 100), "offset": offset}
-    if status:
-        params["status"] = status
-    
-    body, err = w_request("GET", "/api/tasks", params=params)
-    if err:
-        return jsonify({"error": err[0]}), err[1]
-    return jsonify(body)
-
-@app.route("/api/admin/tasks/<task_id>", methods=["DELETE"])
-@login_required
-def admin_delete_task(task_id):
-    """
-    Proxy endpoint for admin to delete tasks
-    CSRF protection is provided by Flask-Login's session-based authentication
-    """
-    purge = request.args.get("purge_files", "true").lower() == "true"
-    body, err = w_request("DELETE", f"/api/tasks/{task_id}", params={"purge_files": purge})
-    if err:
-        return jsonify({"error": err[0]}), err[1]
-    return jsonify(body)
+    return render_template("admin.html", 
+                         worker_base_url=app.config["WORKER_BASE_URL"],
+                         worker_key=app.config["WORKER_KEY"])
 
 @app.errorhandler(404)
 def not_found(e):
