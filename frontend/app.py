@@ -4,10 +4,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from pathlib import Path
 from dotenv import load_dotenv
 import os, io, tarfile, logging, requests, mimetypes, hashlib
-import sys
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ------------------------------------------------------------------------------
 # Bootstrapping / App setup
