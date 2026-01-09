@@ -85,19 +85,26 @@ def create_task(req: CreateTaskRequest):
         raise HTTPException(status_code=400, detail="Invalid magnet (infohash not found)")
     
     with SessionLocal() as s:
-        # Check for existing completed tasks with the same infohash
-        existing_completed = s.execute(
+        # Check for existing tasks with the same infohash (completed or in-progress)
+        # This prevents duplicate downloads of the same magnet
+        reusable_statuses = (
+            TaskStatus.COMPLETED_STATUSES + 
+            TaskStatus.ACTIVE_STATUSES + 
+            [TaskStatus.QUEUED, TaskStatus.RESOLVING]
+        )
+        
+        existing_task = s.execute(
             select(Task)
             .where(Task.infohash == infohash)
-            .where(Task.status.in_(TaskStatus.COMPLETED_STATUSES))
+            .where(Task.status.in_(reusable_statuses))
             .order_by(Task.created_at.desc())
         ).scalars().first()
         
-        if existing_completed:
-            # Reuse existing completed task
+        if existing_task:
+            # Reuse existing task (completed or in-progress)
             return {
-                "taskId": existing_completed.id, 
-                "status": existing_completed.status,
+                "taskId": existing_task.id, 
+                "status": existing_task.status,
                 "reused": True,
                 "message": f"Reusing existing task with matching infohash"
             }
