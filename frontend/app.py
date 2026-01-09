@@ -152,6 +152,28 @@ def _http_time(ts: float) -> str:
     return email.utils.formatdate(ts, usegmt=True)
 
 def _guess_mime(name: str) -> str:
+    """Guess MIME type with explicit video format support"""
+    # Explicit mappings for video formats that may not be in mimetypes
+    ext_lower = Path(name).suffix.lower()
+    video_mimes = {
+        '.mp4': 'video/mp4',
+        '.m4v': 'video/mp4',
+        '.mkv': 'video/x-matroska',
+        '.webm': 'video/webm',
+        '.avi': 'video/x-msvideo',
+        '.mov': 'video/quicktime',
+        '.wmv': 'video/x-ms-wmv',
+        '.flv': 'video/x-flv',
+        '.mpg': 'video/mpeg',
+        '.mpeg': 'video/mpeg',
+        '.3gp': 'video/3gpp',
+        '.ogv': 'video/ogg',
+        '.ts': 'video/mp2t',
+    }
+    
+    if ext_lower in video_mimes:
+        return video_mimes[ext_lower]
+    
     m, _ = mimetypes.guess_type(name)
     return m or "application/octet-stream"
 
@@ -303,6 +325,100 @@ def debug_config():
         "storage_root": app.config["STORAGE_ROOT"],
     })
 
+@app.get("/debug/video/<task_id>/<path:relpath>")
+@login_required
+def debug_video(task_id, relpath):
+    """Debug endpoint to diagnose video streaming issues"""
+    try:
+        base = safe_task_base(task_id)
+        full = (base / relpath).resolve()
+        
+        if not str(full).startswith(str(base)):
+            return jsonify({"error": "Invalid path", "status": "error"}), 400
+        
+        if not full.exists():
+            return jsonify({"error": "File not found", "status": "error"}), 404
+        
+        if not full.is_file():
+            return jsonify({"error": "Not a file", "status": "error"}), 400
+        
+        st = full.stat()
+        mime = _guess_mime(full.name)
+        is_video = _is_video(full.name)
+        is_downloading = _is_still_downloading(full)
+        
+        # Check if file is readable
+        readable = False
+        try:
+            with open(full, 'rb') as f:
+                f.read(1)
+            readable = True
+        except Exception as e:
+            readable = False
+        
+        debug_info = {
+            "status": "ok",
+            "file": {
+                "path": str(full.relative_to(base)),
+                "size": st.st_size,
+                "size_human": human_bytes(st.st_size),
+                "mime_type": mime,
+                "is_video": is_video,
+                "is_downloading": is_downloading,
+                "readable": readable,
+                "extension": Path(full.name).suffix.lower(),
+            },
+            "streaming": {
+                "stream_url": url_for("stream_video", task_id=task_id, relpath=relpath, _external=True),
+                "play_url": url_for("play_video", task_id=task_id, relpath=relpath, _external=True),
+                "download_url": url_for("raw_file", task_id=task_id, relpath=relpath, _external=True),
+            },
+            "browser_support": {
+                "mp4": "Full support in all modern browsers",
+                "webm": "Full support in all modern browsers",
+                "mkv": "Limited - May work in some browsers but not recommended for web playback",
+                "avi": "Limited - Older format, may not work in browsers",
+                "mov": "Partial - Works in Safari, limited in others",
+            },
+            "recommendations": []
+        }
+        
+        # Add recommendations based on file type
+        ext = Path(full.name).suffix.lower()
+        if ext == '.mkv':
+            debug_info["recommendations"].append(
+                "MKV files may not play in browsers. Consider transcoding to MP4 or WebM for better compatibility."
+            )
+        elif ext not in ['.mp4', '.webm', '.m4v']:
+            debug_info["recommendations"].append(
+                f"{ext.upper()} format has limited browser support. MP4 or WebM recommended for web playback."
+            )
+        
+        if is_downloading:
+            debug_info["recommendations"].append(
+                "File is still downloading. Wait for download to complete before playing."
+            )
+        
+        if st.st_size == 0:
+            debug_info["recommendations"].append(
+                "File is empty (0 bytes). This will cause playback issues."
+            )
+        
+        if not readable:
+            debug_info["recommendations"].append(
+                "File is not readable. Check file permissions."
+            )
+        
+        return jsonify(debug_info)
+    
+    except Exception as e:
+        log.exception(f"Error in debug_video: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }), 500
+
 # ------------------------------------------------------------------------------
 # Fileshare
 # ------------------------------------------------------------------------------
@@ -447,6 +563,17 @@ def play_video(task_id, relpath):
         back_url=url_for("list_folder", task_id=task_id)
     )
 
+@app.route("/d/<task_id>/stream/<path:relpath>", methods=["OPTIONS"])
+@login_required
+def stream_video_options(task_id, relpath):
+    """Handle CORS preflight for video streaming"""
+    resp = make_response("", 204)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
+    resp.headers["Access-Control-Max-Age"] = "3600"
+    return resp
+
 @app.get("/d/<task_id>/stream/<path:relpath>")
 @login_required
 def stream_video(task_id, relpath):
@@ -473,12 +600,18 @@ def stream_video(task_id, relpath):
     range_header = request.headers.get('Range')
     if not range_header:
         # No range, send full file with Flask's built-in conditional support
-        return send_file(
+        resp = send_file(
             full,
             mimetype=mime,
             conditional=True,
             max_age=3600
         )
+        # Add CORS headers for video streaming
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
+        resp.headers["Accept-Ranges"] = "bytes"
+        return resp
     
     # Parse Range header (simple byte range only, ignore multi-range)
     try:
@@ -518,6 +651,10 @@ def stream_video(task_id, relpath):
             resp.headers["ETag"] = etag
             resp.headers["Last-Modified"] = last_mod
             resp.headers["Cache-Control"] = "public, max-age=3600"
+            # Add CORS headers for video streaming
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
             return resp
         
         # For larger ranges, use chunked streaming
@@ -542,6 +679,10 @@ def stream_video(task_id, relpath):
         resp.headers["ETag"] = etag
         resp.headers["Last-Modified"] = last_mod
         resp.headers["Cache-Control"] = "public, max-age=3600"
+        # Add CORS headers for video streaming
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
         
         return resp
     except (ValueError, IndexError):

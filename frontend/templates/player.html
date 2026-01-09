@@ -9,14 +9,21 @@
       controls 
       preload="metadata"
       style="width: 100%; max-height: 70vh; background: #000; border-radius: 8px;"
+      crossorigin="anonymous"
     >
       <source src="{{ video_url }}" type="{{ mime_type }}">
       Your browser does not support the video tag.
     </video>
   </div>
+  
+  <div id="statusMessage" style="margin-top: 12px; padding: 12px; background: #f0f0f0; border-radius: 4px; display: none;">
+    <strong>Status:</strong> <span id="statusText"></span>
+  </div>
+  
   <div class="row" style="gap:8px; margin-top: 16px;">
     <a class="btn" href="{{ back_url }}">← Back to folder</a>
     <a class="btn" href="{{ download_url }}" download>Download</a>
+    <button class="btn" onclick="showDebugInfo()" style="background: #ff9800; color: white;">🐛 Debug Info</button>
   </div>
   <div class="muted small" style="margin-top: 12px;">
     <strong>File:</strong> {{ relpath }}<br>
@@ -28,6 +35,19 @@
 <script>
 (function() {
   const video = document.getElementById('videoPlayer');
+  const statusMessage = document.getElementById('statusMessage');
+  const statusText = document.getElementById('statusText');
+  
+  function showStatus(msg, isError) {
+    statusText.textContent = msg;
+    statusMessage.style.display = 'block';
+    statusMessage.style.background = isError ? '#ffebee' : '#e8f5e9';
+    statusMessage.style.color = isError ? '#c62828' : '#2e7d32';
+  }
+  
+  function hideStatus() {
+    statusMessage.style.display = 'none';
+  }
   
   // Store playback position in localStorage
   const storageKey = 'video-position-' + {{ task_id|tojson }} + '-' + {{ relpath|tojson }};
@@ -38,11 +58,19 @@
   
   // Restore last position after metadata is loaded
   video.addEventListener('loadedmetadata', function() {
+    console.log('Video metadata loaded:', {
+      duration: video.duration,
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight
+    });
+    
     const savedTime = localStorage.getItem(storageKey);
     if (savedTime && !isNaN(savedTime)) {
       const time = parseFloat(savedTime);
       if (time > 0 && time < video.duration) {
         video.currentTime = time;
+        showStatus('Resumed from ' + Math.floor(time) + 's', false);
+        setTimeout(hideStatus, 3000);
       }
     }
   });
@@ -50,23 +78,28 @@
   // Save position every 10 seconds while playing
   let saveInterval;
   video.addEventListener('play', function() {
+    console.log('Video playing');
+    hideStatus();
     saveInterval = setInterval(function() {
       localStorage.setItem(storageKey, video.currentTime.toString());
     }, 10000);
   });
   
   video.addEventListener('pause', function() {
+    console.log('Video paused at', video.currentTime);
     clearInterval(saveInterval);
     localStorage.setItem(storageKey, video.currentTime.toString());
   });
   
   // Handle seeking events to save position immediately
   video.addEventListener('seeked', function() {
+    console.log('Seek completed to', video.currentTime);
     localStorage.setItem(storageKey, video.currentTime.toString());
   });
   
   // Detect rapid seeking and show warning if needed
   video.addEventListener('seeking', function() {
+    console.log('Seeking to', video.currentTime);
     const now = Date.now();
     if (now - lastSeekTime < 500) {
       // User is seeking rapidly, clear any pending timeout
@@ -75,6 +108,7 @@
         // If still buffering after rapid seeks, log it
         if (video.readyState < 3) {
           console.log('Buffering after rapid seek, current time:', video.currentTime);
+          showStatus('Buffering...', false);
         }
       }, 1000);
     }
@@ -85,23 +119,32 @@
   let bufferingTimeout;
   video.addEventListener('waiting', function() {
     console.log('Video buffering...');
+    showStatus('Buffering...', false);
     video.style.opacity = '0.7';
     clearTimeout(bufferingTimeout);
     // If buffering for more than 10 seconds, show a message
     bufferingTimeout = setTimeout(function() {
       if (video.readyState < 3) {
-        console.warn('Extended buffering detected. Try refreshing the page.');
+        console.warn('Extended buffering detected.');
+        showStatus('Buffering is taking longer than expected. This may indicate a network issue or incompatible video format.', true);
       }
     }, 10000);
   });
   
   video.addEventListener('canplay', function() {
+    console.log('Video can play');
     clearTimeout(bufferingTimeout);
     video.style.opacity = '1';
+    hideStatus();
+  });
+  
+  video.addEventListener('canplaythrough', function() {
+    console.log('Video can play through');
   });
   
   // Clear saved position when video ends
   video.addEventListener('ended', function() {
+    console.log('Video ended');
     localStorage.removeItem(storageKey);
   });
   
@@ -109,19 +152,96 @@
   video.addEventListener('error', function(e) {
     console.error('Video error:', e);
     let msg = 'Error loading video';
+    let details = '';
+    
     if (video.error) {
       switch(video.error.code) {
-        case 1: msg = 'Video loading aborted'; break;
-        case 2: msg = 'Network error while loading video'; break;
-        case 3: msg = 'Video decoding failed'; break;
-        case 4: msg = 'Video format not supported'; break;
-        default: msg = 'Error loading video: ' + video.error.message;
+        case 1: 
+          msg = 'Video loading aborted';
+          details = 'The video download was aborted. This may be a network issue.';
+          break;
+        case 2: 
+          msg = 'Network error while loading video';
+          details = 'Check your internet connection and try again.';
+          break;
+        case 3: 
+          msg = 'Video decoding failed';
+          details = 'The video file may be corrupted or use an unsupported codec.';
+          break;
+        case 4: 
+          msg = 'Video format not supported';
+          details = 'Your browser does not support this video format. Try downloading and using a media player, or convert to MP4/WebM.';
+          break;
+        default: 
+          msg = 'Error loading video';
+          details = video.error.message || 'Unknown error';
       }
     }
-    console.error(msg);
-    // Show error to user
-    alert(msg);
+    
+    console.error(msg, details);
+    showStatus(msg + ': ' + details, true);
   });
+  
+  // Log network state changes
+  video.addEventListener('loadstart', function() {
+    console.log('Load started');
+  });
+  
+  video.addEventListener('progress', function() {
+    if (video.buffered.length > 0) {
+      const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+      const duration = video.duration;
+      if (duration > 0) {
+        const percentBuffered = (bufferedEnd / duration * 100).toFixed(1);
+        console.log('Buffer progress:', percentBuffered + '%');
+      }
+    }
+  });
+  
+  // Global debug function
+  window.showDebugInfo = async function() {
+    try {
+      const debugUrl = '/debug/video/{{ task_id }}/{{ relpath }}';
+      const response = await fetch(debugUrl);
+      const data = await response.json();
+      
+      console.log('Debug Info:', data);
+      
+      let debugMsg = 'Video Debug Information:\\n\\n';
+      debugMsg += 'File: ' + data.file.path + '\\n';
+      debugMsg += 'Size: ' + data.file.size_human + '\\n';
+      debugMsg += 'MIME Type: ' + data.file.mime_type + '\\n';
+      debugMsg += 'Extension: ' + data.file.extension + '\\n';
+      debugMsg += 'Is Video: ' + data.file.is_video + '\\n';
+      debugMsg += 'Is Downloading: ' + data.file.is_downloading + '\\n';
+      debugMsg += 'Readable: ' + data.file.readable + '\\n\\n';
+      
+      if (data.recommendations && data.recommendations.length > 0) {
+        debugMsg += 'Recommendations:\\n';
+        data.recommendations.forEach(rec => {
+          debugMsg += '• ' + rec + '\\n';
+        });
+      }
+      
+      debugMsg += '\\nBrowser Support:\\n';
+      const ext = data.file.extension;
+      if (data.browser_support[ext.substring(1)]) {
+        debugMsg += data.browser_support[ext.substring(1)];
+      }
+      
+      debugMsg += '\\n\\nVideo Element State:\\n';
+      debugMsg += 'Ready State: ' + video.readyState + ' (0=nothing, 1=metadata, 2=current, 3=future, 4=enough)\\n';
+      debugMsg += 'Network State: ' + video.networkState + ' (0=empty, 1=idle, 2=loading, 3=no_source)\\n';
+      debugMsg += 'Current Time: ' + video.currentTime + 's\\n';
+      debugMsg += 'Duration: ' + video.duration + 's\\n';
+      debugMsg += 'Paused: ' + video.paused + '\\n';
+      
+      alert(debugMsg);
+    } catch (error) {
+      console.error('Error fetching debug info:', error);
+      alert('Error fetching debug info: ' + error.message);
+    }
+  };
 })();
 </script>
 {% endblock %}
