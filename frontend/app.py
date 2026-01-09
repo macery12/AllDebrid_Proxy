@@ -77,8 +77,8 @@ def admin_required(f):
     @login_required
     def decorated_function(*args, **kwargs):
         if not current_user.is_admin:
-            flash("You need admin privileges to access this page.", "error")
-            return redirect(url_for("index"))
+            # Show access denied page for non-admin users
+            return render_template("access_denied.html"), 403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -226,7 +226,7 @@ def logout():
     return redirect(url_for("index"))
 
 @app.route('/test-task')
-@login_required
+@admin_required
 def test_task_view():
     task_id = 'test-task-id'
     t = {
@@ -238,14 +238,14 @@ def test_task_view():
     return render_template('task.html', task_id=task_id, t=t, refresh=refresh, mode=mode)
 
 @app.get("/")
-@login_required
+@admin_required
 def index():
     hb, err = w_request("GET", "/health")
     health = {"ok": False, "error": err[0]} if err else hb
     return render_template("index.html", health=health)
 
 @app.post("/tasks/new")
-@login_required
+@admin_required
 def create_task():
     """Create a new download task with validation"""
     mode = request.form.get("mode", "auto")
@@ -411,7 +411,7 @@ def get_task(task_id: str):
     return body, None
 
 @app.get("/tasks/<task_id>")
-@login_required
+@admin_required
 def task_view(task_id):
     t, err = get_task(task_id)
     if err:
@@ -430,7 +430,7 @@ def task_view(task_id):
                          sse_token=sse_token)
 
 @app.post("/tasks/<task_id>/select")
-@login_required
+@admin_required
 def task_select(task_id):
     file_ids = request.form.getlist("fileIds")
     if not file_ids:
@@ -444,7 +444,7 @@ def task_select(task_id):
     return redirect(url_for("task_view", task_id=task_id, refresh=request.args.get("refresh", 3)))
 
 @app.post("/tasks/<task_id>/cancel")
-@login_required
+@admin_required
 def task_cancel(task_id):
     _, err = w_request("POST", f"/api/tasks/{task_id}/cancel")
     if err:
@@ -454,7 +454,7 @@ def task_cancel(task_id):
     return redirect(url_for("task_view", task_id=task_id))
 
 @app.post("/tasks/<task_id>/delete")
-@login_required
+@admin_required
 def task_delete(task_id):
     purge = request.form.get("purge_files", "false").lower() == "true"
     _, err = w_request("DELETE", f"/api/tasks/{task_id}", params={"purge_files": purge})
@@ -468,7 +468,7 @@ def task_delete(task_id):
 # Debug
 # ------------------------------------------------------------------------------
 @app.get("/debug/config")
-@login_required
+@admin_required
 def debug_config():
     return jsonify({
         "worker_base_url": app.config["WORKER_BASE_URL"],
@@ -489,6 +489,7 @@ def safe_task_base(task_id: str) -> Path:
     return base
 
 @app.get("/d/<task_id>/")
+@login_required
 def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
@@ -504,6 +505,7 @@ def list_folder(task_id):
     return render_template("folder.html", task_id=task_id, entries=items)
 
 @app.get("/d/<task_id>/links.txt")
+@login_required
 def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
@@ -514,6 +516,7 @@ def links_txt(task_id):
     return out.getvalue(), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 @app.get("/d/<task_id>.tar.gz")
+@login_required
 def tar_all(task_id):
     base = safe_task_base(task_id)
     mem = io.BytesIO()
@@ -530,6 +533,7 @@ def tar_all(task_id):
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
 
 @app.get("/d/<task_id>/raw/<path:relpath>")
+@login_required
 def raw_file(task_id, relpath):
     base = safe_task_base(task_id)
     full = (base / relpath).resolve()
@@ -582,6 +586,7 @@ def raw_file(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/play/<path:relpath>")
+@login_required
 def play_video(task_id, relpath):
     """Video player page"""
     base = safe_task_base(task_id)
@@ -616,6 +621,7 @@ def play_video(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
+@login_required
 def stream_video(task_id, relpath):
     """Stream video with Range request support"""
     base = safe_task_base(task_id)

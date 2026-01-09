@@ -70,23 +70,27 @@ Statistics are viewable in the Admin > Users page.
 
 ### 🔒 Security & Access Control
 
+**All users must be logged in** to access any part of the website.
+
 **Admin Users can:**
-- Access all admin pages (`/admin`, `/admin/users`, `/admin/tasks`)
-- Create and manage any task
-- View all tasks in the system
-- Manage user accounts
-- Access download pages
+- ✅ Access all admin pages (`/admin`, `/admin/users`, `/admin/tasks`)
+- ✅ Create and manage tasks (main page `/` with magnet submission)
+- ✅ View all tasks in the system
+- ✅ Manage user accounts
+- ✅ Access download pages (`/d/`)
 
 **Regular Users can:**
-- Create and manage their own tasks
-- Access the home page to create new downloads
-- Access download routes (see below)
+- ✅ Access download pages **only** (`/d/<task_id>/`)
+- ✅ Download and stream files
+- ❌ Cannot create new tasks
+- ❌ Cannot access admin dashboard
+- ❌ Cannot access the main page
 
-**Public Access (no authentication required):**
-- Download routes (`/d/<task_id>/`) remain public for easy file sharing
-- Anyone with the link can download files
+**Authentication Required:**
+- Download routes (`/d/<task_id>/`) require login (accessible to both admins and users)
+- All other routes require admin privileges
 
-This design allows you to share download links with friends without requiring them to have accounts.
+Regular users trying to access admin-only pages will see an "Access Denied" page explaining their permissions.
 
 ### 🛠️ Technical Details
 
