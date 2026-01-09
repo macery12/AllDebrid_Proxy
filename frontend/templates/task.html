@@ -431,8 +431,17 @@
       }
     }
 
+    // Show download progress if available
     const sizeBytes = merged.size || merged.totalSize || merged.fileSize || merged.bytes || 0;
-    if (sizeCell) sizeCell.textContent = formatBytes(sizeBytes);
+    const downloaded = merged.bytesDownloaded || 0;
+    if (sizeCell) {
+      if (downloaded > 0 && sizeBytes > 0 && downloaded < sizeBytes) {
+        const percent = Math.round((downloaded / sizeBytes) * 100);
+        sizeCell.textContent = `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)} (${percent}%)`;
+      } else {
+        sizeCell.textContent = formatBytes(sizeBytes);
+      }
+    }
 
     if (pill) {
       pill.textContent = merged.state || '—';
@@ -459,32 +468,53 @@
 
   function handleDelta(d) {
     const typ = (d.type || '').toLowerCase();
-    if (typ === 'state' || d.status !== undefined) {
+    
+    // Handle status/state changes
+    if (typ === 'state' || typ === 'hello' || d.status !== undefined) {
       if (statusPill && d.status !== undefined) {
         statusPill.textContent = d.status || '';
         statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
       }
     }
-    if (typ === 'file' || d.fileId) {
+    
+    // Handle file-specific events
+    if (typ === 'file' || typ === 'file.state' || typ === 'file.done' || typ === 'file.failed' || typ === 'file.progress' || d.fileId) {
       upsertRow(d);
     }
+    
+    // Handle files.listed event (array of files)
+    if (typ === 'files.listed' && Array.isArray(d.files)) {
+      d.files.forEach(upsertRow);
+    }
+    
+    // Handle full files array in snapshot
     if (Array.isArray(d.files)) {
       d.files.forEach(upsertRow);
     }
   }
 
+  es.onopen = () => {
+    console.log('SSE connected');
+  };
+
   es.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data || '{}');
+      console.log('SSE message:', d);
       if (d && Array.isArray(d.files)) {
         handleSnapshot(d);
       } else {
         handleDelta(d);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('SSE parse error:', err);
+    }
   };
 
-  es.onerror = () => { /* browser auto-reconnects */ };
+  es.onerror = (err) => {
+    console.error('SSE error:', err);
+    // Browser auto-reconnects, but log the error
+  };
 
   // Select all / Clear all + master checkbox wiring
   if (isSelectMode) {
