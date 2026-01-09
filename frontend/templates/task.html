@@ -307,6 +307,7 @@
         </form>
         {% endif %}
 
+        {% if not is_final %}
         <form method="post" action="{{ url_for('task_cancel', task_id=task_id, mode=mode) }}" style="display: inline;">
           <button class="btn warn" type="submit">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -317,6 +318,7 @@
             Cancel Task
           </button>
         </form>
+        {% endif %}
         
         <form method="post" action="{{ url_for('task_delete', task_id=task_id, mode=mode) }}" style="display: inline;">
           <input type="hidden" name="purge_files" value="true">

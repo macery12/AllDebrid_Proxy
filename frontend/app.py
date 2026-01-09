@@ -283,7 +283,7 @@ def admin_page():
     log.info("Admin page accessed")
     return render_template("admin.html")
 
-@app.get("/api/admin/tasks")
+@app.route("/api/admin/tasks", methods=["GET"])
 @login_required
 def admin_list_tasks():
     """Proxy endpoint for admin to list tasks"""
