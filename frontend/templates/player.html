@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ filename }} — Video Player{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>{{ filename }}</h2>
+  <div style="margin-top: 16px;">
+    <video 
+      id="videoPlayer"
+      controls 
+      preload="metadata"
+      style="width: 100%; max-height: 70vh; background: #000; border-radius: 8px;"
+    >
+      <source src="{{ video_url }}" type="{{ mime_type }}">
+      Your browser does not support the video tag.
+    </video>
+  </div>
+  <div class="row" style="gap:8px; margin-top: 16px;">
+    <a class="btn" href="{{ back_url }}">← Back to folder</a>
+    <a class="btn" href="{{ download_url }}" download>Download</a>
+  </div>
+  <div class="muted small" style="margin-top: 12px;">
+    <strong>File:</strong> {{ relpath }}<br>
+    <strong>Size:</strong> {{ size|hbytes }}<br>
+    <strong>Type:</strong> {{ mime_type }}
+  </div>
+</section>
+
+<script>
+(function() {
+  const video = document.getElementById('videoPlayer');
+  
+  // Store playback position in localStorage
+  const storageKey = 'video-position-' + {{ task_id|tojson }} + '-' + {{ relpath|tojson }};
+  
+  // Track if we're currently seeking to debounce rapid seeks
+  let seekTimeout;
+  let lastSeekTime = 0;
+  
+  // Restore last position after metadata is loaded
+  video.addEventListener('loadedmetadata', function() {
+    const savedTime = localStorage.getItem(storageKey);
+    if (savedTime && !isNaN(savedTime)) {
+      const time = parseFloat(savedTime);
+      if (time > 0 && time < video.duration) {
+        video.currentTime = time;
+      }
+    }
+  });
+  
+  // Save position every 10 seconds while playing
+  let saveInterval;
+  video.addEventListener('play', function() {
+    saveInterval = setInterval(function() {
+      localStorage.setItem(storageKey, video.currentTime.toString());
+    }, 10000);
+  });
+  
+  video.addEventListener('pause', function() {
+    clearInterval(saveInterval);
+    localStorage.setItem(storageKey, video.currentTime.toString());
+  });
+  
+  // Handle seeking events to save position immediately
+  video.addEventListener('seeked', function() {
+    localStorage.setItem(storageKey, video.currentTime.toString());
+  });
+  
+  // Detect rapid seeking and show warning if needed
+  video.addEventListener('seeking', function() {
+    const now = Date.now();
+    if (now - lastSeekTime < 500) {
+      // User is seeking rapidly, clear any pending timeout
+      clearTimeout(seekTimeout);
+      seekTimeout = setTimeout(function() {
+        // If still buffering after rapid seeks, log it
+        if (video.readyState < 3) {
+          console.log('Buffering after rapid seek, current time:', video.currentTime);
+        }
+      }, 1000);
+    }
+    lastSeekTime = now;
+  });
+  
+  // Handle waiting (buffering) events with visual feedback
+  let bufferingTimeout;
+  video.addEventListener('waiting', function() {
+    console.log('Video buffering...');
+    video.style.opacity = '0.7';
+    clearTimeout(bufferingTimeout);
+    // If buffering for more than 10 seconds, show a message
+    bufferingTimeout = setTimeout(function() {
+      if (video.readyState < 3) {
+        console.warn('Extended buffering detected. Try refreshing the page.');
+      }
+    }, 10000);
+  });
+  
+  video.addEventListener('canplay', function() {
+    clearTimeout(bufferingTimeout);
+    video.style.opacity = '1';
+  });
+  
+  // Clear saved position when video ends
+  video.addEventListener('ended', function() {
+    localStorage.removeItem(storageKey);
+  });
+  
+  // Handle errors with more details
+  video.addEventListener('error', function(e) {
+    console.error('Video error:', e);
+    let msg = 'Error loading video';
+    if (video.error) {
+      switch(video.error.code) {
+        case 1: msg = 'Video loading aborted'; break;
+        case 2: msg = 'Network error while loading video'; break;
+        case 3: msg = 'Video decoding failed'; break;
+        case 4: msg = 'Video format not supported'; break;
+        default: msg = 'Error loading video: ' + video.error.message;
+      }
+    }
+    console.error(msg);
+    // Show error to user
+    alert(msg);
+  });
+})();
+</script>
+{% endblock %}
