@@ -6,7 +6,7 @@ from app.auth import verify_worker_key, verify_sse_access
 from app.schemas import CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Task, TaskFile
+from app.models import Task, TaskFile, UserStats
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
 from starlette.responses import StreamingResponse
@@ -84,10 +84,19 @@ def create_task(req: CreateTaskRequest):
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         t = Task(
             id=task_id, mode=req.mode, source=req.source, infohash=infohash,
-            provider="alldebrid", status="queued", label=req.label or None
+            provider="alldebrid", status="queued", label=req.label or None,
+            user_id=req.user_id
         )
         s.add(t)
         s.commit()
+        
+        # Update user stats if user_id provided
+        if req.user_id:
+            stats = s.query(UserStats).filter(UserStats.user_id == req.user_id).first()
+            if stats:
+                stats.total_magnets_processed += 1
+                s.commit()
+        
         append_log(base, {"level":"info","event":"task_created","taskId":task_id})
         write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": infohash, "status": "queued"})
         # Notify worker
