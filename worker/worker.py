@@ -87,8 +87,8 @@ def _progress_monitor_loop():
                         if DEBUG:
                             _log(f.task_id, "debug", "file_progress", fileId=f.id, downloaded=cur, total=total, path=size_path)
 
-                    # done = final file exists AND (unknown size OR size >= expected)
-                    if os.path.exists(out_path) and ((total == 0) or (cur >= total)):
+                    # done = final file exists AND aria2 control file does NOT exist AND (unknown size OR size >= expected)
+                    if os.path.exists(out_path) and not os.path.exists(tmp_path) and ((total == 0) or (cur >= total)):
                         if f.state != "done":
                             f.state = "done"
                             f.local_path = out_path
