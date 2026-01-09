@@ -457,17 +457,20 @@
   }
 
   function handleSnapshot(d) {
+    console.log('handleSnapshot called with:', d);
     if (statusPill && d.status !== undefined) {
       statusPill.textContent = d.status || '';
       statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
     }
     if (Array.isArray(d.files) && filesBody) {
+      console.log(`Processing ${d.files.length} files from snapshot`);
       d.files.forEach(upsertRow);
     }
   }
 
   function handleDelta(d) {
     const typ = (d.type || '').toLowerCase();
+    console.log('handleDelta called with type:', typ, 'data:', d);
     
     // Handle status/state changes
     if (typ === 'state' || typ === 'hello' || d.status !== undefined) {
@@ -484,11 +487,13 @@
     
     // Handle files.listed event (array of files)
     if (typ === 'files.listed' && Array.isArray(d.files)) {
+      console.log(`Processing ${d.files.length} files from files.listed event`);
       d.files.forEach(upsertRow);
     }
     
     // Handle full files array in snapshot
     if (Array.isArray(d.files)) {
+      console.log(`Processing ${d.files.length} files from delta with files array`);
       d.files.forEach(upsertRow);
     }
   }
@@ -501,7 +506,12 @@
     try {
       const d = JSON.parse(e.data || '{}');
       console.log('SSE message:', d);
-      if (d && Array.isArray(d.files)) {
+      
+      // A snapshot has taskId, status, and files array (complete task state)
+      // A delta has type and maybe fileId (partial update)
+      const isSnapshot = d && (d.taskId || (Array.isArray(d.files) && d.status !== undefined));
+      
+      if (isSnapshot) {
         handleSnapshot(d);
       } else {
         handleDelta(d);
