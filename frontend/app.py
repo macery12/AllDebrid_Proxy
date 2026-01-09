@@ -281,9 +281,8 @@ def create_task():
 def admin_page():
     """Admin dashboard to view and manage all tasks"""
     log.info("Admin page accessed")
-    return render_template("admin.html", 
-                         worker_base_url=app.config["WORKER_BASE_URL"],
-                         worker_key=app.config["WORKER_KEY"])
+    # Pass only worker_key - admin page uses relative URLs that nginx proxies to backend
+    return render_template("admin.html", worker_key=app.config["WORKER_KEY"])
 
 @app.errorhandler(404)
 def not_found(e):
