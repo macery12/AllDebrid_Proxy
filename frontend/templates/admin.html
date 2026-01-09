@@ -286,7 +286,7 @@ function renderTasks(tasks) {
         ${tasks.map(task => `
           <tr>
             <td>
-              <a href="{{ url_for('task_view', task_id='TASK_ID') }}".replace('TASK_ID', '${task.taskId}') class="task-id">
+              <a href="/tasks/${task.taskId}" class="task-id">
                 ${task.taskId.substring(0, 8)}...
               </a>
             </td>
@@ -307,8 +307,8 @@ function renderTasks(tasks) {
             </td>
             <td>
               <div class="task-actions">
-                <a href="{{ url_for('task_view', task_id='TASK_ID') }}".replace('TASK_ID', '${task.taskId}') class="btn">View</a>
-                <a href="{{ url_for('list_folder', task_id='TASK_ID') }}".replace('TASK_ID', '${task.taskId}') class="btn">Files</a>
+                <a href="/tasks/${task.taskId}" class="btn">View</a>
+                <a href="/d/${task.taskId}/" class="btn">Files</a>
                 <button class="btn danger" onclick="deleteTask('${task.taskId}')">Delete</button>
               </div>
             </td>
