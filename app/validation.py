@@ -18,8 +18,7 @@ def validate_task_id(task_id: str) -> str:
         raise ValidationError("Task ID is required")
     
     # UUID format: 8-4-4-4-12 hex digits
-    uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    if not re.match(uuid_pattern, task_id, re.IGNORECASE):
+    if not re.match(Patterns.UUID_PATTERN, task_id, re.IGNORECASE):
         raise ValidationError("Invalid task ID format")
     
     return task_id.lower()
@@ -37,7 +36,7 @@ def validate_magnet_link(magnet: str) -> str:
         raise ValidationError("Magnet link must be a string")
     
     # Check length
-    if len(magnet) > 10000:  # Reasonable limit for magnet links
+    if len(magnet) > Limits.MAX_MAGNET_LENGTH:
         raise ValidationError("Magnet link is too long")
     
     # Must start with magnet:
@@ -90,7 +89,7 @@ def validate_file_name(file_name: str) -> str:
         raise ValidationError("File name is required")
     
     # Check length
-    if len(file_name) > 255:  # Standard filesystem limit
+    if len(file_name) > Limits.MAX_FILENAME_LENGTH:
         raise ValidationError("File name is too long")
     
     # Check for path separators (security)
@@ -204,7 +203,7 @@ def validate_url(url: str) -> str:
         raise ValidationError("URL must start with http:// or https://")
     
     # Check length
-    if len(url) > 2048:  # Standard URL length limit
+    if len(url) > Limits.MAX_URL_LENGTH:
         raise ValidationError("URL is too long")
     
     # Check for dangerous characters

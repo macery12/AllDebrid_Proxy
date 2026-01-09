@@ -339,7 +339,7 @@ def start_next_files(session, task: Task, client):
 
     # Only mark ready if ALL files are done
     files = session.execute(select(TaskFile).where(TaskFile.task_id == task.id)).scalars().all()
-    if files and all((x.state or "").lower() == FileState.DONE for x in files):
+    if files and all(x.state == FileState.DONE for x in files):
         task.status = TaskStatus.READY
         session.commit()
         publish(task.id, {"type": EventType.STATE, "status": TaskStatus.READY})
