@@ -317,7 +317,7 @@ def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
     for p in sorted(base.rglob("*")):
-        if p.is_file():
+        if p.is_file() and not p.name.endswith(".aria2"):
             rel = p.relative_to(base).as_posix()
             items.append({
                 "rel": rel, 
@@ -333,7 +333,7 @@ def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
     for p in sorted(base.rglob("*")):
-        if p.is_file():
+        if p.is_file() and not p.name.endswith(".aria2"):
             rel = p.relative_to(base).as_posix()
             out.write(f"/d/{task_id}/raw/{rel}\n")
     return out.getvalue(), 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -344,7 +344,10 @@ def tar_all(task_id):
     base = safe_task_base(task_id)
     mem = io.BytesIO()
     with tarfile.open(fileobj=mem, mode="w:gz") as tar:
-        tar.add(base, arcname=f"{task_id}/files")
+        for p in base.rglob("*"):
+            if p.is_file() and not p.name.endswith(".aria2"):
+                arcname = f"{task_id}/files/{p.relative_to(base).as_posix()}"
+                tar.add(p, arcname=arcname)
     mem.seek(0)
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
 
