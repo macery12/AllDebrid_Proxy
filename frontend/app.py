@@ -281,8 +281,26 @@ def create_task():
 def admin_page():
     """Admin dashboard to view and manage all tasks"""
     log.info("Admin page accessed")
-    # Pass only worker_key - admin page uses relative URLs that nginx proxies to backend
-    return render_template("admin.html", worker_key=app.config["WORKER_KEY"])
+    # Don't pass worker_key to frontend - it's a security risk
+    # Frontend will use session-based auth to request data from backend
+    return render_template("admin.html")
+
+@app.get("/admin/tasks")
+@login_required
+def admin_tasks():
+    """Proxy endpoint for admin page to get tasks without exposing worker key"""
+    status = request.args.get("status")
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    
+    params = {"limit": limit, "offset": offset}
+    if status:
+        params["status"] = status
+    
+    body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
 
 @app.errorhandler(404)
 def not_found(e):
@@ -311,10 +329,17 @@ def task_view(task_id):
     if err:
         flash(f"Load failed: {err[0]}", "error")
         t = None
+    
+    # Generate a secure SSE token (never expose WORKER_API_KEY to frontend)
+    sse_token = None
+    token_response, token_err = w_request("POST", f"/api/tasks/{task_id}/sse-token")
+    if not token_err and token_response:
+        sse_token = token_response.get("token")
+    
     mode = (t or {}).get("mode") or request.args.get("mode", "auto")
-    # Pass worker_base_url to template for SSE connection
+    # Pass secure SSE token to template (use relative URL /api for nginx proxy)
     return render_template("task.html", task_id=task_id, t=t, mode=mode, 
-                         worker_base_url=app.config["WORKER_BASE_URL"])
+                         sse_token=sse_token)
 
 @app.post("/tasks/<task_id>/select")
 @login_required
@@ -376,7 +401,6 @@ def safe_task_base(task_id: str) -> Path:
     return base
 
 @app.get("/d/<task_id>/")
-@login_required
 def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
@@ -392,7 +416,6 @@ def list_folder(task_id):
     return render_template("folder.html", task_id=task_id, entries=items)
 
 @app.get("/d/<task_id>/links.txt")
-@login_required
 def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
@@ -403,7 +426,6 @@ def links_txt(task_id):
     return out.getvalue(), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 @app.get("/d/<task_id>.tar.gz")
-@login_required
 def tar_all(task_id):
     base = safe_task_base(task_id)
     mem = io.BytesIO()
@@ -420,7 +442,6 @@ def tar_all(task_id):
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
 
 @app.get("/d/<task_id>/raw/<path:relpath>")
-@login_required
 def raw_file(task_id, relpath):
     base = safe_task_base(task_id)
     full = (base / relpath).resolve()
@@ -473,7 +494,6 @@ def raw_file(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/play/<path:relpath>")
-@login_required
 def play_video(task_id, relpath):
     """Video player page"""
     base = safe_task_base(task_id)
@@ -508,7 +528,6 @@ def play_video(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
-@login_required
 def stream_video(task_id, relpath):
     """Stream video with Range request support"""
     base = safe_task_base(task_id)
