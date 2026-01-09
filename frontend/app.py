@@ -281,8 +281,26 @@ def create_task():
 def admin_page():
     """Admin dashboard to view and manage all tasks"""
     log.info("Admin page accessed")
-    # Pass only worker_key - admin page uses relative URLs that nginx proxies to backend
-    return render_template("admin.html", worker_key=app.config["WORKER_KEY"])
+    # Don't pass worker_key to frontend - it's a security risk
+    # Frontend will use session-based auth to request data from backend
+    return render_template("admin.html")
+
+@app.get("/admin/tasks")
+@login_required
+def admin_tasks():
+    """Proxy endpoint for admin page to get tasks without exposing worker key"""
+    status = request.args.get("status")
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    
+    params = {"limit": limit, "offset": offset}
+    if status:
+        params["status"] = status
+    
+    body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
 
 @app.errorhandler(404)
 def not_found(e):
@@ -319,9 +337,8 @@ def task_view(task_id):
         sse_token = token_response.get("token")
     
     mode = (t or {}).get("mode") or request.args.get("mode", "auto")
-    # Pass worker_base_url and secure SSE token to template
+    # Pass secure SSE token to template (use relative URL /api for nginx proxy)
     return render_template("task.html", task_id=task_id, t=t, mode=mode, 
-                         worker_base_url=app.config["WORKER_BASE_URL"],
                          sse_token=sse_token)
 
 @app.post("/tasks/<task_id>/select")

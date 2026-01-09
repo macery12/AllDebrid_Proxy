@@ -346,26 +346,18 @@
   // Using tojson filter for safe JSON encoding of server variables
   // tojson automatically escapes special characters to prevent XSS
   const taskId = {{ task_id|tojson }};
-  const workerBaseUrl = {{ worker_base_url|tojson }};
   const sseToken = {{ sse_token|tojson }};
   
   if (!('EventSource' in window)) return;
-
-  // Validate and encode URL components to prevent SSRF
-  if (!workerBaseUrl || typeof workerBaseUrl !== 'string') {
-    console.error('Invalid worker base URL');
-    return;
-  }
   
   if (!sseToken || typeof sseToken !== 'string') {
     console.error('No SSE token available');
     return;
   }
   
-  // Build SSE URL with secure time-limited token
-  // EventSource doesn't support custom headers, so we use query param
+  // Use relative URL /api (nginx proxies to backend)
   // The token is generated server-side and expires after 1 hour (never exposes WORKER_API_KEY)
-  const sseUrl = `${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events?token=${encodeURIComponent(sseToken)}`;
+  const sseUrl = `/api/tasks/${encodeURIComponent(taskId)}/events?token=${encodeURIComponent(sseToken)}`;
   const es = new EventSource(sseUrl);
   const statusPill = document.querySelector('[data-task-status]');
   const filesBody = document.querySelector('[data-files-table]');

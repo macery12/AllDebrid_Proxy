@@ -203,22 +203,14 @@ table.admin-table tbody tr:hover {
 
 <script>
 let allTasks = [];
-const workerKey = {{ worker_key|tojson }};
 
 async function loadTasks() {
   const container = document.getElementById('tasksContainer');
   container.innerHTML = '<div class="loading">Loading tasks...</div>';
   
   try {
-    const headers = {};
-    if (workerKey) {
-      headers['X-Worker-Key'] = workerKey;
-    }
-    
-    // Nginx strips /api/ prefix, FastAPI adds /api prefix, so use /api/api/tasks
-    const response = await fetch('/api/api/tasks', {
-      headers: headers
-    });
+    // Use session-based auth endpoint (no worker key needed)
+    const response = await fetch('/admin/tasks');
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -398,6 +390,11 @@ document.getElementById('searchInput').addEventListener('input', filterTasks);
 
 // Load tasks on page load
 loadTasks();
+
+// Auto-refresh every 5 seconds for live updates
+setInterval(() => {
+  loadTasks();
+}, 5000);
 </script>
 
 {% endblock %}
