@@ -344,7 +344,7 @@
   // Using tojson filter for safe JSON encoding of server variables
   // tojson automatically escapes special characters to prevent XSS
   const taskId = {{ task_id|tojson }};
-  const workerBaseUrl = {{ app.config["WORKER_BASE_URL"]|tojson }};
+  const workerBaseUrl = {{ worker_base_url|tojson }};
   if (!('EventSource' in window)) return;
 
   // Validate and encode URL components to prevent SSRF
