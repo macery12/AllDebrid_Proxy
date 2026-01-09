@@ -340,23 +340,20 @@ async function deleteTask(taskId) {
   }
   
   try {
-    const headers = {};
-    if (workerKey) {
-      headers['X-Worker-Key'] = workerKey;
-    }
+    // Use frontend proxy endpoint (session-based auth, no worker key needed)
+    const formData = new FormData();
+    formData.append('purge_files', 'true');
     
-    // Nginx strips /api/ prefix, FastAPI adds /api prefix, so use /api/api/tasks
-    const response = await fetch(`/api/api/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
-      method: 'DELETE',
-      headers: headers
+    const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/delete`, {
+      method: 'POST',
+      body: formData
     });
     
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || errorData.detail || 'Failed to delete task');
+      throw new Error('Failed to delete task');
     }
     
-    alert('Task deleted successfully');
+    // Frontend redirects on success, but if we're still here, reload tasks
     loadTasks();
   } catch (error) {
     console.error('Error deleting task:', error);
