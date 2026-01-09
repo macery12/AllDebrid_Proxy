@@ -92,6 +92,16 @@ def _progress_monitor_loop():
                         if f.state != "done":
                             f.state = "done"
                             f.local_path = out_path
+                            
+                            # Update user stats when file completes
+                            task = s.get(Task, f.task_id)
+                            if task and task.user_id:
+                                from app.models import UserStats
+                                stats = s.query(UserStats).filter(UserStats.user_id == task.user_id).first()
+                                if stats:
+                                    stats.total_downloads += 1
+                                    stats.total_bytes_downloaded += (f.bytes_downloaded or 0)
+                            
                             s.commit()
                             publish(f.task_id, {"type":"file.done","fileId":f.id,"localPath":f.local_path})
                             _log(f.task_id, "info", "file_done", fileId=f.id, path=f.local_path)
