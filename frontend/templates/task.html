@@ -346,16 +346,30 @@
   // Using tojson filter for safe JSON encoding of server variables
   // tojson automatically escapes special characters to prevent XSS
   const taskId = {{ task_id|tojson }};
-  const workerBaseUrl = {{ worker_base_url|tojson }};
+  const sseToken = {{ sse_token|tojson }};
+  const initialStatus = {{ (t.status if t else '')|tojson }};
+  
   if (!('EventSource' in window)) return;
-
-  // Validate and encode URL components to prevent SSRF
-  if (!workerBaseUrl || typeof workerBaseUrl !== 'string') {
-    console.error('Invalid worker base URL');
+  
+  if (!sseToken || typeof sseToken !== 'string') {
+    console.error('No SSE token available');
     return;
   }
   
-  const es = new EventSource(`${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events`);
+  // Final states where SSE should not run
+  const finalStates = ['ready', 'failed', 'canceled', 'cancelled', 'deleted', 'done', 'completed', 'error'];
+  const isFinalState = (status) => finalStates.includes((status || '').toLowerCase());
+  
+  // Don't start SSE if task is already in a final state
+  if (isFinalState(initialStatus)) {
+    console.log(`Task already in final state "${initialStatus}" - SSE not started`);
+    return;
+  }
+  
+  // Use relative URL /api (nginx proxies to backend)
+  // The token is generated server-side and expires after 1 hour (never exposes WORKER_API_KEY)
+  const sseUrl = `/api/tasks/${encodeURIComponent(taskId)}/events?token=${encodeURIComponent(sseToken)}`;
+  const es = new EventSource(sseUrl);
   const statusPill = document.querySelector('[data-task-status]');
   const filesBody = document.querySelector('[data-files-table]');
   const fileCount = document.querySelector('[data-file-count]');
@@ -428,8 +442,17 @@
       }
     }
 
+    // Show download progress if available
     const sizeBytes = merged.size || merged.totalSize || merged.fileSize || merged.bytes || 0;
-    if (sizeCell) sizeCell.textContent = formatBytes(sizeBytes);
+    const downloaded = merged.bytesDownloaded || 0;
+    if (sizeCell) {
+      if (downloaded > 0 && sizeBytes > 0 && downloaded < sizeBytes) {
+        const percent = Math.round((downloaded / sizeBytes) * 100);
+        sizeCell.textContent = `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)} (${percent}%)`;
+      } else {
+        sizeCell.textContent = formatBytes(sizeBytes);
+      }
+    }
 
     if (pill) {
       pill.textContent = merged.state || '—';
@@ -445,43 +468,86 @@
   }
 
   function handleSnapshot(d) {
+    console.log('handleSnapshot called with:', d);
     if (statusPill && d.status !== undefined) {
       statusPill.textContent = d.status || '';
       statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
+      
+      // Close SSE connection if task reached final state
+      if (isFinalState(d.status)) {
+        console.log(`Task reached final state "${d.status}" - closing SSE connection`);
+        es.close();
+      }
     }
     if (Array.isArray(d.files) && filesBody) {
+      console.log(`Processing ${d.files.length} files from snapshot`);
       d.files.forEach(upsertRow);
     }
   }
 
   function handleDelta(d) {
     const typ = (d.type || '').toLowerCase();
-    if (typ === 'state' || d.status !== undefined) {
+    console.log('handleDelta called with type:', typ, 'data:', d);
+    
+    // Handle status/state changes
+    if (typ === 'state' || typ === 'hello' || d.status !== undefined) {
       if (statusPill && d.status !== undefined) {
         statusPill.textContent = d.status || '';
         statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
+        
+        // Close SSE connection if task reached final state
+        if (isFinalState(d.status)) {
+          console.log(`Task reached final state "${d.status}" - closing SSE connection`);
+          es.close();
+        }
       }
     }
-    if (typ === 'file' || d.fileId) {
+    
+    // Handle file-specific events
+    if (typ === 'file' || typ === 'file.state' || typ === 'file.done' || typ === 'file.failed' || typ === 'file.progress' || d.fileId) {
       upsertRow(d);
     }
+    
+    // Handle files.listed event (array of files)
+    if (typ === 'files.listed' && Array.isArray(d.files)) {
+      console.log(`Processing ${d.files.length} files from files.listed event`);
+      d.files.forEach(upsertRow);
+    }
+    
+    // Handle full files array in snapshot
     if (Array.isArray(d.files)) {
+      console.log(`Processing ${d.files.length} files from delta with files array`);
       d.files.forEach(upsertRow);
     }
   }
 
+  es.onopen = () => {
+    console.log('SSE connected');
+  };
+
   es.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data || '{}');
-      if (d && Array.isArray(d.files)) {
+      console.log('SSE message:', d);
+      
+      // A snapshot has taskId, status, and files array (complete task state)
+      // A delta has type and maybe fileId (partial update)
+      const isSnapshot = d && (d.taskId || (Array.isArray(d.files) && d.status !== undefined));
+      
+      if (isSnapshot) {
         handleSnapshot(d);
       } else {
         handleDelta(d);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('SSE parse error:', err);
+    }
   };
 
-  es.onerror = () => { /* browser auto-reconnects */ };
+  es.onerror = (err) => {
+    console.error('SSE error:', err);
+    // Browser auto-reconnects, but log the error
+  };
 
   // Select all / Clear all + master checkbox wiring
   if (isSelectMode) {
