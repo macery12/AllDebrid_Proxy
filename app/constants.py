@@ -1,11 +1,9 @@
-"""
-Application constants and configuration values.
-Centralizes magic strings and numbers for better maintainability.
-"""
+# Application constants and configuration values
+# Centralizes magic strings and numbers for better maintainability
 
 # Task statuses
 class TaskStatus:
-    """Task lifecycle states"""
+    # Task lifecycle states
     QUEUED = "queued"
     RESOLVING = "resolving"
     WAITING_SELECTION = "waiting_selection"
@@ -29,7 +27,7 @@ class TaskStatus:
 
 # File states
 class FileState:
-    """File processing states"""
+    # File processing states
     LISTED = "listed"
     SELECTED = "selected"
     DOWNLOADING = "downloading"
@@ -48,7 +46,7 @@ class FileState:
 
 # Task modes
 class TaskMode:
-    """Task download modes"""
+    # Task download modes
     AUTO = "auto"
     SELECT = "select"
     
@@ -57,7 +55,7 @@ class TaskMode:
 
 # Log levels
 class LogLevel:
-    """Logging levels"""
+    # Logging levels
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
@@ -67,7 +65,7 @@ class LogLevel:
 
 # Event types
 class EventType:
-    """Redis pub/sub event types"""
+    # Redis pub/sub event types
     HELLO = "hello"
     STATE = "state"
     FILE_STATE = "file.state"
@@ -79,7 +77,7 @@ class EventType:
 
 # Limits and thresholds
 class Limits:
-    """Various limits and thresholds"""
+    # Various limits and thresholds
     # SSE token expiry in seconds (1 hour)
     SSE_TOKEN_EXPIRY = 3600
     
@@ -125,7 +123,7 @@ class Limits:
 
 # HTTP constants
 class HTTPHeaders:
-    """Common HTTP headers"""
+    # Common HTTP headers
     WORKER_KEY = "X-Worker-Key"
     CONTENT_TYPE = "Content-Type"
     CACHE_CONTROL = "Cache-Control"
@@ -135,7 +133,7 @@ class HTTPHeaders:
 
 # Providers
 class Provider:
-    """Supported debrid providers"""
+    # Supported debrid providers
     ALLDEBRID = "alldebrid"
     
     ALL_PROVIDERS = [ALLDEBRID]
@@ -143,7 +141,7 @@ class Provider:
 
 # File extensions and patterns
 class Patterns:
-    """Regex patterns and file extensions"""
+    # Regex patterns and file extensions
     # Matches BitTorrent info hash in magnet links
     MAGNET_BTIH = r'btih:([0-9A-Fa-f]{40}|[A-Z2-7]{32})'
     

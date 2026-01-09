@@ -223,31 +223,101 @@ def select_files(task_id: str, req: SelectRequest):
 
 @router.post("/tasks/{task_id}/cancel", dependencies=[Depends(verify_worker_key)])
 def cancel_task(task_id: str):
+    """
+    Cancel a running task.
+    
+    Args:
+        task_id: Task identifier
+        
+    Returns:
+        Updated task status
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
-        t.status = "canceled"
+        t.status = TaskStatus.CANCELED
         s.commit()
-        r.publish(f"task:{task_id}", json.dumps({"type":"state","taskId":task_id,"status":"canceled"}))
-        return {"status":"canceled"}
+        r.publish(f"task:{task_id}", json.dumps({"type":EventType.STATE,"taskId":task_id,"status":TaskStatus.CANCELED}))
+        return {"status": TaskStatus.CANCELED}
 
 @router.delete("/tasks/{task_id}", dependencies=[Depends(verify_worker_key)])
 def delete_task(task_id: str, purge_files: bool = False):
+    """
+    Delete a task and optionally its files.
+    
+    Args:
+        task_id: Task identifier
+        purge_files: Whether to delete associated files
+        
+    Returns:
+        Success confirmation
+        
+    Raises:
+        HTTPException: If task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             return {"ok": True}
         s.delete(t)
         s.commit()
+    
     # Delete the files and folder associated with the task
-    base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
-    shutil.rmtree(os.path.join(base, "files"))
+    if purge_files:
+        try:
+            base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
+            files_dir = os.path.join(base, "files")
+            if os.path.exists(files_dir):
+                shutil.rmtree(files_dir)
+        except Exception:
+            # Don't fail if file deletion fails
+            pass
+    
     return {"ok": True}
 
 @router.get("/tasks", dependencies=[Depends(verify_worker_key)])
 def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
-    """List all tasks with optional status filter for admin view"""
+    """
+    List all tasks with optional status filter for admin view.
+    
+    Args:
+        status: Optional status filter
+        limit: Maximum number of tasks to return
+        offset: Offset for pagination
+        
+    Returns:
+        List of tasks with total count
+        
+    Raises:
+        HTTPException: If parameters are invalid
+    """
+    # Validate parameters
+    try:
+        if limit:
+            limit = validate_positive_int(limit, "limit", max_value=Limits.DEFAULT_TASK_LIMIT)
+        if offset:
+            offset = validate_positive_int(offset, "offset")
+        if status and status not in TaskStatus.ALL_STATUSES:
+            raise ValidationError(f"Invalid status: {status}")
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         query = select(Task).order_by(Task.created_at.desc())
         if status:
@@ -273,7 +343,26 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
 
 @router.get("/tasks/{task_id}/events")
 async def task_events(task_id: str, _auth=Depends(verify_sse_access)):
-    """SSE endpoint with token-based authentication (doesn't expose worker key to frontend)"""
+    """
+    SSE endpoint with token-based authentication.
+    Streams real-time task updates to clients.
+    
+    Args:
+        task_id: Task identifier
+        _auth: Authentication dependency
+        
+    Returns:
+        Server-Sent Events stream
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
@@ -284,10 +373,11 @@ async def task_events(task_id: str, _auth=Depends(verify_sse_access)):
     pubsub = ar.pubsub()
     await pubsub.subscribe(channel)
 
-    HEARTBEAT_SEC = 25
-    EMPTY_FILES_POLL_SEC = 0.5   # fast poll until we have files
-    PERIODIC_REFRESH_SEC = 5.0   # gentle refresh even with Redis
-    MAX_EMPTY_WAIT_SEC = 60.0    # stop aggressive polling after 1 min
+    # Use constants for timeouts
+    HEARTBEAT_SEC = Limits.SSE_HEARTBEAT_INTERVAL
+    EMPTY_FILES_POLL_SEC = Limits.SSE_EMPTY_FILES_POLL
+    PERIODIC_REFRESH_SEC = Limits.SSE_REFRESH_INTERVAL
+    MAX_EMPTY_WAIT_SEC = Limits.SSE_MAX_EMPTY_WAIT
 
     # Track what we last sent to avoid spamming
     last_sent_json = json.dumps(snapshot.dict(), sort_keys=True, default=str)
