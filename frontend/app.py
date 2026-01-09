@@ -10,6 +10,10 @@ import os, io, tarfile, logging, requests, mimetypes, hashlib
 # ------------------------------------------------------------------------------
 load_dotenv()
 
+# Constants
+MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
+MAX_LABEL_LENGTH = 500     # Maximum length for task label
+
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 log = logging.getLogger("ad-frontend-v1")
 
@@ -230,16 +234,16 @@ def create_task():
         flash("Please enter a magnet link or URL", "error")
         return redirect(url_for("index"))
     
-    if len(source) > 10000:  # Reasonable limit
-        flash("Source URL is too long", "error")
+    if len(source) > MAX_SOURCE_LENGTH:
+        flash(f"Source URL is too long (max {MAX_SOURCE_LENGTH} characters)", "error")
         return redirect(url_for("index"))
     
     if mode not in ("auto", "select"):
         flash("Invalid mode selected", "error")
         return redirect(url_for("index"))
     
-    if label and len(label) > 500:  # Reasonable limit
-        flash("Label is too long (max 500 characters)", "error")
+    if label and len(label) > MAX_LABEL_LENGTH:
+        flash(f"Label is too long (max {MAX_LABEL_LENGTH} characters)", "error")
         return redirect(url_for("index"))
     
     # Prepare payload
@@ -299,7 +303,10 @@ def admin_list_tasks():
 @app.delete("/api/admin/tasks/<task_id>")
 @login_required
 def admin_delete_task(task_id):
-    """Proxy endpoint for admin to delete tasks"""
+    """
+    Proxy endpoint for admin to delete tasks
+    CSRF protection is provided by Flask-Login's session-based authentication
+    """
     purge = request.args.get("purge_files", "true").lower() == "true"
     body, err = w_request("DELETE", f"/api/tasks/{task_id}", params={"purge_files": purge})
     if err:
