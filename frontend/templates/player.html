@@ -207,36 +207,46 @@
       
       console.log('Debug Info:', data);
       
-      let debugMsg = 'Video Debug Information:\\n\\n';
-      debugMsg += 'File: ' + data.file.path + '\\n';
-      debugMsg += 'Size: ' + data.file.size_human + '\\n';
-      debugMsg += 'MIME Type: ' + data.file.mime_type + '\\n';
-      debugMsg += 'Extension: ' + data.file.extension + '\\n';
-      debugMsg += 'Is Video: ' + data.file.is_video + '\\n';
-      debugMsg += 'Is Downloading: ' + data.file.is_downloading + '\\n';
-      debugMsg += 'Readable: ' + data.file.readable + '\\n\\n';
+      // Build debug message using template literal for better readability
+      const debugLines = [
+        'Video Debug Information:',
+        '',
+        `File: ${data.file.path}`,
+        `Size: ${data.file.size_human}`,
+        `MIME Type: ${data.file.mime_type}`,
+        `Extension: ${data.file.extension}`,
+        `Is Video: ${data.file.is_video}`,
+        `Is Downloading: ${data.file.is_downloading}`,
+        `Readable: ${data.file.readable}`,
+        ''
+      ];
       
       if (data.recommendations && data.recommendations.length > 0) {
-        debugMsg += 'Recommendations:\\n';
+        debugLines.push('Recommendations:');
         data.recommendations.forEach(rec => {
-          debugMsg += '• ' + rec + '\\n';
+          debugLines.push(`• ${rec}`);
         });
+        debugLines.push('');
       }
       
-      debugMsg += '\\nBrowser Support:\\n';
+      debugLines.push('Browser Support:');
       const ext = data.file.extension;
-      if (data.browser_support[ext.substring(1)]) {
-        debugMsg += data.browser_support[ext.substring(1)];
+      if (ext && ext.length > 1) {
+        const extKey = ext.substring(1);
+        if (data.browser_support[extKey]) {
+          debugLines.push(data.browser_support[extKey]);
+        }
       }
       
-      debugMsg += '\\n\\nVideo Element State:\\n';
-      debugMsg += 'Ready State: ' + video.readyState + ' (0=nothing, 1=metadata, 2=current, 3=future, 4=enough)\\n';
-      debugMsg += 'Network State: ' + video.networkState + ' (0=empty, 1=idle, 2=loading, 3=no_source)\\n';
-      debugMsg += 'Current Time: ' + video.currentTime + 's\\n';
-      debugMsg += 'Duration: ' + video.duration + 's\\n';
-      debugMsg += 'Paused: ' + video.paused + '\\n';
+      debugLines.push('');
+      debugLines.push('Video Element State:');
+      debugLines.push(`Ready State: ${video.readyState} (0=nothing, 1=metadata, 2=current, 3=future, 4=enough)`);
+      debugLines.push(`Network State: ${video.networkState} (0=empty, 1=idle, 2=loading, 3=no_source)`);
+      debugLines.push(`Current Time: ${video.currentTime}s`);
+      debugLines.push(`Duration: ${video.duration}s`);
+      debugLines.push(`Paused: ${video.paused}`);
       
-      alert(debugMsg);
+      alert(debugLines.join('\\n'));
     } catch (error) {
       console.error('Error fetching debug info:', error);
       alert('Error fetching debug info: ' + error.message);

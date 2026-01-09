@@ -28,6 +28,26 @@ login_manager.login_view = "login"
 login_manager.init_app(app)
 
 # ------------------------------------------------------------------------------
+# Constants
+# ------------------------------------------------------------------------------
+# Video MIME type mappings for explicit detection
+VIDEO_MIME_TYPES = {
+    '.mp4': 'video/mp4',
+    '.m4v': 'video/mp4',
+    '.mkv': 'video/x-matroska',
+    '.webm': 'video/webm',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    '.wmv': 'video/x-ms-wmv',
+    '.flv': 'video/x-flv',
+    '.mpg': 'video/mpeg',
+    '.mpeg': 'video/mpeg',
+    '.3gp': 'video/3gpp',
+    '.ogv': 'video/ogg',
+    '.ts': 'video/mp2t',
+}
+
+# ------------------------------------------------------------------------------
 # Auth / Users
 # ------------------------------------------------------------------------------
 def _load_users_from_env():
@@ -153,26 +173,10 @@ def _http_time(ts: float) -> str:
 
 def _guess_mime(name: str) -> str:
     """Guess MIME type with explicit video format support"""
-    # Explicit mappings for video formats that may not be in mimetypes
     ext_lower = Path(name).suffix.lower()
-    video_mimes = {
-        '.mp4': 'video/mp4',
-        '.m4v': 'video/mp4',
-        '.mkv': 'video/x-matroska',
-        '.webm': 'video/webm',
-        '.avi': 'video/x-msvideo',
-        '.mov': 'video/quicktime',
-        '.wmv': 'video/x-ms-wmv',
-        '.flv': 'video/x-flv',
-        '.mpg': 'video/mpeg',
-        '.mpeg': 'video/mpeg',
-        '.3gp': 'video/3gpp',
-        '.ogv': 'video/ogg',
-        '.ts': 'video/mp2t',
-    }
     
-    if ext_lower in video_mimes:
-        return video_mimes[ext_lower]
+    if ext_lower in VIDEO_MIME_TYPES:
+        return VIDEO_MIME_TYPES[ext_lower]
     
     m, _ = mimetypes.guess_type(name)
     return m or "application/octet-stream"
@@ -180,6 +184,13 @@ def _guess_mime(name: str) -> str:
 def _accel_path(task_id: str, relpath: str) -> str:
     relpath = relpath.lstrip("/").replace("\\", "/")
     return f"{app.config['NGINX_ACCEL_PREFIX']}/{task_id}/files/{relpath}"
+
+def _add_cors_headers(response):
+    """Add CORS headers for video streaming"""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
+    return response
 
 def _is_video(filename: str) -> bool:
     """Check if a file is a video based on extension"""
@@ -568,11 +579,8 @@ def play_video(task_id, relpath):
 def stream_video_options(task_id, relpath):
     """Handle CORS preflight for video streaming"""
     resp = make_response("", 204)
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
     resp.headers["Access-Control-Max-Age"] = "3600"
-    return resp
+    return _add_cors_headers(resp)
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
 @login_required
@@ -607,11 +615,8 @@ def stream_video(task_id, relpath):
             max_age=3600
         )
         # Add CORS headers for video streaming
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
         resp.headers["Accept-Ranges"] = "bytes"
-        return resp
+        return _add_cors_headers(resp)
     
     # Parse Range header (simple byte range only, ignore multi-range)
     try:
@@ -652,10 +657,7 @@ def stream_video(task_id, relpath):
             resp.headers["Last-Modified"] = last_mod
             resp.headers["Cache-Control"] = "public, max-age=3600"
             # Add CORS headers for video streaming
-            resp.headers["Access-Control-Allow-Origin"] = "*"
-            resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
-            resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
-            return resp
+            return _add_cors_headers(resp)
         
         # For larger ranges, use chunked streaming
         def generate():
@@ -680,11 +682,8 @@ def stream_video(task_id, relpath):
         resp.headers["Last-Modified"] = last_mod
         resp.headers["Cache-Control"] = "public, max-age=3600"
         # Add CORS headers for video streaming
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Range, If-Range, If-None-Match"
         
-        return resp
+        return _add_cors_headers(resp)
     except (ValueError, IndexError):
         abort(416, "Invalid Range header")
 
