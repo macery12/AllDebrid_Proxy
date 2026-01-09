@@ -350,7 +350,7 @@ def tar_all(task_id):
     
     def exclude_aria2(tarinfo):
         """Filter function to exclude .aria2 files from tar archive"""
-        if tarinfo.name.endswith(".aria2"):
+        if not _should_include_file(Path(tarinfo.name)):
             return None
         return tarinfo
     
