@@ -10,12 +10,18 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for layer cache
-COPY frontend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir gunicorn==23.0.0
+COPY requirements.txt ./requirements.txt
+COPY frontend/requirements.txt ./frontend_requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r frontend_requirements.txt && pip install --no-cache-dir gunicorn==23.0.0
 
-# Copy app
-COPY frontend/app.py ./app.py
-COPY frontend/templates ./templates
+# Copy app module (needed for user_manager, models, etc.)
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
+
+# Copy frontend
+COPY frontend/app.py ./frontend/app.py
+COPY frontend/templates ./frontend/templates
 
 EXPOSE 5000
 
@@ -26,4 +32,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Run with gunicorn - optimized for video streaming
 # Increased workers/threads to handle concurrent Range requests during seeking
 # --worker-tmp-dir /dev/shm uses shared memory for better performance
-CMD ["python","-m","gunicorn","--worker-class","gthread","-b","0.0.0.0:5000","--workers","4","--threads","8","--worker-tmp-dir","/dev/shm","--timeout","3600","--graceful-timeout","30","--keep-alive","65","--max-requests","5000","--max-requests-jitter","500","--access-logfile","-","--error-logfile","-","app:app"]
+CMD ["python","-m","gunicorn","--worker-class","gthread","-b","0.0.0.0:5000","--workers","4","--threads","8","--worker-tmp-dir","/dev/shm","--timeout","3600","--graceful-timeout","30","--keep-alive","65","--max-requests","5000","--max-requests-jitter","500","--access-logfile","-","--error-logfile","-","frontend.app:app"]

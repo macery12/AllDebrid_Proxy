@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Login — AllDebrid Proxy</title>
+  <title>{% if is_first_time %}First-Time Setup{% else %}Login{% endif %} — AllDebrid Proxy</title>
   <style>
     :root { 
       --bg:#0a0e1a; 
@@ -84,6 +84,21 @@
       background: rgba(34, 197, 94, 0.1);
       border-color: #22c55e;
       color: #86efac;
+    }
+    
+    /* Setup notice */
+    .setup-notice {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      color: var(--text);
+    }
+    .setup-notice strong {
+      color: var(--accent);
+      display: block;
+      margin-bottom: 8px;
     }
     
     /* Form */
@@ -180,12 +195,17 @@
     <div class="login-header">
       <div class="icon-lock">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          {% if is_first_time %}
+          <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
+          <path d="M12 6v6l4 2"></path>
+          {% else %}
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          {% endif %}
         </svg>
       </div>
       <h1>🚀 AllDebrid Proxy</h1>
-      <p>Sign in to access your downloads</p>
+      <p>{% if is_first_time %}Create your admin account{% else %}Sign in to access your downloads{% endif %}</p>
     </div>
     
     <div class="login-card">
@@ -198,6 +218,13 @@
           {% endfor %}
         {% endif %}
       {% endwith %}
+      
+      {% if is_first_time %}
+      <div class="setup-notice">
+        <strong>🎉 Welcome to AllDebrid Proxy!</strong>
+        <p>No users found. Please create your first admin account to get started.</p>
+      </div>
+      {% endif %}
       
       <form method="POST" action="/login">
         <div class="form-group">
@@ -212,11 +239,18 @@
         
         <button type="submit" class="btn-login">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            {% if is_first_time %}
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+            {% else %}
             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
             <polyline points="10 17 15 12 10 7"></polyline>
             <line x1="15" y1="12" x2="3" y2="12"></line>
+            {% endif %}
           </svg>
-          Sign In
+          {% if is_first_time %}Create Admin Account{% else %}Sign In{% endif %}
         </button>
       </form>
     </div>
