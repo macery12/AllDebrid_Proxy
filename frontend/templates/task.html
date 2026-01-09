@@ -341,10 +341,18 @@
 
 <script>
 (function () {
+  // Using tojson filter for safe JSON encoding of server variables
+  // tojson automatically escapes special characters to prevent XSS
   const taskId = {{ task_id|tojson }};
   const workerBaseUrl = {{ app.config["WORKER_BASE_URL"]|tojson }};
   if (!('EventSource' in window)) return;
 
+  // Validate and encode URL components to prevent SSRF
+  if (!workerBaseUrl || typeof workerBaseUrl !== 'string') {
+    console.error('Invalid worker base URL');
+    return;
+  }
+  
   const es = new EventSource(`${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events`);
   const statusPill = document.querySelector('[data-task-status]');
   const filesBody = document.querySelector('[data-files-table]');

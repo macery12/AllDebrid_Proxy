@@ -12,6 +12,9 @@ from app.ws_manager import ws_manager
 from starlette.responses import StreamingResponse
 import redis.asyncio as aioredis
 
+# Constants
+COMPLETED_STATUSES = ["ready", "done", "completed"]  # Task statuses considered as completed
+
 
 router = APIRouter(prefix="/api", tags=["api"])
 r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
@@ -63,7 +66,7 @@ def create_task(req: CreateTaskRequest):
         existing_completed = s.execute(
             select(Task)
             .where(Task.infohash == infohash)
-            .where(Task.status.in_(["ready", "done", "completed"]))
+            .where(Task.status.in_(COMPLETED_STATUSES))
             .order_by(Task.created_at.desc())
         ).scalars().first()
         
