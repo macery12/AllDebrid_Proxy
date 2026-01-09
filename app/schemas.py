@@ -5,6 +5,7 @@ class CreateTaskRequest(BaseModel):
     mode: str = Field(pattern="^(auto|select)$")
     source: str
     label: Optional[str] = None
+    user_id: Optional[int] = None  # User ID for tracking
 
 class FileItem(BaseModel):
     fileId: str

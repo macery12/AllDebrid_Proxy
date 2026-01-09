@@ -325,7 +325,10 @@
     <h1>🚀 AllDebrid Proxy</h1>
     <nav>
       <a href="{{ url_for('index') }}">Home</a>
+      {% if current_user.is_admin %}
       <a href="{{ url_for('admin_page') }}">Admin</a>
+      <a href="{{ url_for('admin_users_page') }}">Users</a>
+      {% endif %}
       <a href="{{ url_for('logout') }}">Logout</a>
     </nav>
   </header>

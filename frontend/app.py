@@ -1,14 +1,21 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from pathlib import Path
 from dotenv import load_dotenv
 import os, io, tarfile, logging, requests, mimetypes, hashlib
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ------------------------------------------------------------------------------
 # Bootstrapping / App setup
 # ------------------------------------------------------------------------------
 load_dotenv()
+
+# Import user management utilities
+from app import user_manager
 
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
@@ -32,53 +39,41 @@ login_manager.login_view = "login"
 login_manager.init_app(app)
 
 # ------------------------------------------------------------------------------
-# Auth / Users
+# Auth / Users (Database-backed)
 # ------------------------------------------------------------------------------
-def _load_users_from_env():
-    users = {}
-    multi = os.environ.get("LOGIN_USERS", "test:test;").strip()
-    if multi:
-        for chunk in [c.strip() for c in multi.split(";") if c.strip()]:
-            if ":" not in chunk:
-                continue
-            username, pw = chunk.split(":", 1)
-            username = username.strip()
-            pw = pw.strip()
-            if not username or not pw:
-                continue
-            if pw.startswith(("pbkdf2:", "scrypt:", "argon2:")):
-                password_hash = pw
-            else:
-                password_hash = generate_password_hash(pw)
-            users[username] = {"password_hash": password_hash}
-    return users
-
-_USERS = _load_users_from_env()
-
 class User(UserMixin):
-    def __init__(self, username: str):
-        self.id = username  # Flask-Login uses .id
+    def __init__(self, user_id: int, username: str, is_admin: bool = False):
+        self.id = user_id
+        self.username = username
+        self.is_admin = is_admin
+    
     @property
     def is_active(self):
         return True
-    def verify_password(self, candidate: str) -> bool:
-        info = _USERS.get(self.id)
-        if not info:
-            return False
-        stored_hash = info["password_hash"]
-        ok = check_password_hash(stored_hash, candidate)
-        return bool(ok)
 
 @login_manager.user_loader
 def load_user(user_id):
-    if user_id in _USERS:
-        return User(user_id)
+    db_user = user_manager.get_user_by_id(int(user_id))
+    if db_user:
+        return User(db_user.id, db_user.username, db_user.is_admin)
     return None
 
 @login_manager.unauthorized_handler
 def _unauth():
     flash("Please log in to continue.", "error")
     return redirect(url_for("login"))
+
+def admin_required(f):
+    """Decorator to require admin access"""
+    from functools import wraps
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin:
+            flash("You need admin privileges to access this page.", "error")
+            return redirect(url_for("index"))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ------------------------------------------------------------------------------
 # Jinja filters (global)
@@ -183,18 +178,39 @@ def _should_include_file(filepath: Path) -> bool:
 # ------------------------------------------------------------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # Check if this is first-time setup (no users exist)
+    is_first_time = not user_manager.has_any_users()
+    
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-
-        user = User(username)
-        if user.verify_password(password):
-            login_user(user)
-            flash("Logged in successfully!", "success")
-            return redirect(url_for("index"))
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        
+        if not username or not password:
+            flash("Username and password are required.", "error")
+            return render_template("login.html", is_first_time=is_first_time)
+        
+        if is_first_time:
+            # First-time setup: create admin user
+            try:
+                user_manager.create_user(username, password, is_admin=True)
+                flash(f"Admin account '{username}' created successfully! Please log in.", "success")
+                # Redirect to login page (non-first-time mode)
+                return redirect(url_for("login"))
+            except ValueError as e:
+                flash(str(e), "error")
+                return render_template("login.html", is_first_time=is_first_time)
         else:
-            flash("Invalid username or password.", "error")
-    return render_template("login.html")
+            # Normal login
+            db_user = user_manager.verify_user(username, password)
+            if db_user:
+                user = User(db_user.id, db_user.username, db_user.is_admin)
+                login_user(user)
+                flash("Logged in successfully!", "success")
+                return redirect(url_for("index"))
+            else:
+                flash("Invalid username or password.", "error")
+    
+    return render_template("login.html", is_first_time=is_first_time)
 
 @app.route("/logout")
 def logout():
@@ -246,13 +262,13 @@ def create_task():
         flash(f"Label is too long (max {MAX_LABEL_LENGTH} characters)", "error")
         return redirect(url_for("index"))
     
-    # Prepare payload
-    payload = {"mode": mode, "source": source}
+    # Prepare payload with user_id for tracking
+    payload = {"mode": mode, "source": source, "user_id": current_user.id}
     if label:
         payload["label"] = label
     
     # Make API request
-    log.info(f"Creating task: mode={mode}, label={label}, source_len={len(source)}")
+    log.info(f"Creating task: mode={mode}, label={label}, source_len={len(source)}, user_id={current_user.id}")
     body, err = w_request("POST", "/api/tasks", json_body=payload)
     
     if err:
@@ -277,7 +293,7 @@ def create_task():
     return redirect(url_for("task_view", mode=mode, task_id=task_id, refresh=request.args.get("refresh", 3)))
 
 @app.get("/admin")
-@login_required
+@admin_required
 def admin_page():
     """Admin dashboard to view and manage all tasks"""
     log.info("Admin page accessed")
@@ -286,7 +302,7 @@ def admin_page():
     return render_template("admin.html")
 
 @app.get("/admin/tasks")
-@login_required
+@admin_required
 def admin_tasks():
     """Proxy endpoint for admin page to get tasks without exposing worker key"""
     status = request.args.get("status")
@@ -301,6 +317,71 @@ def admin_tasks():
     if err:
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
+
+@app.get("/admin/users")
+@admin_required
+def admin_users_page():
+    """Admin page for user management"""
+    users = user_manager.get_all_users()
+    return render_template("admin_users.html", users=users)
+
+@app.post("/admin/users/create")
+@admin_required
+def create_user_route():
+    """Create a new user"""
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "").strip()
+    is_admin = request.form.get("is_admin") == "on"
+    
+    if not username or not password:
+        flash("Username and password are required", "error")
+        return redirect(url_for("admin_users_page"))
+    
+    try:
+        user_manager.create_user(username, password, is_admin)
+        flash(f"User '{username}' created successfully", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    
+    return redirect(url_for("admin_users_page"))
+
+@app.post("/admin/users/<int:user_id>/delete")
+@admin_required
+def delete_user_route(user_id: int):
+    """Delete a user"""
+    if user_id == current_user.id:
+        flash("You cannot delete your own account", "error")
+        return redirect(url_for("admin_users_page"))
+    
+    user_manager.delete_user(user_id)
+    flash("User deleted successfully", "success")
+    return redirect(url_for("admin_users_page"))
+
+@app.post("/admin/users/<int:user_id>/toggle-admin")
+@admin_required
+def toggle_admin_route(user_id: int):
+    """Toggle admin status"""
+    if user_id == current_user.id:
+        flash("You cannot modify your own admin status", "error")
+        return redirect(url_for("admin_users_page"))
+    
+    is_admin = user_manager.toggle_admin(user_id)
+    flash(f"User is now {'an admin' if is_admin else 'a regular user'}", "success")
+    return redirect(url_for("admin_users_page"))
+
+@app.post("/admin/users/<int:user_id>/reset-password")
+@admin_required
+def reset_password_route(user_id: int):
+    """Reset user password"""
+    new_password = request.form.get("new_password", "").strip()
+    
+    if not new_password:
+        flash("New password is required", "error")
+        return redirect(url_for("admin_users_page"))
+    
+    user_manager.update_user_password(user_id, new_password)
+    flash("Password reset successfully", "success")
+    return redirect(url_for("admin_users_page"))
 
 @app.errorhandler(404)
 def not_found(e):
