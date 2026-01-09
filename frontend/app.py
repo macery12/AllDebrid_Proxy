@@ -165,6 +165,11 @@ def _is_video(filename: str) -> bool:
     ext = Path(filename).suffix.lower()
     return ext in video_exts
 
+def _is_still_downloading(filepath: Path) -> bool:
+    """Check if a file is still being downloaded by aria2c"""
+    aria2_control = Path(str(filepath) + ".aria2")
+    return aria2_control.exists()
+
 # ------------------------------------------------------------------------------
 # Pages / Routes
 # ------------------------------------------------------------------------------
@@ -317,7 +322,8 @@ def list_folder(task_id):
             items.append({
                 "rel": rel, 
                 "size": p.stat().st_size,
-                "is_video": _is_video(p.name)
+                "is_video": _is_video(p.name),
+                "is_downloading": _is_still_downloading(p)
             })
     return render_template("folder.html", task_id=task_id, entries=items)
 
@@ -351,6 +357,10 @@ def raw_file(task_id, relpath):
         abort(400, "Invalid path")
     if not full.exists() or not full.is_file():
         abort(404)
+    
+    # Check if file is still being downloaded
+    if _is_still_downloading(full):
+        abort(409, "File is still being downloaded. Please wait until the download completes.")
 
     # Metadata
     st = full.stat()
@@ -402,6 +412,11 @@ def play_video(task_id, relpath):
     if not full.exists() or not full.is_file():
         abort(404)
     
+    # Check if file is still being downloaded
+    if _is_still_downloading(full):
+        flash("This file is still being downloaded. Please wait until the download completes.", "error")
+        return redirect(url_for("list_folder", task_id=task_id))
+    
     if not _is_video(full.name):
         flash("This file is not a video", "error")
         return redirect(url_for("list_folder", task_id=task_id))
@@ -431,6 +446,10 @@ def stream_video(task_id, relpath):
         abort(400, "Invalid path")
     if not full.exists() or not full.is_file():
         abort(404)
+    
+    # Check if file is still being downloaded
+    if _is_still_downloading(full):
+        abort(409, "File is still being downloaded. Please wait until the download completes.")
     
     # Get file metadata
     st = full.stat()
