@@ -2,7 +2,7 @@ import uuid, json, os, time, shutil, redis, asyncio
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
-from app.auth import verify_worker_key
+from app.auth import verify_worker_key, verify_sse_access
 from app.schemas import CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo
 from app.config import settings
 from app.db import SessionLocal
@@ -103,6 +103,17 @@ def get_task(task_id: str):
             raise HTTPException(status_code=404, detail="Not found")
         return task_to_response(t, s)
 
+@router.post("/tasks/{task_id}/sse-token", dependencies=[Depends(verify_worker_key)])
+def create_sse_token(task_id: str):
+    """Generate a secure, time-limited token for SSE access (prevents exposing worker key to frontend)"""
+    from app.auth import generate_sse_token
+    with SessionLocal() as s:
+        t = s.get(Task, task_id)
+        if not t:
+            raise HTTPException(status_code=404, detail="Not found")
+    token = generate_sse_token(task_id)
+    return {"token": token, "expiresIn": 3600}
+
 @router.post("/tasks/{task_id}/select", dependencies=[Depends(verify_worker_key)])
 def select_files(task_id: str, req: SelectRequest):
     with SessionLocal() as s:
@@ -173,8 +184,9 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
             "total": s.execute(select(func.count(Task.id))).scalar()
         }
 
-@router.get("/tasks/{task_id}/events", dependencies=[Depends(verify_worker_key)])
-async def task_events(task_id: str):
+@router.get("/tasks/{task_id}/events")
+async def task_events(task_id: str, _auth=Depends(verify_sse_access)):
+    """SSE endpoint with token-based authentication (doesn't expose worker key to frontend)"""
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:

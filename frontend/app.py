@@ -311,11 +311,18 @@ def task_view(task_id):
     if err:
         flash(f"Load failed: {err[0]}", "error")
         t = None
+    
+    # Generate a secure SSE token (never expose WORKER_API_KEY to frontend)
+    sse_token = None
+    token_response, token_err = w_request("POST", f"/api/tasks/{task_id}/sse-token")
+    if not token_err and token_response:
+        sse_token = token_response.get("token")
+    
     mode = (t or {}).get("mode") or request.args.get("mode", "auto")
-    # Pass worker_base_url and worker_key to template for SSE connection
+    # Pass worker_base_url and secure SSE token to template
     return render_template("task.html", task_id=task_id, t=t, mode=mode, 
                          worker_base_url=app.config["WORKER_BASE_URL"],
-                         worker_key=app.config["WORKER_KEY"])
+                         sse_token=sse_token)
 
 @app.post("/tasks/<task_id>/select")
 @login_required
