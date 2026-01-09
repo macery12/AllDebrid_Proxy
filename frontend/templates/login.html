@@ -1,66 +1,225 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <style>
-        body {
-            background-color: #f8f9fa;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        .container {
-            background-color: #fff;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            font-weight: bold;
-        }
-        .form-group input {
-            border: none;
-            border-radius: 5px;
-            padding: 10px;
-            width: 100%;
-        }
-        .form-group input:focus {
-            outline: none;
-        }
-        .btn-primary {
-            background-color: #007bff;
-            border-color: #007bff;
-        }
-        .btn-primary:hover {
-            background-color: #0069d9;
-            border-color: #0062cc;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login — AllDebrid Proxy</title>
+  <style>
+    :root { 
+      --bg:#0a0e1a; 
+      --bg-secondary:#0f1420;
+      --card:#141b2e; 
+      --card-hover:#1a2340;
+      --muted:#8aa0c7; 
+      --text:#e8f0ff; 
+      --accent:#6366f1; 
+      --accent-hover:#7c3aed;
+      --accent-2:#22c55e; 
+      --danger:#ef4444; 
+      --warn:#f59e0b;
+      --border:#1e2a50;
+      --border-light:#2a3a69;
+    }
+    *{box-sizing:border-box; margin:0; padding:0}
+    body{
+      background:linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
+      color:var(--text);
+      font:15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+    
+    /* Login container */
+    .login-container {
+      width: 100%;
+      max-width: 420px;
+      animation: fadeIn 0.5s ease;
+    }
+    
+    /* Header */
+    .login-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .login-header h1 {
+      font-size: 32px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+    .login-header p {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    
+    /* Card */
+    .login-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    }
+    
+    /* Flash messages */
+    .flash-message{
+      padding: 14px 18px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      border-left: 4px solid;
+      animation: slideIn 0.3s ease;
+    }
+    .flash-message.error{
+      background: rgba(239, 68, 68, 0.1);
+      border-color: #ef4444;
+      color: #fca5a5;
+    }
+    .flash-message.success{
+      background: rgba(34, 197, 94, 0.1);
+      border-color: #22c55e;
+      color: #86efac;
+    }
+    
+    /* Form */
+    .form-group {
+      margin-bottom: 24px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    input[type=text], 
+    input[type=password] {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 15px;
+      transition: all 0.2s ease;
+    }
+    input[type=text]:focus, 
+    input[type=password]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    
+    /* Button */
+    .btn-login {
+      width: 100%;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      color: #fff;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      margin-top: 8px;
+    }
+    .btn-login:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+    .btn-login:active {
+      transform: translateY(0);
+    }
+    
+    /* Icon */
+    .icon-lock {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(34, 197, 94, 0.1));
+      border: 1px solid var(--border);
+      border-radius: 50%;
+    }
+    
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Responsive */
+    @media (max-width: 480px) {
+      .login-card {
+        padding: 24px;
+      }
+      .login-header h1 {
+        font-size: 28px;
+      }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h2 class="text-center mb-4">Login</h2>
-        <form method="POST" action="/login">
-            <div class="form-group">
-                <label for="username">Username:</label>
-                <input type="text" id="username" name="username" class="form-control" required>
-            </div>
-            <div class="form-group">
-                <label for="password">Password:</label>
-                <input type="password" id="password" name="password" class="form-control" required>
-            </div>
-            <button type="submit" class="btn btn-primary btn-block">Login</button>
-        </form>
+  <div class="login-container">
+    <div class="login-header">
+      <div class="icon-lock">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h1>🚀 AllDebrid Proxy</h1>
+      <p>Sign in to access your downloads</p>
     </div>
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    
+    <div class="login-card">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for cat, msg in messages %}
+            <div class="flash-message {{ cat }}">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      
+      <form method="POST" action="/login">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" placeholder="Enter your username" required autofocus>
+        </div>
+        
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Enter your password" required>
+        </div>
+        
+        <button type="submit" class="btn-login">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+            <polyline points="10 17 15 12 10 7"></polyline>
+            <line x1="15" y1="12" x2="3" y2="12"></line>
+          </svg>
+          Sign In
+        </button>
+      </form>
+    </div>
+  </div>
 </body>
 </html>
