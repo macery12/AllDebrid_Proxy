@@ -341,10 +341,11 @@
 
 <script>
 (function () {
-  const taskId = "{{ task_id }}";
+  const taskId = {{ task_id|tojson }};
+  const workerBaseUrl = {{ app.config["WORKER_BASE_URL"]|tojson }};
   if (!('EventSource' in window)) return;
 
-  const es = new EventSource(`{{ app.config["WORKER_BASE_URL"] }}/api/tasks/${taskId}/events`);
+  const es = new EventSource(`${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events`);
   const statusPill = document.querySelector('[data-task-status]');
   const filesBody = document.querySelector('[data-files-table]');
   const fileCount = document.querySelector('[data-file-count]');
