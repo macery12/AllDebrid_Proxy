@@ -81,10 +81,11 @@
     lastSeekTime = now;
   });
   
-  // Handle waiting (buffering) events
+  // Handle waiting (buffering) events with visual feedback
   let bufferingTimeout;
   video.addEventListener('waiting', function() {
     console.log('Video buffering...');
+    video.style.opacity = '0.7';
     clearTimeout(bufferingTimeout);
     // If buffering for more than 10 seconds, show a message
     bufferingTimeout = setTimeout(function() {
@@ -96,6 +97,7 @@
   
   video.addEventListener('canplay', function() {
     clearTimeout(bufferingTimeout);
+    video.style.opacity = '1';
   });
   
   // Clear saved position when video ends
@@ -117,15 +119,8 @@
       }
     }
     console.error(msg);
-  });
-  
-  // Add visual feedback for buffering
-  video.addEventListener('waiting', function() {
-    video.style.opacity = '0.7';
-  });
-  
-  video.addEventListener('canplay', function() {
-    video.style.opacity = '1';
+    // Show error to user
+    alert(msg);
   });
 })();
 </script>
