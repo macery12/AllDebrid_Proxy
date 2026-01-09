@@ -46,12 +46,23 @@ class User(UserMixin):
     @property
     def is_active(self):
         return True
+    
+    def get_id(self):
+        """Return user ID as string for Flask-Login"""
+        return str(self.id)
 
 @login_manager.user_loader
 def load_user(user_id):
-    db_user = user_manager.get_user_by_id(int(user_id))
-    if db_user:
-        return User(db_user.id, db_user.username, db_user.is_admin)
+    try:
+        # Convert to int, handle both numeric and string IDs
+        numeric_id = int(user_id)
+        db_user = user_manager.get_user_by_id(numeric_id)
+        if db_user:
+            return User(db_user.id, db_user.username, db_user.is_admin)
+    except (ValueError, TypeError):
+        # Invalid user_id format (e.g., old session with username)
+        # Return None to force re-login
+        pass
     return None
 
 @login_manager.unauthorized_handler
