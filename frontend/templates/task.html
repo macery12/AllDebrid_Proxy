@@ -347,6 +347,7 @@
   // tojson automatically escapes special characters to prevent XSS
   const taskId = {{ task_id|tojson }};
   const workerBaseUrl = {{ worker_base_url|tojson }};
+  const workerKey = {{ worker_key|tojson }};
   if (!('EventSource' in window)) return;
 
   // Validate and encode URL components to prevent SSRF
@@ -355,7 +356,10 @@
     return;
   }
   
-  const es = new EventSource(`${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events`);
+  // Build SSE URL with authentication key as query parameter
+  // EventSource doesn't support custom headers, so we use query param
+  const sseUrl = `${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events?key=${encodeURIComponent(workerKey)}`;
+  const es = new EventSource(sseUrl);
   const statusPill = document.querySelector('[data-task-status]');
   const filesBody = document.querySelector('[data-files-table]');
   const fileCount = document.querySelector('[data-file-count]');
