@@ -209,14 +209,11 @@ async function loadTasks() {
   container.innerHTML = '<div class="loading">Loading tasks...</div>';
   
   try {
-    const response = await fetch('{{ app.config["WORKER_BASE_URL"] }}/api/tasks', {
-      headers: {
-        'X-Worker-Key': '{{ app.config["WORKER_KEY"] }}'
-      }
-    });
+    const response = await fetch('/api/admin/tasks');
     
     if (!response.ok) {
-      throw new Error('Failed to fetch tasks');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to fetch tasks');
     }
     
     const data = await response.json();
@@ -228,7 +225,7 @@ async function loadTasks() {
     console.error('Error loading tasks:', error);
     container.innerHTML = `
       <div class="empty-state">
-        <p style="color: var(--danger);">Failed to load tasks: ${error.message}</p>
+        <p style="color: var(--danger);">Failed to load tasks: ${escapeHtml(error.message)}</p>
         <button class="btn" onclick="loadTasks()">Retry</button>
       </div>
     `;
@@ -342,22 +339,20 @@ async function deleteTask(taskId) {
   }
   
   try {
-    const response = await fetch(`{{ app.config["WORKER_BASE_URL"] }}/api/tasks/${taskId}?purge_files=true`, {
-      method: 'DELETE',
-      headers: {
-        'X-Worker-Key': '{{ app.config["WORKER_KEY"] }}'
-      }
+    const response = await fetch(`/api/admin/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
+      method: 'DELETE'
     });
     
     if (!response.ok) {
-      throw new Error('Failed to delete task');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to delete task');
     }
     
     alert('Task deleted successfully');
     loadTasks();
   } catch (error) {
     console.error('Error deleting task:', error);
-    alert(`Failed to delete task: ${error.message}`);
+    alert(`Failed to delete task: ${escapeHtml(error.message)}`);
   }
 }
 

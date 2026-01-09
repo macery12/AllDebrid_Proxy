@@ -65,14 +65,13 @@ def create_task(req: CreateTaskRequest):
             .where(Task.infohash == infohash)
             .where(Task.status.in_(["ready", "done", "completed"]))
             .order_by(Task.created_at.desc())
-        ).first()
+        ).scalars().first()
         
         if existing_completed:
             # Reuse existing completed task
-            existing_task = existing_completed[0]
             return {
-                "taskId": existing_task.id, 
-                "status": existing_task.status,
+                "taskId": existing_completed.id, 
+                "status": existing_completed.status,
                 "reused": True,
                 "message": f"Reusing existing task with matching infohash"
             }

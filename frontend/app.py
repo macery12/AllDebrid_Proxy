@@ -279,6 +279,33 @@ def admin_page():
     log.info("Admin page accessed")
     return render_template("admin.html")
 
+@app.get("/api/admin/tasks")
+@login_required
+def admin_list_tasks():
+    """Proxy endpoint for admin to list tasks"""
+    status = request.args.get("status")
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    
+    params = {"limit": min(limit, 100), "offset": offset}
+    if status:
+        params["status"] = status
+    
+    body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+@app.delete("/api/admin/tasks/<task_id>")
+@login_required
+def admin_delete_task(task_id):
+    """Proxy endpoint for admin to delete tasks"""
+    purge = request.args.get("purge_files", "true").lower() == "true"
+    body, err = w_request("DELETE", f"/api/tasks/{task_id}", params={"purge_files": purge})
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
 @app.errorhandler(404)
 def not_found(e):
     """Handle 404 errors"""
