@@ -1,48 +1,187 @@
 {% extends "base.html" %}
-{% block title %}Folder {{ task_id }} — alldebrid-proxy V1{% endblock %}
+{% block title %}Files - {{ task_id }} — AllDebrid Proxy{% endblock %}
 {% block content %}
-<section class="card">
-  <h2>Folder {{ task_id }}</h2>
-  <div class="row" style="gap:8px">
-    <a class="btn" href="/d/{{ task_id }}.tar.gz">Download all (.tar.gz)</a>
-    <a class="btn" href="/d/{{ task_id }}/links.txt">links.txt</a>
-    <a class="btn" href="{{ url_for('task_view', task_id=task_id) }}">Back to task</a>
+
+<style>
+.folder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.folder-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+}
+.folder-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.file-table thead th {
+  background: var(--bg-secondary);
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+.file-table tbody td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.file-table tbody tr:hover {
+  background: var(--card-hover);
+}
+.file-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.file-name {
+  font-weight: 500;
+  color: var(--text);
+}
+.file-icon {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.downloading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  color: var(--warn);
+  font-size: 12px;
+  margin-left: 8px;
+}
+.file-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.file-actions .btn {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+</style>
+
+<div class="folder-header">
+  <h1>📁 Task Files</h1>
+  <div class="folder-actions">
+    <a class="btn" href="/d/{{ task_id }}.tar.gz">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Download All (.tar.gz)
+    </a>
+    <a class="btn" href="/d/{{ task_id }}/links.txt">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+      </svg>
+      Links.txt
+    </a>
+    <a class="btn primary" href="{{ url_for('task_view', task_id=task_id) }}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 12H5M12 19l-7-7 7-7"></path>
+      </svg>
+      Back to Task
+    </a>
   </div>
+</div>
+
+<div class="card">
+  <h2>Files ({{ entries|length }})</h2>
+  
   {% if entries|length == 0 %}
-    <div class="muted" style="margin-top:10px">No files found.</div>
-  {% else %}
-    <div class="files" style="margin-top:10px">
-      <table>
-        <thead><tr><th>Path</th><th class="size">Size</th><th style="width:200px">Actions</th></tr></thead>
-        <tbody>
-          {% for e in entries %}
-          <tr>
-            <td>
-              {{ e.rel }}
-              {% if e.is_downloading %}
-              <span style="color:#ff9800;margin-left:8px">⏳ Downloading...</span>
-              {% endif %}
-            </td>
-            <td class="size">{{ e.size|hbytes }}</td>
-            <td>
-              {% if e.is_downloading %}
-              <div class="row" style="gap:6px">
-                <span class="muted" style="padding:6px 10px">Download in progress...</span>
-              </div>
-              {% else %}
-              <div class="row" style="gap:6px">
-                {% if e.is_video %}
-                <a class="btn good" href="/d/{{ task_id }}/play/{{ e.rel }}" style="padding:6px 10px">▶ Play</a>
-                {% endif %}
-                <a class="btn" href="/d/{{ task_id }}/raw/{{ e.rel }}" target="_blank" style="padding:6px 10px">Download</a>
-              </div>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="empty-state">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+        <polyline points="13 2 13 9 20 9"></polyline>
+      </svg>
+      <p>No files found in this task</p>
     </div>
+  {% else %}
+    <table class="file-table">
+      <thead>
+        <tr>
+          <th>File Name</th>
+          <th style="width: 140px; text-align: right;">Size</th>
+          <th style="width: 220px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td>
+            <span class="file-icon">
+              {% if e.is_video %}
+                🎬
+              {% else %}
+                📄
+              {% endif %}
+            </span>
+            <span class="file-name">{{ e.rel }}</span>
+            {% if e.is_downloading %}
+              <span class="downloading-badge">
+                ⏳ Downloading...
+              </span>
+            {% endif %}
+          </td>
+          <td style="text-align: right; color: var(--muted);">
+            {{ e.size|hbytes }}
+          </td>
+          <td>
+            {% if e.is_downloading %}
+              <span class="muted small">Download in progress...</span>
+            {% else %}
+              <div class="file-actions">
+                {% if e.is_video %}
+                  <a class="btn good" href="/d/{{ task_id }}/play/{{ e.rel }}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Play
+                  </a>
+                {% endif %}
+                <a class="btn" href="/d/{{ task_id }}/raw/{{ e.rel }}" target="_blank">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  Download
+                </a>
+              </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   {% endif %}
-</section>
+</div>
+
 {% endblock %}

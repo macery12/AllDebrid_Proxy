@@ -9,7 +9,7 @@ class Task(Base):
     label = Column(Text, nullable=True)
     mode = Column(String(16), nullable=False)  # auto|select
     source = Column(Text, nullable=False)
-    infohash = Column(String(40), nullable=False, unique=True)
+    infohash = Column(String(40), nullable=False, index=True)  # Allow multiple tasks with same infohash
     provider = Column(String(32), nullable=False, default="alldebrid")
     provider_ref = Column(Text, nullable=True)
     status = Column(String(32), nullable=False, default="queued")

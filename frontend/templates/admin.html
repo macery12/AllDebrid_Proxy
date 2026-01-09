@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — AllDebrid Proxy{% endblock %}
+{% block content %}
+
+<style>
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.admin-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+.stat-card .value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.stat-card .label {
+  font-size: 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.filters {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.filters label {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.filters select,
+.filters input {
+  padding: 8px 12px;
+  flex: 1;
+  min-width: 150px;
+}
+table.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+table.admin-table thead th {
+  background: var(--bg-secondary);
+  padding: 14px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+table.admin-table tbody td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+table.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+table.admin-table tbody tr:hover {
+  background: var(--card-hover);
+}
+.task-source {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+.task-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.task-actions .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.empty-state svg {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+}
+.task-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--accent);
+}
+.task-label {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+</style>
+
+<div class="admin-header">
+  <h1>📊 Admin Dashboard</h1>
+  <a class="btn primary" href="{{ url_for('index') }}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 5v14M5 12h14"></path>
+    </svg>
+    Create New Task
+  </a>
+</div>
+
+<div class="stats" id="stats">
+  <div class="stat-card">
+    <div class="value" data-stat="total">-</div>
+    <div class="label">Total Tasks</div>
+  </div>
+  <div class="stat-card">
+    <div class="value" data-stat="queued">-</div>
+    <div class="label">Queued</div>
+  </div>
+  <div class="stat-card">
+    <div class="value" data-stat="downloading">-</div>
+    <div class="label">Downloading</div>
+  </div>
+  <div class="stat-card">
+    <div class="value" data-stat="completed">-</div>
+    <div class="label">Completed</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="filters">
+    <label for="statusFilter">Status:</label>
+    <select id="statusFilter">
+      <option value="">All</option>
+      <option value="queued">Queued</option>
+      <option value="downloading">Downloading</option>
+      <option value="ready">Ready</option>
+      <option value="done">Done</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+      <option value="canceled">Canceled</option>
+    </select>
+    
+    <label for="searchInput">Search:</label>
+    <input type="text" id="searchInput" placeholder="Search by label or infohash...">
+    
+    <button class="btn" onclick="loadTasks()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      </svg>
+      Refresh
+    </button>
+  </div>
+
+  <div id="tasksContainer">
+    <div class="loading">Loading tasks...</div>
+  </div>
+</div>
+
+<script>
+let allTasks = [];
+const workerKey = {{ worker_key|tojson }};
+
+async function loadTasks() {
+  const container = document.getElementById('tasksContainer');
+  container.innerHTML = '<div class="loading">Loading tasks...</div>';
+  
+  try {
+    const headers = {};
+    if (workerKey) {
+      headers['X-Worker-Key'] = workerKey;
+    }
+    
+    // Nginx strips /api/ prefix, FastAPI adds /api prefix, so use /api/api/tasks
+    const response = await fetch('/api/api/tasks', {
+      headers: headers
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.detail || 'Failed to fetch tasks');
+    }
+    
+    const data = await response.json();
+    allTasks = data.tasks || [];
+    
+    updateStats(allTasks);
+    renderTasks(allTasks);
+  } catch (error) {
+    console.error('Error loading tasks:', error);
+    container.innerHTML = `
+      <div class="empty-state">
+        <p style="color: var(--danger);">Failed to load tasks: ${escapeHtml(error.message)}</p>
+        <button class="btn" onclick="loadTasks()">Retry</button>
+      </div>
+    `;
+  }
+}
+
+function updateStats(tasks) {
+  const stats = {
+    total: tasks.length,
+    queued: tasks.filter(t => t.status === 'queued').length,
+    downloading: tasks.filter(t => t.status === 'downloading').length,
+    completed: tasks.filter(t => ['ready', 'done', 'completed'].includes(t.status)).length
+  };
+  
+  document.querySelector('[data-stat="total"]').textContent = stats.total;
+  document.querySelector('[data-stat="queued"]').textContent = stats.queued;
+  document.querySelector('[data-stat="downloading"]').textContent = stats.downloading;
+  document.querySelector('[data-stat="completed"]').textContent = stats.completed;
+}
+
+function renderTasks(tasks) {
+  const container = document.getElementById('tasksContainer');
+  
+  if (tasks.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        <p>No tasks found</p>
+      </div>
+    `;
+    return;
+  }
+  
+  const html = `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Task ID</th>
+          <th>Label / Source</th>
+          <th>Infohash</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tasks.map(task => `
+          <tr>
+            <td>
+              <a href="/tasks/${task.taskId}" class="task-id">
+                ${task.taskId.substring(0, 8)}...
+              </a>
+            </td>
+            <td>
+              ${task.label ? `<div class="task-label">${escapeHtml(task.label)}</div>` : ''}
+              <div class="task-source" title="${escapeHtml(task.source)}">
+                ${escapeHtml(task.source)}
+              </div>
+            </td>
+            <td>
+              <code class="kbd">${task.infohash || 'N/A'}</code>
+            </td>
+            <td>
+              <span class="pill ${getStatusClass(task.status)}">${task.status}</span>
+            </td>
+            <td class="small muted">
+              ${formatDate(task.created_at)}
+            </td>
+            <td>
+              <div class="task-actions">
+                <a href="/tasks/${task.taskId}" class="btn">View</a>
+                <a href="/d/${task.taskId}/" class="btn">Files</a>
+                <button class="btn danger" onclick="deleteTask('${task.taskId}')">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+  
+  container.innerHTML = html;
+}
+
+function filterTasks() {
+  const statusFilter = document.getElementById('statusFilter').value;
+  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+  
+  let filtered = allTasks;
+  
+  if (statusFilter) {
+    filtered = filtered.filter(t => t.status === statusFilter);
+  }
+  
+  if (searchTerm) {
+    filtered = filtered.filter(t => 
+      (t.label && t.label.toLowerCase().includes(searchTerm)) ||
+      (t.infohash && t.infohash.toLowerCase().includes(searchTerm)) ||
+      (t.source && t.source.toLowerCase().includes(searchTerm))
+    );
+  }
+  
+  renderTasks(filtered);
+}
+
+async function deleteTask(taskId) {
+  if (!confirm(`Are you sure you want to delete task ${taskId.substring(0, 8)}... and purge all files?`)) {
+    return;
+  }
+  
+  try {
+    const headers = {};
+    if (workerKey) {
+      headers['X-Worker-Key'] = workerKey;
+    }
+    
+    // Nginx strips /api/ prefix, FastAPI adds /api prefix, so use /api/api/tasks
+    const response = await fetch(`/api/api/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
+      method: 'DELETE',
+      headers: headers
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.detail || 'Failed to delete task');
+    }
+    
+    alert('Task deleted successfully');
+    loadTasks();
+  } catch (error) {
+    console.error('Error deleting task:', error);
+    alert(`Failed to delete task: ${escapeHtml(error.message)}`);
+  }
+}
+
+function getStatusClass(status) {
+  const s = (status || '').toLowerCase();
+  if (s.includes('cancel') || s.includes('fail') || s.includes('error')) return 'bad';
+  if (s.includes('done') || s.includes('complete') || s.includes('ready')) return 'good';
+  if (s.includes('download') || s.includes('queued')) return 'warn';
+  return 'neutral';
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return 'N/A';
+  const date = new Date(dateStr);
+  return date.toLocaleString();
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Event listeners
+document.getElementById('statusFilter').addEventListener('change', filterTasks);
+document.getElementById('searchInput').addEventListener('input', filterTasks);
+
+// Load tasks on page load
+loadTasks();
+</script>
+
+{% endblock %}

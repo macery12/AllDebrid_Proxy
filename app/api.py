@@ -1,6 +1,6 @@
 import uuid, json, os, time, shutil, redis, asyncio
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from app.auth import verify_worker_key
 from app.schemas import CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo
@@ -11,6 +11,9 @@ from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_l
 from app.ws_manager import ws_manager
 from starlette.responses import StreamingResponse
 import redis.asyncio as aioredis
+
+# Constants
+COMPLETED_STATUSES = ["ready", "done", "completed"]  # Task statuses considered as completed
 
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -59,9 +62,24 @@ def create_task(req: CreateTaskRequest):
     if not infohash:
         raise HTTPException(status_code=400, detail="Invalid magnet (infohash not found)")
     with SessionLocal() as s:
-        existing = s.execute(select(Task).where(Task.infohash == infohash)).scalar_one_or_none()
-        if existing:
-            return {"taskId": existing.id, "status": existing.status}
+        # Check for existing completed tasks with the same infohash
+        existing_completed = s.execute(
+            select(Task)
+            .where(Task.infohash == infohash)
+            .where(Task.status.in_(COMPLETED_STATUSES))
+            .order_by(Task.created_at.desc())
+        ).scalars().first()
+        
+        if existing_completed:
+            # Reuse existing completed task
+            return {
+                "taskId": existing_completed.id, 
+                "status": existing_completed.status,
+                "reused": True,
+                "message": f"Reusing existing task with matching infohash"
+            }
+        
+        # Create new task
         task_id = str(uuid.uuid4())
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         t = Task(
@@ -75,7 +93,7 @@ def create_task(req: CreateTaskRequest):
         # Notify worker
         r.lpush("queue:tasks", task_id)
         r.publish(f"task:{task_id}", json.dumps({"type":"hello","taskId":task_id,"mode":req.mode,"status":"queued"}))
-        return {"taskId": task_id, "status": "queued"}
+        return {"taskId": task_id, "status": "queued", "reused": False}
 
 @router.get("/tasks/{task_id}", dependencies=[Depends(verify_worker_key)])
 def get_task(task_id: str):
@@ -128,6 +146,32 @@ def delete_task(task_id: str, purge_files: bool = False):
     base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
     shutil.rmtree(os.path.join(base, "files"))
     return {"ok": True}
+
+@router.get("/tasks", dependencies=[Depends(verify_worker_key)])
+def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
+    """List all tasks with optional status filter for admin view"""
+    with SessionLocal() as s:
+        query = select(Task).order_by(Task.created_at.desc())
+        if status:
+            query = query.where(Task.status == status)
+        query = query.limit(limit).offset(offset)
+        tasks = s.execute(query).scalars().all()
+        return {
+            "tasks": [
+                {
+                    "taskId": t.id,
+                    "label": t.label,
+                    "mode": t.mode,
+                    "source": t.source,
+                    "infohash": t.infohash,
+                    "status": t.status,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                    "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+                }
+                for t in tasks
+            ],
+            "total": s.execute(select(func.count(Task.id))).scalar()
+        }
 
 @router.get("/tasks/{task_id}/events")
 async def task_events(task_id: str):
