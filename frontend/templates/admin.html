@@ -215,8 +215,8 @@ async function loadTasks() {
       headers['X-Worker-Key'] = workerKey;
     }
     
-    // Use relative URL - nginx will proxy /api/ to backend
-    const response = await fetch('/api/tasks', {
+    // Nginx strips /api/ prefix, FastAPI adds /api prefix, so use /api/api/tasks
+    const response = await fetch('/api/api/tasks', {
       headers: headers
     });
     
@@ -353,8 +353,8 @@ async function deleteTask(taskId) {
       headers['X-Worker-Key'] = workerKey;
     }
     
-    // Use relative URL - nginx will proxy /api/ to backend
-    const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
+    // Nginx strips /api/ prefix, FastAPI adds /api prefix, so use /api/api/tasks
+    const response = await fetch(`/api/api/tasks/${encodeURIComponent(taskId)}?purge_files=true`, {
       method: 'DELETE',
       headers: headers
     });
