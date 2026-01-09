@@ -1,45 +1,61 @@
 from fastapi import Header, HTTPException, status, Query, Request
 from app.config import settings
+from app.constants import Limits
 import secrets
-import time
+import redis
 
-# Store valid SSE tokens with expiration (task_id -> {token, expires})
-_sse_tokens = {}
-_TOKEN_EXPIRY = 3600  # 1 hour
+# Redis client for SSE token storage (more secure and scalable than in-memory)
+_redis_client = None
+
+def _get_redis():
+    # Get or create Redis client for token storage
+    # Returns: Redis client instance
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    return _redis_client
 
 def generate_sse_token(task_id: str) -> str:
-    """Generate a secure, time-limited token for SSE connections"""
+    # Generate a secure, time-limited token for SSE connections
+    # Uses Redis for storage to support distributed deployments
+    # Args: task_id - Task identifier
+    # Returns: Generated token string
     token = secrets.token_urlsafe(32)
-    _sse_tokens[f"{task_id}:{token}"] = time.time() + _TOKEN_EXPIRY
-    # Clean up expired tokens
-    _cleanup_expired_tokens()
+    key = f"sse_token:{task_id}:{token}"
+    
+    # Store in Redis with automatic expiration
+    r = _get_redis()
+    r.setex(key, Limits.SSE_TOKEN_EXPIRY, "1")
+    
     return token
 
-def _cleanup_expired_tokens():
-    """Remove expired tokens"""
-    now = time.time()
-    expired = [k for k, v in _sse_tokens.items() if v < now]
-    for k in expired:
-        del _sse_tokens[k]
-
 def verify_sse_token(task_id: str, token: str) -> bool:
-    """Verify an SSE token is valid and not expired"""
-    _cleanup_expired_tokens()
-    key = f"{task_id}:{token}"
-    if key in _sse_tokens:
-        return _sse_tokens[key] > time.time()
-    return False
+    # Verify an SSE token is valid and not expired
+    # Args: task_id - Task identifier, token - Token to verify
+    # Returns: True if token is valid, False otherwise
+    if not token:
+        return False
+    
+    key = f"sse_token:{task_id}:{token}"
+    r = _get_redis()
+    
+    # Check if token exists in Redis
+    return r.exists(key) > 0
 
 def verify_worker_key(
     x_worker_key: str = Header(None, alias="X-Worker-Key"),
     key: str = Query(None)
 ):
-    """Verify worker API key from header or query parameter (for non-SSE endpoints)"""
+    # Verify worker API key from header or query parameter (for non-SSE endpoints)
+    # Args: x_worker_key - API key from header, key - API key from query
+    # Raises: HTTPException if key is invalid
     provided_key = x_worker_key or key
     if not provided_key or provided_key != settings.WORKER_API_KEY:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid key")
 
 def verify_sse_access(task_id: str, sse_token: str = Query(None, alias="token")):
-    """Verify SSE access using a time-limited token (instead of exposing worker key)"""
+    # Verify SSE access using a time-limited token (instead of exposing worker key)
+    # Args: task_id - Task identifier, sse_token - SSE token from query
+    # Raises: HTTPException if token is invalid or expired
     if not sse_token or not verify_sse_token(task_id, sse_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")

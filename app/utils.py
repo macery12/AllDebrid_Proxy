@@ -1,18 +1,45 @@
 import re, os, shutil, json, time
 from typing import Optional
-
-MAGNET_RE = re.compile(
-    r'btih:([0-9A-Fa-f]{40}|[A-Z2-7]{32})',
-    re.IGNORECASE
-)
+from app.validation import validate_infohash
+from app.constants import Patterns
 
 def parse_infohash(magnet: str) -> Optional[str]:
-    m = MAGNET_RE.search(magnet)
+    """
+    Parse and validate info hash from magnet link.
+    
+    Args:
+        magnet: Magnet link string
+        
+    Returns:
+        Lowercase info hash or None if not found
+    """
+    m = re.search(Patterns.MAGNET_BTIH, magnet, re.IGNORECASE)
     if not m:
         return None
-    return m.group(1).lower()
+    
+    infohash = m.group(1).lower()
+    
+    # Validate the extracted hash
+    try:
+        return validate_infohash(infohash)
+    except Exception:
+        return None
 
 def ensure_task_dirs(storage_root: str, task_id: str):
+    """
+    Create task directories and initialize metadata files.
+    
+    Args:
+        storage_root: Root storage directory
+        task_id: Task identifier
+        
+    Returns:
+        Tuple of (base_dir, files_dir)
+    """
+    # Validate task_id to prevent directory traversal
+    from app.validation import validate_task_id
+    task_id = validate_task_id(task_id)
+    
     base = os.path.join(storage_root, task_id)
     files = os.path.join(base, "files")
     os.makedirs(files, exist_ok=True)
@@ -24,17 +51,62 @@ def ensure_task_dirs(storage_root: str, task_id: str):
     return base, files
 
 def disk_free_bytes(path: str) -> int:
-    usage = shutil.disk_usage(path)
-    return usage.free
+    """
+    Get free disk space in bytes.
+    
+    Args:
+        path: Path to check
+        
+    Returns:
+        Free space in bytes
+    """
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free
+    except Exception:
+        # Return 0 on error to be safe
+        return 0
 
 def append_log(base: str, entry: dict):
+    """
+    Append log entry to task log file.
+    
+    Args:
+        base: Base directory for task
+        entry: Log entry dictionary
+    """
     p = os.path.join(base, "logs.json")
     entry = dict(entry)
     entry.setdefault("ts", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-    with open(p, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry) + "\n")
+    
+    # Sanitize log entry values to prevent log injection
+    from app.validation import sanitize_for_log
+    sanitized_entry = {}
+    for key, value in entry.items():
+        if isinstance(value, str):
+            sanitized_entry[key] = sanitize_for_log(value)
+        else:
+            sanitized_entry[key] = value
+    
+    try:
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(sanitized_entry) + "\n")
+    except Exception:
+        # Don't fail if logging fails
+        pass
 
 def write_metadata(base: str, data: dict):
+    """
+    Write metadata to task metadata file.
+    
+    Args:
+        base: Base directory for task
+        data: Metadata dictionary
+    """
     p = os.path.join(base, "metadata.json")
-    with open(p, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    try:
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+    except Exception:
+        # Don't fail if metadata write fails
+        pass
