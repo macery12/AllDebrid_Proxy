@@ -347,11 +347,22 @@
   // tojson automatically escapes special characters to prevent XSS
   const taskId = {{ task_id|tojson }};
   const sseToken = {{ sse_token|tojson }};
+  const initialStatus = {{ (t.status if t else '')|tojson }};
   
   if (!('EventSource' in window)) return;
   
   if (!sseToken || typeof sseToken !== 'string') {
     console.error('No SSE token available');
+    return;
+  }
+  
+  // Final states where SSE should not run
+  const finalStates = ['ready', 'failed', 'canceled', 'cancelled', 'deleted', 'done', 'completed', 'error'];
+  const isFinalState = (status) => finalStates.includes((status || '').toLowerCase());
+  
+  // Don't start SSE if task is already in a final state
+  if (isFinalState(initialStatus)) {
+    console.log(`Task already in final state "${initialStatus}" - SSE not started`);
     return;
   }
   
@@ -461,6 +472,12 @@
     if (statusPill && d.status !== undefined) {
       statusPill.textContent = d.status || '';
       statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
+      
+      // Close SSE connection if task reached final state
+      if (isFinalState(d.status)) {
+        console.log(`Task reached final state "${d.status}" - closing SSE connection`);
+        es.close();
+      }
     }
     if (Array.isArray(d.files) && filesBody) {
       console.log(`Processing ${d.files.length} files from snapshot`);
@@ -477,6 +494,12 @@
       if (statusPill && d.status !== undefined) {
         statusPill.textContent = d.status || '';
         statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
+        
+        // Close SSE connection if task reached final state
+        if (isFinalState(d.status)) {
+          console.log(`Task reached final state "${d.status}" - closing SSE connection`);
+          es.close();
+        }
       }
     }
     
