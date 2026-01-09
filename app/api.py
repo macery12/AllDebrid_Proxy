@@ -9,11 +9,11 @@ from app.db import SessionLocal
 from app.models import Task, TaskFile, UserStats
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
+from app.constants import TaskStatus, FileState, EventType, Limits
+from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int
+from app.exceptions import ValidationError, ResourceNotFoundError
 from starlette.responses import StreamingResponse
 import redis.asyncio as aioredis
-
-# Constants
-COMPLETED_STATUSES = ["ready", "done", "completed"]  # Task statuses considered as completed
 
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -58,15 +58,38 @@ def task_to_response(task: Task, session) -> TaskResponse:
 
 @router.post("/tasks", dependencies=[Depends(verify_worker_key)])
 def create_task(req: CreateTaskRequest):
+    """
+    Create a new download task.
+    
+    Args:
+        req: Task creation request
+        
+    Returns:
+        Task creation response with ID and status
+        
+    Raises:
+        HTTPException: If magnet link is invalid or task creation fails
+    """
+    # Validate inputs
+    try:
+        validate_magnet_link(req.source)
+        if req.label:
+            req.label = validate_label(req.label)
+        if req.user_id:
+            validate_positive_int(req.user_id, "user_id")
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     infohash = parse_infohash(req.source)
     if not infohash:
         raise HTTPException(status_code=400, detail="Invalid magnet (infohash not found)")
+    
     with SessionLocal() as s:
         # Check for existing completed tasks with the same infohash
         existing_completed = s.execute(
             select(Task)
             .where(Task.infohash == infohash)
-            .where(Task.status.in_(COMPLETED_STATUSES))
+            .where(Task.status.in_(TaskStatus.COMPLETED_STATUSES))
             .order_by(Task.created_at.desc())
         ).scalars().first()
         
@@ -84,7 +107,7 @@ def create_task(req: CreateTaskRequest):
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         t = Task(
             id=task_id, mode=req.mode, source=req.source, infohash=infohash,
-            provider="alldebrid", status="queued", label=req.label or None,
+            provider="alldebrid", status=TaskStatus.QUEUED, label=req.label or None,
             user_id=req.user_id
         )
         s.add(t)
@@ -98,14 +121,32 @@ def create_task(req: CreateTaskRequest):
                 s.commit()
         
         append_log(base, {"level":"info","event":"task_created","taskId":task_id})
-        write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": infohash, "status": "queued"})
+        write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": infohash, "status": TaskStatus.QUEUED})
         # Notify worker
         r.lpush("queue:tasks", task_id)
-        r.publish(f"task:{task_id}", json.dumps({"type":"hello","taskId":task_id,"mode":req.mode,"status":"queued"}))
-        return {"taskId": task_id, "status": "queued", "reused": False}
+        r.publish(f"task:{task_id}", json.dumps({"type":EventType.HELLO,"taskId":task_id,"mode":req.mode,"status":TaskStatus.QUEUED}))
+        return {"taskId": task_id, "status": TaskStatus.QUEUED, "reused": False}
 
 @router.get("/tasks/{task_id}", dependencies=[Depends(verify_worker_key)])
 def get_task(task_id: str):
+    """
+    Get task details by ID.
+    
+    Args:
+        task_id: Task identifier
+        
+    Returns:
+        Task response with all details
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
@@ -114,34 +155,71 @@ def get_task(task_id: str):
 
 @router.post("/tasks/{task_id}/sse-token", dependencies=[Depends(verify_worker_key)])
 def create_sse_token(task_id: str):
-    """Generate a secure, time-limited token for SSE access (prevents exposing worker key to frontend)"""
+    """
+    Generate a secure, time-limited token for SSE access.
+    Prevents exposing worker key to frontend.
+    
+    Args:
+        task_id: Task identifier
+        
+    Returns:
+        Token and expiry information
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     from app.auth import generate_sse_token
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
     token = generate_sse_token(task_id)
-    return {"token": token, "expiresIn": 3600}
+    return {"token": token, "expiresIn": Limits.SSE_TOKEN_EXPIRY}
 
 @router.post("/tasks/{task_id}/select", dependencies=[Depends(verify_worker_key)])
 def select_files(task_id: str, req: SelectRequest):
+    """
+    Select files to download for a task in select mode.
+    
+    Args:
+        task_id: Task identifier
+        req: File selection request
+        
+    Returns:
+        Updated task status
+        
+    Raises:
+        HTTPException: If task not found, not in selection mode, or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
-        if t.mode != "select" or t.status != "waiting_selection":
+        if t.mode != "select" or t.status != TaskStatus.WAITING_SELECTION:
             raise HTTPException(status_code=400, detail="Task is not waiting for selection")
         ids = set(req.fileIds or [])
         files = s.execute(select(TaskFile).where(TaskFile.task_id == task_id)).scalars().all()
         for f in files:
             if f.id in ids:
-                f.state = "selected"
-        t.status = "downloading"
+                f.state = FileState.SELECTED
+        t.status = TaskStatus.DOWNLOADING
         s.commit()
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         append_log(base, {"level":"info","event":"selection_made","count":len(ids)})
-        r.publish(f"task:{task_id}", json.dumps({"type":"state","taskId":task_id,"status":"downloading"}))
-        return {"status":"downloading"}
+        r.publish(f"task:{task_id}", json.dumps({"type":EventType.STATE,"taskId":task_id,"status":TaskStatus.DOWNLOADING}))
+        return {"status": TaskStatus.DOWNLOADING}
 
 @router.post("/tasks/{task_id}/cancel", dependencies=[Depends(verify_worker_key)])
 def cancel_task(task_id: str):
