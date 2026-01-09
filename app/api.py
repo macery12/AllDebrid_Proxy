@@ -6,7 +6,7 @@ from app.auth import verify_worker_key, verify_sse_access
 from app.schemas import CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Task, TaskFile
+from app.models import Task, TaskFile, UserStats
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
 from starlette.responses import StreamingResponse
@@ -92,7 +92,6 @@ def create_task(req: CreateTaskRequest):
         
         # Update user stats if user_id provided
         if req.user_id:
-            from app.models import UserStats
             stats = s.query(UserStats).filter(UserStats.user_id == req.user_id).first()
             if stats:
                 stats.total_magnets_processed += 1

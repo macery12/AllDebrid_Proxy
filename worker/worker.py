@@ -3,7 +3,7 @@ import os, time, uuid, threading, logging, traceback, urllib.error, json
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Task, TaskFile
+from app.models import Task, TaskFile, UserStats
 from app.utils import ensure_task_dirs, append_log, write_metadata
 from worker.scheduler import publish, can_start_task, count_active_and_queued
 from worker.downloader import aria2_add_uri  # RPC enqueue (non-blocking)
@@ -96,7 +96,6 @@ def _progress_monitor_loop():
                             # Update user stats when file completes
                             task = s.get(Task, f.task_id)
                             if task and task.user_id:
-                                from app.models import UserStats
                                 stats = s.query(UserStats).filter(UserStats.user_id == task.user_id).first()
                                 if stats:
                                     stats.total_downloads += 1
