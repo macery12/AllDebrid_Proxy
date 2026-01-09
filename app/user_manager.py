@@ -39,7 +39,10 @@ def verify_user(username: str, password: str) -> Optional[User]:
             # Update last login
             user.last_login = datetime.utcnow()
             session.commit()
-            session.refresh(user)
+            # Access all attributes to load them before expunging
+            _ = (user.id, user.username, user.password_hash, user.is_admin, 
+                 user.created_at, user.last_login)
+            session.expunge(user)
             return user
         return None
 
@@ -48,7 +51,10 @@ def get_user_by_username(username: str) -> Optional[User]:
     with SessionLocal() as session:
         user = session.query(User).filter(User.username == username).first()
         if user:
-            session.refresh(user)
+            # Access all attributes to load them before expunging
+            _ = (user.id, user.username, user.password_hash, user.is_admin, 
+                 user.created_at, user.last_login)
+            session.expunge(user)
         return user
 
 def get_user_by_id(user_id: int) -> Optional[User]:
@@ -56,7 +62,10 @@ def get_user_by_id(user_id: int) -> Optional[User]:
     with SessionLocal() as session:
         user = session.get(User, user_id)
         if user:
-            session.refresh(user)
+            # Access all attributes to load them before expunging
+            _ = (user.id, user.username, user.password_hash, user.is_admin, 
+                 user.created_at, user.last_login)
+            session.expunge(user)
         return user
 
 def has_any_users() -> bool:
@@ -82,7 +91,14 @@ def get_all_users() -> list[User]:
     with SessionLocal() as session:
         users = session.query(User).all()
         for user in users:
-            session.refresh(user)
+            # Access all attributes to load them before expunging
+            _ = (user.id, user.username, user.password_hash, user.is_admin, 
+                 user.created_at, user.last_login)
+            # Also load stats relationship if it exists
+            if hasattr(user, 'stats') and user.stats:
+                _ = (user.stats.total_downloads, user.stats.total_magnets_processed, 
+                     user.stats.total_bytes_downloaded)
+            session.expunge(user)
         return users
 
 def update_user_password(user_id: int, new_password: str):
