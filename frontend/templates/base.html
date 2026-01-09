@@ -3,62 +3,340 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{% block title %}alldebrid-proxy — Frontend V1{% endblock %}</title>
+  <title>{% block title %}AllDebrid Proxy — Modern UI{% endblock %}</title>
   <style>
-    :root { --bg:#0b1020; --card:#121a34; --muted:#8aa0c7; --text:#e8f0ff; --accent:#7aa2ff; --accent-2:#22c55e; --danger:#ef4444; --warn:#f59e0b; }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Roboto,Arial}
-    a{color:var(--accent)}
-    header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#0e1530;border-bottom:1px solid #1d294f;position:sticky;top:0;z-index:10}
-    header h1{font-size:18px;margin:0}
-    .wrap{max-width:900px;margin:20px auto;padding:0 16px}
-    .card{background:var(--card);border:1px solid #1e2a50;border-radius:14px;padding:14px;margin-bottom:14px}
-    .card h2{font-size:16px;margin:0 0 8px}
-    label{display:block;font-weight:600;color:var(--muted);margin:11px 0 6px}
-    input[type=text], textarea, select{width:100%;padding:10px 12px;background:#0f1530;border:1px solid #2a3a69;border-radius:10px;color:var(--text)}
-    textarea{min-height:88px;resize:vertical}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    :root { 
+      --bg:#0a0e1a; 
+      --bg-secondary:#0f1420;
+      --card:#141b2e; 
+      --card-hover:#1a2340;
+      --muted:#8aa0c7; 
+      --text:#e8f0ff; 
+      --accent:#6366f1; 
+      --accent-hover:#7c3aed;
+      --accent-2:#22c55e; 
+      --danger:#ef4444; 
+      --warn:#f59e0b;
+      --border:#1e2a50;
+      --border-light:#2a3a69;
+    }
+    *{box-sizing:border-box; margin:0; padding:0}
+    body{
+      background:linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
+      color:var(--text);
+      font:15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height:100vh;
+    }
+    a{color:var(--accent); text-decoration:none; transition: color 0.2s ease}
+    a:hover{color:var(--accent-hover)}
+    
+    /* Header */
+    header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:16px 24px;
+      background:rgba(20, 27, 46, 0.95);
+      border-bottom:1px solid var(--border);
+      backdrop-filter:blur(10px);
+      position:sticky;
+      top:0;
+      z-index:100;
+      box-shadow:0 4px 6px rgba(0,0,0,0.1);
+    }
+    header h1{
+      font-size:20px;
+      font-weight:700;
+      background:linear-gradient(135deg, var(--accent), var(--accent-2));
+      -webkit-background-clip:text;
+      -webkit-text-fill-color:transparent;
+      background-clip:text;
+    }
+    header nav{
+      display:flex;
+      gap:12px;
+      align-items:center;
+    }
+    header nav a{
+      padding:8px 16px;
+      border-radius:8px;
+      background:transparent;
+      border:1px solid var(--border);
+      color:var(--text);
+      font-size:14px;
+      transition:all 0.2s ease;
+    }
+    header nav a:hover{
+      background:var(--card);
+      border-color:var(--accent);
+      transform:translateY(-1px);
+    }
+    
+    /* Main content */
+    .wrap{
+      max-width:1200px;
+      margin:24px auto;
+      padding:0 20px;
+    }
+    
+    /* Cards */
+    .card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:20px;
+      margin-bottom:20px;
+      box-shadow:0 4px 6px rgba(0,0,0,0.1);
+      transition:all 0.3s ease;
+    }
+    .card:hover{
+      box-shadow:0 8px 12px rgba(0,0,0,0.15);
+      border-color:var(--border-light);
+    }
+    .card h2{
+      font-size:18px;
+      margin:0 0 12px;
+      font-weight:600;
+    }
+    
+    /* Forms */
+    label{
+      display:block;
+      font-weight:600;
+      color:var(--muted);
+      margin:14px 0 8px;
+      font-size:14px;
+    }
+    input[type=text], 
+    input[type=password], 
+    textarea, 
+    select{
+      width:100%;
+      padding:12px 14px;
+      background:var(--bg-secondary);
+      border:1px solid var(--border);
+      border-radius:10px;
+      color:var(--text);
+      font-size:15px;
+      transition:all 0.2s ease;
+    }
+    input[type=text]:focus, 
+    input[type=password]:focus,
+    textarea:focus, 
+    select:focus{
+      outline:none;
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    textarea{
+      min-height:100px;
+      resize:vertical;
+      font-family:inherit;
+    }
+    
+    /* Buttons */
+    .row{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
     .row > *{flex:1}
-    .btn{display:inline-flex;gap:8px;align-items:center;padding:9px 12px;border-radius:10px;border:1px solid #2a3a69;background:#0f1530;color:var(--text);cursor:pointer;text-decoration:none}
-    .btn:hover{border-color:#3a4f90}
-    .btn.primary{background:linear-gradient(180deg,#2a48a6,#1b2f73);border-color:#3959b3}
-    .btn.good{background:linear-gradient(180deg,#1e8a46,#166a35);border-color:#25a24f}
-    .btn.warn{background:linear-gradient(180deg,#9e6b15,#7a510f);border-color:#c2871b}
-    .btn.danger{background:linear-gradient(180deg,#a6222a,#74171c);border-color:#c42a34}
-    .muted{color:var(--muted)} .small{font-size:13px}
-    .pill{border:1px solid #2a3a69;border-radius:999px;padding:2px 10px;font-size:12px;display:inline-block}
-    .pill.good{background:#13321d;border-color:#1e5a34;color:#a7e8b9}
-    .pill.warn{background:#3a2c10;border-color:#6c521a;color:#ffd58d}
-    .pill.bad{background:#3a1013;border-color:#6c1a21;color:#ffb4bb}
-    .files table{width:100%;border-collapse:collapse}
-    .files th,.files td{border-bottom:1px solid #1a2547;padding:6px 4px;text-align:left}
-    .files td.size{width:140px;text-align:right;color:#9fb2e0}
-    .progress{background:#0c1430;border:1px solid #253a73;border-radius:999px;height:10px;overflow:hidden}
-    .progress > i{display:block;height:100%;background:linear-gradient(90deg,#2a48a6,#1b2f73)}
-    details summary{cursor:pointer;color:#8aa0c7}
+    .btn{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:10px 16px;
+      border-radius:10px;
+      border:1px solid var(--border);
+      background:var(--bg-secondary);
+      color:var(--text);
+      cursor:pointer;
+      text-decoration:none;
+      font-size:14px;
+      font-weight:500;
+      transition:all 0.2s ease;
+      white-space:nowrap;
+    }
+    .btn:hover{
+      transform:translateY(-2px);
+      box-shadow:0 4px 8px rgba(0,0,0,0.2);
+      border-color:var(--border-light);
+    }
+    .btn.primary{
+      background:linear-gradient(135deg, var(--accent), var(--accent-hover));
+      border-color:var(--accent);
+      color:#fff;
+    }
+    .btn.primary:hover{
+      box-shadow:0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+    .btn.good{
+      background:linear-gradient(135deg, #16a34a, #15803d);
+      border-color:#16a34a;
+      color:#fff;
+    }
+    .btn.warn{
+      background:linear-gradient(135deg, #f59e0b, #d97706);
+      border-color:#f59e0b;
+      color:#fff;
+    }
+    .btn.danger{
+      background:linear-gradient(135deg, #ef4444, #dc2626);
+      border-color:#ef4444;
+      color:#fff;
+    }
+    
+    /* Pills/badges */
+    .muted{color:var(--muted)}
+    .small{font-size:13px}
+    .pill{
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:4px 12px;
+      font-size:12px;
+      display:inline-block;
+      font-weight:500;
+    }
+    .pill.good{
+      background:rgba(34, 197, 94, 0.1);
+      border-color:rgba(34, 197, 94, 0.3);
+      color:#22c55e;
+    }
+    .pill.warn{
+      background:rgba(245, 158, 11, 0.1);
+      border-color:rgba(245, 158, 11, 0.3);
+      color:#f59e0b;
+    }
+    .pill.bad{
+      background:rgba(239, 68, 68, 0.1);
+      border-color:rgba(239, 68, 68, 0.3);
+      color:#ef4444;
+    }
+    .pill.neutral{
+      background:rgba(99, 102, 241, 0.1);
+      border-color:rgba(99, 102, 241, 0.3);
+      color:#6366f1;
+    }
+    
+    /* Tables */
+    .files table{
+      width:100%;
+      border-collapse:collapse;
+      border-radius:12px;
+      overflow:hidden;
+    }
+    .files th,.files td{
+      border-bottom:1px solid var(--border);
+      padding:10px 8px;
+      text-align:left;
+    }
+    .files th{
+      background:var(--bg-secondary);
+      font-weight:600;
+      font-size:13px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+    }
+    .files tbody tr:hover{
+      background:var(--card-hover);
+    }
+    .files td.size{
+      width:140px;
+      text-align:right;
+      color:var(--muted);
+    }
+    
+    /* Progress bars */
+    .progress{
+      background:var(--bg-secondary);
+      border:1px solid var(--border);
+      border-radius:999px;
+      height:12px;
+      overflow:hidden;
+    }
+    .progress > i{
+      display:block;
+      height:100%;
+      background:linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius:999px;
+      transition:width 0.3s ease;
+    }
+    
+    /* Utilities */
+    details summary{
+      cursor:pointer;
+      color:var(--muted);
+      padding:8px 0;
+    }
     details{margin-top:8px}
-    code.kbd{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;background:#0a1024;border:1px solid #22305e;padding:2px 6px;border-radius:6px;color:#b8c7ee}
+    code.kbd{
+      font:12px ui-monospace, SFMono-Regular, Consolas, monospace;
+      background:var(--bg-secondary);
+      border:1px solid var(--border);
+      padding:2px 8px;
+      border-radius:6px;
+      color:var(--accent);
+    }
+    
+    /* Flash messages */
+    .flash-message{
+      padding:14px 18px;
+      border-radius:12px;
+      margin-bottom:16px;
+      border-left:4px solid;
+      animation:slideIn 0.3s ease;
+    }
+    .flash-message.error{
+      background:rgba(239, 68, 68, 0.1);
+      border-color:#ef4444;
+      color:#fca5a5;
+    }
+    .flash-message.ok, .flash-message.success{
+      background:rgba(34, 197, 94, 0.1);
+      border-color:#22c55e;
+      color:#86efac;
+    }
+    .flash-message.info{
+      background:rgba(99, 102, 241, 0.1);
+      border-color:#6366f1;
+      color:#a5b4fc;
+    }
+    
+    @keyframes slideIn {
+      from { opacity:0; transform:translateY(-10px); }
+      to { opacity:1; transform:translateY(0); }
+    }
+    
+    /* Responsive */
+    @media (max-width:768px) {
+      header{padding:12px 16px}
+      header h1{font-size:18px}
+      .wrap{padding:0 12px; margin:16px auto}
+      .card{padding:16px}
+      .btn{padding:8px 12px; font-size:13px}
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
   <header>
-    <h1>alldebrid-proxy</h1>
-    {% if health %}
-    <div class="small">
-      {% set is_ok = health.get('ok') %}
-      <span class="pill {{ 'good' if is_ok else 'bad' }}">
-        Health: {{ 'OK' if is_ok else 'DOWN' }}
-      </span>
-    </div>
-    {% endif %}
+    <h1>🚀 AllDebrid Proxy</h1>
+    <nav>
+      <a href="{{ url_for('index') }}">Home</a>
+      <a href="{{ url_for('admin_page') }}">Admin</a>
+      {% if current_user.is_authenticated %}
+        <a href="{{ url_for('logout') }}">Logout</a>
+      {% endif %}
+    </nav>
   </header>
 
   <div class="wrap">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for cat, msg in messages %}
-          <div class="card" style="border-color: {% if cat=='error' %}#c42a34{% elif cat=='ok' %}#25a24f{% else %}#3959b3{% endif %};">
+          <div class="flash-message {{ cat }}">
             {{ msg }}
           </div>
         {% endfor %}

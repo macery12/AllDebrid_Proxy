@@ -237,8 +237,20 @@ def create_task():
     if not task_id:
         flash("Task created but no taskId returned", "error")
         return redirect(url_for("index"))
-    flash(f"Task created: {task_id}", "ok")
+    
+    # Check if task was reused
+    if body.get("reused"):
+        flash(f"♻️ Task reused: {task_id} (files already downloaded)", "success")
+    else:
+        flash(f"Task created: {task_id}", "ok")
+    
     return redirect(url_for("task_view", mode=mode, task_id=task_id, refresh=request.args.get("refresh", 3)))
+
+@app.get("/admin")
+@login_required
+def admin_page():
+    """Admin dashboard to view and manage all tasks"""
+    return render_template("admin.html")
 
 def get_task(task_id: str):
     body, err = w_request("GET", f"/api/tasks/{task_id}")
