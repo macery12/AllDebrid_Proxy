@@ -79,7 +79,7 @@ class EventType:
 class Limits:
     # Various limits and thresholds
     # SSE token expiry in seconds (1 hour)
-    SSE_TOKEN_EXPIRY = 3600
+    SSE_TOKEN_EXPIRY = 60 * 60  # 1 hour
     
     # Maximum magnet resolution attempts
     MAX_RESOLVE_ATTEMPTS = 240
@@ -119,6 +119,15 @@ class Limits:
     
     # Maximum file path length
     MAX_PATH_LENGTH = 4096
+    
+    # Maximum magnet link length
+    MAX_MAGNET_LENGTH = 10000
+    
+    # Maximum filename length (filesystem standard)
+    MAX_FILENAME_LENGTH = 255
+    
+    # Maximum URL length (HTTP standard)
+    MAX_URL_LENGTH = 2048
 
 
 # HTTP constants
@@ -144,6 +153,9 @@ class Patterns:
     # Regex patterns and file extensions
     # Matches BitTorrent info hash in magnet links
     MAGNET_BTIH = r'btih:([0-9A-Fa-f]{40}|[A-Z2-7]{32})'
+    
+    # UUID format pattern
+    UUID_PATTERN = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     
     # Allowed file extensions for downloads (security)
     ALLOWED_EXTENSIONS = {

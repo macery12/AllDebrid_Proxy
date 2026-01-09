@@ -1,6 +1,4 @@
-"""
-Rate limiting using Redis to prevent API abuse.
-"""
+# Rate limiting using Redis to prevent API abuse
 
 import time
 from typing import Optional
@@ -10,17 +8,11 @@ from app.exceptions import RateLimitError
 
 
 class RateLimiter:
-    """
-    Token bucket rate limiter using Redis.
-    """
+    # Token bucket rate limiter using Redis
     
     def __init__(self, redis_client: redis.Redis):
-        """
-        Initialize rate limiter.
-        
-        Args:
-            redis_client: Redis client instance
-        """
+        # Initialize rate limiter
+        # Args: redis_client - Redis client instance
         self.redis = redis_client
     
     def check_rate_limit(
@@ -30,21 +22,13 @@ class RateLimiter:
         window_seconds: int,
         cost: int = 1
     ) -> bool:
-        """
-        Check if request is within rate limit using sliding window.
-        
-        Args:
-            key: Unique identifier for the rate limit (e.g., "api:user:123")
-            max_requests: Maximum number of requests allowed in window
-            window_seconds: Time window in seconds
-            cost: Cost of this request (default 1)
-        
-        Returns:
-            True if within rate limit
-            
-        Raises:
-            RateLimitError: If rate limit exceeded
-        """
+        # Check if request is within rate limit using sliding window
+        # Args: key - Unique identifier for the rate limit (e.g., "api:user:123")
+        #       max_requests - Maximum number of requests allowed in window
+        #       window_seconds - Time window in seconds
+        #       cost - Cost of this request (default 1)
+        # Returns: True if within rate limit
+        # Raises: RateLimitError if rate limit exceeded
         now = time.time()
         window_start = now - window_seconds
         
@@ -60,8 +44,9 @@ class RateLimiter:
         # Count current requests in window
         pipe.zcard(redis_key)
         
-        # Add current request
-        pipe.zadd(redis_key, {f"{now}:{id(self)}": now})
+        # Add current request with unique timestamp-based key
+        unique_key = f"{now}:{time.time_ns()}"  # Use nanosecond precision for uniqueness
+        pipe.zadd(redis_key, {unique_key: now})
         
         # Set expiry on the key
         pipe.expire(redis_key, window_seconds + 1)
@@ -88,17 +73,11 @@ class RateLimiter:
         max_requests: int,
         window_seconds: int
     ) -> int:
-        """
-        Get remaining requests in current window.
-        
-        Args:
-            key: Unique identifier for the rate limit
-            max_requests: Maximum number of requests allowed
-            window_seconds: Time window in seconds
-        
-        Returns:
-            Number of remaining requests
-        """
+        # Get remaining requests in current window
+        # Args: key - Unique identifier for the rate limit
+        #       max_requests - Maximum number of requests allowed
+        #       window_seconds - Time window in seconds
+        # Returns: Number of remaining requests
         now = time.time()
         window_start = now - window_seconds
         
@@ -110,30 +89,19 @@ class RateLimiter:
         return max(0, max_requests - count)
     
     def reset(self, key: str):
-        """
-        Reset rate limit for a key.
-        
-        Args:
-            key: Unique identifier for the rate limit
-        """
+        # Reset rate limit for a key
+        # Args: key - Unique identifier for the rate limit
         redis_key = f"ratelimit:{key}"
         self.redis.delete(redis_key)
 
 
 # Decorator for rate limiting endpoints
 def rate_limit(max_requests: int = 60, window_seconds: int = 60):
-    """
-    Decorator to rate limit a function.
-    
-    Args:
-        max_requests: Maximum requests allowed
-        window_seconds: Time window in seconds
-    
-    Usage:
-        @rate_limit(max_requests=10, window_seconds=60)
-        def my_endpoint():
-            pass
-    """
+    # Decorator to rate limit a function
+    # Args: max_requests - Maximum requests allowed
+    #       window_seconds - Time window in seconds
+    # Usage: @rate_limit(max_requests=10, window_seconds=60)
+    #        def my_endpoint(): pass
     def decorator(func):
         def wrapper(*args, **kwargs):
             # This is a placeholder - actual implementation would need
