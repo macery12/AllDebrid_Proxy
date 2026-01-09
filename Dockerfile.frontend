@@ -23,5 +23,7 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:5000/debug/config || exit 1
 
-# Run with gunicorn app factory
-CMD ["python","-m","gunicorn","--worker-class","gthread","-b","0.0.0.0:5000","--workers","3","--threads","4","--timeout","3600","--graceful-timeout","30","--keep-alive","65","--max-requests","2000","--max-requests-jitter","200","--access-logfile","-","--error-logfile","-","app:app"]
+# Run with gunicorn - optimized for video streaming
+# Increased workers/threads to handle concurrent Range requests during seeking
+# --worker-tmp-dir /dev/shm uses shared memory for better performance
+CMD ["python","-m","gunicorn","--worker-class","gthread","-b","0.0.0.0:5000","--workers","4","--threads","8","--worker-tmp-dir","/dev/shm","--timeout","3600","--graceful-timeout","30","--keep-alive","65","--max-requests","5000","--max-requests-jitter","500","--access-logfile","-","--error-logfile","-","app:app"]
