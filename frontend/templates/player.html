@@ -1,33 +1,136 @@
 {% extends "base.html" %}
 {% block title %}{{ filename }} — Video Player{% endblock %}
 {% block content %}
-<section class="card">
-  <h2>{{ filename }}</h2>
-  <div style="margin-top: 16px;">
-    <video 
-      id="videoPlayer"
-      controls 
-      preload="metadata"
-      style="width: 100%; max-height: 70vh; background: #000; border-radius: 8px;"
-    >
-      <source src="{{ video_url }}" type="{{ mime_type }}">
-      Your browser does not support the video tag.
-    </video>
+
+<style>
+.player-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.player-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.player-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.video-wrapper {
+  position: relative;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.video-wrapper video {
+  width: 100%;
+  max-height: 75vh;
+  display: block;
+}
+.video-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.info-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.info-value {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+}
+.player-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+</style>
+
+<div class="player-container">
+  <div class="player-header">
+    <h1>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="color: var(--accent);">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+      </svg>
+      {{ filename }}
+    </h1>
+    <div class="player-actions">
+      <a class="btn" href="{{ download_url }}" download>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download
+      </a>
+      <a class="btn primary" href="{{ back_url }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"></path>
+        </svg>
+        Back to Files
+      </a>
+    </div>
   </div>
-  <div class="row" style="gap:8px; margin-top: 16px;">
-    <a class="btn" href="{{ back_url }}">← Back to folder</a>
-    <a class="btn" href="{{ download_url }}" download>Download</a>
+
+  <div class="card">
+    <div class="video-wrapper">
+      <video 
+        id="videoPlayer"
+        controls 
+        preload="metadata"
+        playsinline
+      >
+        <source src="{{ video_url }}" type="{{ mime_type }}">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+
+    <div class="video-info">
+      <div class="info-item">
+        <div class="info-label">File Path</div>
+        <div class="info-value">{{ relpath }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">File Size</div>
+        <div class="info-value">{{ size|hbytes }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Format</div>
+        <div class="info-value">{{ mime_type }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Status</div>
+        <div class="info-value" id="playerStatus">Ready</div>
+      </div>
+    </div>
   </div>
-  <div class="muted small" style="margin-top: 12px;">
-    <strong>File:</strong> {{ relpath }}<br>
-    <strong>Size:</strong> {{ size|hbytes }}<br>
-    <strong>Type:</strong> {{ mime_type }}
-  </div>
-</section>
+</div>
 
 <script>
 (function() {
   const video = document.getElementById('videoPlayer');
+  const statusEl = document.getElementById('playerStatus');
   
   // Store playback position in localStorage
   const storageKey = 'video-position-' + {{ task_id|tojson }} + '-' + {{ relpath|tojson }};
@@ -36,6 +139,17 @@
   let seekTimeout;
   let lastSeekTime = 0;
   
+  function updateStatus(text, color = null) {
+    if (statusEl) {
+      statusEl.textContent = text;
+      if (color) {
+        statusEl.style.color = color;
+      } else {
+        statusEl.style.color = '';
+      }
+    }
+  }
+  
   // Restore last position after metadata is loaded
   video.addEventListener('loadedmetadata', function() {
     const savedTime = localStorage.getItem(storageKey);
@@ -43,13 +157,16 @@
       const time = parseFloat(savedTime);
       if (time > 0 && time < video.duration) {
         video.currentTime = time;
+        updateStatus('Resumed from ' + formatTime(time));
       }
     }
+    updateStatus('Ready');
   });
   
   // Save position every 10 seconds while playing
   let saveInterval;
   video.addEventListener('play', function() {
+    updateStatus('Playing', 'var(--accent-2)');
     saveInterval = setInterval(function() {
       localStorage.setItem(storageKey, video.currentTime.toString());
     }, 10000);
@@ -58,27 +175,28 @@
   video.addEventListener('pause', function() {
     clearInterval(saveInterval);
     localStorage.setItem(storageKey, video.currentTime.toString());
+    updateStatus('Paused', 'var(--warn)');
   });
   
   // Handle seeking events to save position immediately
   video.addEventListener('seeked', function() {
     localStorage.setItem(storageKey, video.currentTime.toString());
+    updateStatus('Seeked to ' + formatTime(video.currentTime));
   });
   
-  // Detect rapid seeking and show warning if needed
+  // Detect rapid seeking
   video.addEventListener('seeking', function() {
     const now = Date.now();
     if (now - lastSeekTime < 500) {
-      // User is seeking rapidly, clear any pending timeout
       clearTimeout(seekTimeout);
       seekTimeout = setTimeout(function() {
-        // If still buffering after rapid seeks, log it
         if (video.readyState < 3) {
           console.log('Buffering after rapid seek, current time:', video.currentTime);
         }
       }, 1000);
     }
     lastSeekTime = now;
+    updateStatus('Seeking...', 'var(--muted)');
   });
   
   // Handle waiting (buffering) events with visual feedback
@@ -86,11 +204,12 @@
   video.addEventListener('waiting', function() {
     console.log('Video buffering...');
     video.style.opacity = '0.7';
+    updateStatus('Buffering...', 'var(--warn)');
     clearTimeout(bufferingTimeout);
-    // If buffering for more than 10 seconds, show a message
     bufferingTimeout = setTimeout(function() {
       if (video.readyState < 3) {
         console.warn('Extended buffering detected. Try refreshing the page.');
+        updateStatus('Buffering (slow connection)', 'var(--danger)');
       }
     }, 10000);
   });
@@ -98,11 +217,15 @@
   video.addEventListener('canplay', function() {
     clearTimeout(bufferingTimeout);
     video.style.opacity = '1';
+    if (!video.paused) {
+      updateStatus('Playing', 'var(--accent-2)');
+    }
   });
   
   // Clear saved position when video ends
   video.addEventListener('ended', function() {
     localStorage.removeItem(storageKey);
+    updateStatus('Ended');
   });
   
   // Handle errors with more details
@@ -119,9 +242,21 @@
       }
     }
     console.error(msg);
-    // Show error to user
+    updateStatus(msg, 'var(--danger)');
     alert(msg);
   });
+  
+  // Format time helper
+  function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
 })();
 </script>
+
 {% endblock %}

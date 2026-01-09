@@ -1,405 +1,530 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Task {{ task_id }} — alldebrid-proxy</title>
-  <style>
-    :root {
-      --bg:#0b1020; --card:#121a34; --muted:#8aa0c7; --text:#e8f0ff;
-      --accent:#7aa2ff; --good:#22c55e; --warn:#f59e0b; --bad:#ef4444;
-      --line:#1d294f;
-      --tick: #39ff85; /* bright green for the filled state */
-    }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Roboto,Arial}
-    a{color:var(--accent)}
-    header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#0e1530;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
-    header .right{display:flex;gap:10px;align-items:center}
-    .container{max-width:1000px;margin:22px auto;padding:0 18px}
-    .card{
-      background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
-      box-shadow:0 2px 10px rgba(0,0,0,.15)
-    }
-    .stack{display:flex; flex-direction:column; gap:12px}
-    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
-    .row.space{justify-content:space-between; align-items:center}
-    .muted{color:var(--muted)}
-    .small{font-size:12px}
-    .pill{
-      display:inline-block; padding:4px 10px; border-radius:999px;
-      border:1px solid var(--line); background:#0e1530;
-    }
-    .pill.good{border-color:#124527; background:#0f2718; color:#b7f7c8}
-    .pill.warn{border-color:#473a11; background:#2a230d; color:#ffd792}
-    .pill.bad{border-color:#4e1717; background:#2a0f0f; color:#ffb3b3}
-    .pill.neutral{border-color:#2a3b6b; background:#101a33; color:#aec4ff}
-    .btn{
-      display:inline-flex; align-items:center; justify-content:center;
-      gap:8px; border-radius:10px; padding:8px 12px; border:1px solid var(--line);
-      background:#0e1530; color:#e8f0ff; cursor:pointer; text-decoration:none;
-      transition:transform .06s ease, background .15s ease;
-    }
-    .btn:hover{transform:translateY(-1px)}
-    .btn.good{background:#13301f; border-color:#1e5033}
-    .btn.warn{background:#3a2e10; border-color:#5e4a17}
-    .btn.danger{background:#3a1111; border-color:#5e1919}
-    .toolbar{display:flex; gap:8px; flex-wrap:wrap}
-    table{
-      width:100%; border-collapse:separate; border-spacing:0;
-      margin-top:8px; overflow:hidden; border-radius:12px; border:1px solid var(--line);
-    }
-    thead th{
-      text-align:left; font-weight:600; background:#0f1732; padding:10px 12px; border-bottom:1px solid var(--line);
-    }
-    tbody td{
-      padding:10px 12px; border-bottom:1px solid #162044; vertical-align:top;
-    }
-    tbody tr:last-child td{border-bottom:none}
-    tbody tr:hover{background:#0f1732}
-    th.size, td.size{width:140px}
-    @media (max-width:720px) {
-      header{padding:10px 12px}
-      .container{padding:0 12px}
-      table{font-size:14px}
-    }
+{% extends "base.html" %}
+{% block title %}Task {{ task_id }} — AllDebrid Proxy{% endblock %}
 
-    /* --- checkbox styles (bigger box, filled green when checked) --- */
-    td.check, th.check { padding: 10px 12px !important; }
+{% block head %}
+<style>
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.task-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.task-id-badge {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--muted);
+  background: var(--bg-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0;
+}
+.task-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.files-section {
+  margin-top: 24px;
+}
+.files-section h2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.file-count {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: normal;
+}
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+.file-table thead th {
+  background: var(--bg-secondary);
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+.file-table tbody td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.file-table tbody tr:hover {
+  background: var(--card-hover);
+}
+.file-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.checkbox-cell {
+  width: 50px;
+  text-align: center;
+}
+.checkbox-cell input[type="checkbox"] {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+.checkbox-cell input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.checkbox-cell input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox-cell input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+}
+.file-table tbody tr:has(input[type="checkbox"]:checked) {
+  background: rgba(99, 102, 241, 0.05);
+}
+.file-name {
+  font-weight: 500;
+}
+.file-path {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: monospace;
+  margin-top: 4px;
+}
+.actions-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+}
+.loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
 
-    /* apply the same style to header master checkbox and row checkboxes */
-    th.check input[type="checkbox"],
-    td.check input[type="checkbox"]{
-      appearance:none; -webkit-appearance:none;
-      inline-size:30px; block-size:30px;
-      border:2px solid var(--line);
-      border-radius:8px;
-      background: var(--bg);
-      cursor:pointer; outline:none;
-      transition: border-color .15s, background .15s, box-shadow .15s;
-      padding:8px; margin:-8px;
-    }
-    th.check input[type="checkbox"]:hover,
-    td.check input[type="checkbox"]:hover{ border-color: var(--accent); }
-    th.check input[type="checkbox"]:focus-visible,
-    td.check input[type="checkbox"]:focus-visible{
-      box-shadow: 0 0 0 3px rgba(57,255,133,.25);
-      border-color: var(--tick);
-    }
-    th.check input[type="checkbox"]:checked,
-    td.check input[type="checkbox"]:checked{
-      background: var(--tick);
-      border-color: var(--tick);
-    }
-    /* optional: highlight row when selected */
-    tbody tr:has(td.check input[type="checkbox"]:checked){ background:#0f2317; }
-  </style>
-</head>
-<body>
-  {% macro status_class(text) -%}
-    {%- set s = (text or '')|lower -%}
-    {%- if 'cancel' in s or 'canceled' in s or 'cancelled' in s
-          or 'fail' in s or 'failed' in s
-          or 'error' in s or 'abort' in s or 'aborted' in s
-          or 'stop' in s or 'stopped' in s or 'timeout' in s -%}
-      bad
-    {%- elif 'done' in s or 'complete' in s or 'completed' in s
-          or 'ready' in s or 'finished' in s or 'success' in s
-          or 'downloaded' in s -%}
-      good
-    {%- elif 'listed' in s -%}
-      neutral
-    {%- elif 'download' in s or 'fetch' in s or 'queued' in s or 'queue' in s
-          or 'wait' in s or 'prepar' in s or 'process' in s
-          or 'start' in s or 'run' in s -%}
-      warn
-    {%- else -%}
-      neutral
-    {%- endif -%}
-  {%- endmacro %}
+{% block content %}
+{% macro status_class(text) -%}
+  {%- set s = (text or '')|lower -%}
+  {%- if 'cancel' in s or 'canceled' in s or 'cancelled' in s
+        or 'fail' in s or 'failed' in s
+        or 'error' in s or 'abort' in s or 'aborted' in s
+        or 'stop' in s or 'stopped' in s or 'timeout' in s -%}
+    bad
+  {%- elif 'done' in s or 'complete' in s or 'completed' in s
+        or 'ready' in s or 'finished' in s or 'success' in s
+        or 'downloaded' in s -%}
+    good
+  {%- elif 'listed' in s -%}
+    neutral
+  {%- elif 'download' in s or 'fetch' in s or 'queued' in s or 'queue' in s
+        or 'wait' in s or 'prepar' in s or 'process' in s
+        or 'start' in s or 'run' in s -%}
+    warn
+  {%- else -%}
+    neutral
+  {%- endif -%}
+{%- endmacro %}
 
-  <header>
-    <div class="left">
-      <strong>Task {{ task_id }}</strong>
+<div class="task-header">
+  <div>
+    <h1>
+      📦 Task Details
+    </h1>
+    <span class="task-id-badge">{{ task_id }}</span>
+  </div>
+  <a class="btn primary" href="{{ url_for('index') }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+    </svg>
+    Home
+  </a>
+</div>
+
+{% if not t %}
+  <div class="card">
+    <div class="empty-state">
+      <div class="loading-spinner"></div>
+      <p style="margin-top: 12px;">Loading task data...</p>
     </div>
-    <div class="right">
-      <a class="btn" href="/">Home</a>
-    </div>
-  </header>
-
-  <main class="container stack">
-    <section class="card">
-      <div class="row space">
-        <div class="row" style="gap:10px">
-          <strong>Task</strong>
-          <span class="muted small">#{{ task_id }}</span>
-        </div>
+  </div>
+{% else %}
+  <div class="card">
+    <h2>Task Information</h2>
+    <div class="task-meta">
+      <div class="task-meta-item">
+        <strong>Status:</strong>
+        <span class="pill {{ status_class(t.status) }}" data-task-status>{{ t.status }}</span>
       </div>
-
-      {% if not t %}
-        <div class="muted">No data yet.</div>
-      {% else %}
-        <div class="row" style="margin-top:6px; gap:10px; flex-wrap:wrap;">
-          <div>
-            <span class="muted">Status:</span>
-            <span class="pill {{ status_class(t.status) }}" data-task-status>{{ t.status }}</span>
-          </div>
-          {% if t.label %}<div class="muted small">• {{ t.label }}</div>{% endif %}
-          {% if t.infohash %}<div class="muted small">• {{ t.infohash }}</div>{% endif %}
-          {% if t.mode %}<div class="muted small">• mode: {{ t.mode }}</div>{% endif %}
-        </div>
+      {% if t.label %}
+      <div class="task-meta-item">
+        <strong>Label:</strong>
+        <span>{{ t.label }}</span>
+      </div>
       {% endif %}
-    </section>
+      {% if t.mode %}
+      <div class="task-meta-item">
+        <strong>Mode:</strong>
+        <span>{{ t.mode }}</span>
+      </div>
+      {% endif %}
+      {% if t.infohash %}
+      <div class="task-meta-item">
+        <strong>Infohash:</strong>
+        <code class="kbd">{{ t.infohash[:16] }}...</code>
+      </div>
+      {% endif %}
+    </div>
+  </div>
 
-    {% if t %}
-      {% set final_states = ['ready','failed','canceled','cancelled','deleted','done','completed','error'] %}
-      {% set is_final = (t.status or '')|lower in final_states %}
-      {% set mode = request.args.get('mode', 'auto') %}
+  {% set final_states = ['ready','failed','canceled','cancelled','deleted','done','completed','error'] %}
+  {% set is_final = (t.status or '')|lower in final_states %}
+  {% set mode = request.args.get('mode', 'auto') %}
 
-      <section class="card">
-        <div class="row space">
-          <strong>Files</strong>
-        </div>
+  <div class="card files-section">
+    <h2>
+      Files
+      <span class="file-count" data-file-count>({{ t.files|length }} files)</span>
+    </h2>
 
-        {# --- SELECT FORM wraps table + buttons so checkboxes post as fileIds --- #}
+    {% if (mode == 'select') and not is_final %}
+    <form method="post" action="{{ url_for('task_select', task_id=task_id, mode=mode) }}" id="select-form">
+    {% endif %}
+
+      <table class="file-table">
+        <thead>
+          <tr>
+            {% if (mode == 'select') and not is_final %}
+              <th class="checkbox-cell">
+                <input id="masterCheck" type="checkbox" aria-label="Select all" title="Select all">
+              </th>
+            {% endif %}
+            <th>File Name</th>
+            <th style="width: 140px; text-align: right;">Size</th>
+            <th style="width: 140px;">State</th>
+          </tr>
+        </thead>
+        <tbody data-files-table>
+          {% if t.files|length == 0 %}
+            <tr data-empty-row>
+              {% if (mode == 'select') and not is_final %}<td></td>{% endif %}
+              <td colspan="3" class="empty-state">
+                <div class="loading-spinner"></div>
+                <span style="margin-left: 8px;">Waiting for file list...</span>
+              </td>
+            </tr>
+          {% else %}
+            {% for f in t.files %}
+              {% set size_bytes = f.size or f.totalSize or f.fileSize or f.bytes or 0 %}
+              <tr data-file-id="{{ f.fileId }}">
+                {% if (mode == 'select') and not is_final %}
+                  <td class="checkbox-cell">
+                    <input type="checkbox" name="fileIds" value="{{ f.fileId }}">
+                  </td>
+                {% endif %}
+                <td>
+                  <div class="file-name">{{ f.name or f.filename or f.path or f.fileId }}</div>
+                  {% if f.localPath %}
+                    <div class="file-path">{{ f.localPath }}</div>
+                  {% endif %}
+                </td>
+                <td style="text-align: right; color: var(--muted);">
+                  {{ size_bytes|hbytes }}
+                </td>
+                <td>
+                  <span class="pill {{ status_class(f.state) }}">{{ f.state or '—' }}</span>
+                </td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+
+      <div class="actions-toolbar">
         {% if (mode == 'select') and not is_final %}
-        <form method="post" action="{{ url_for('task_select', task_id=task_id, mode=mode) }}" id="select-form">
+          <button class="btn" type="button" id="btnSelectAll">Select All</button>
+          <button class="btn" type="button" id="btnClearAll">Clear All</button>
+          <button class="btn primary" type="submit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Submit Selection
+          </button>
         {% endif %}
 
-          <table>
-            <thead>
-              <tr>
-                {% if (mode == 'select') and not is_final %}
-                  <th class="check" style="width:26px">
-                    <!-- Master checkbox -->
-                    <input id="masterCheck" type="checkbox" aria-label="Select all">
-                  </th>
-                {% endif %}
-                <th>Name</th>
-                <th class="size">Size</th>
-                <th style="width:160px">State</th>
-              </tr>
-            </thead>
-            <tbody data-files-table>
-              {% if t.files|length == 0 %}
-                <tr data-empty-row>
-                  {% if (mode == 'select') and not is_final %}<td></td>{% endif %}
-                  <td colspan="3" class="muted">Waiting for file list…</td>
-                </tr>
-              {% else %}
-                {% for f in t.files %}
-                  {% set size_bytes = f.size or f.totalSize or f.fileSize or f.bytes or 0 %}
-                  <tr data-file-id="{{ f.fileId }}">
-                    {% if (mode == 'select') and not is_final %}
-                      <td class="check"><input type="checkbox" name="fileIds" value="{{ f.fileId }}"></td>
-                    {% endif %}
-                    <td class="name">
-                      {{ f.name or f.filename or f.path or f.fileId }}
-                      {% if f.localPath %}<div class="small muted">{{ f.localPath }}</div>{% endif %}
-                    </td>
-                    <td class="size">{{ size_bytes|hbytes }}</td>
-                    <td class="state"><span class="pill {{ status_class(f.state) }}">{{ f.state or '—' }}</span></td>
-                  </tr>
-                {% endfor %}
-              {% endif %}
-            </tbody>
-          </table>
+        {% if (mode == 'select') and not is_final %}
+        </form>
+        {% endif %}
 
-          <div class="toolbar" style="margin-top:12px">
-            {% if (mode == 'select') and not is_final %}
-              <!-- New: select/deselect all controls (type=button so we don’t submit) -->
-              <button class="btn" type="button" id="btnSelectAll">Select all</button>
-              <button class="btn" type="button" id="btnClearAll">Clear all</button>
-              <button class="btn good" type="submit">Select</button>
-            {% endif %}
+        {% if not is_final %}
+        <form method="post" action="{{ url_for('task_cancel', task_id=task_id, mode=mode) }}" style="display: inline;">
+          <button class="btn warn" type="submit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            Cancel Task
+          </button>
+        </form>
+        {% endif %}
+        
+        <form method="post" action="{{ url_for('task_delete', task_id=task_id, mode=mode) }}" style="display: inline;">
+          <input type="hidden" name="purge_files" value="true">
+          <button class="btn danger" type="submit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Delete + Purge
+          </button>
+        </form>
+        
+        <a class="btn good" href="{{ url_for('list_folder', task_id=task_id) }}" target="_blank">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          Open Files
+        </a>
+      </div>
+  </div>
+{% endif %}
 
-            {# Close the select form AFTER the Select button #}
-            {% if (mode == 'select') and not is_final %}
-            </form>
-            {% endif %}
+<script>
+(function () {
+  // Using tojson filter for safe JSON encoding of server variables
+  // tojson automatically escapes special characters to prevent XSS
+  const taskId = {{ task_id|tojson }};
+  const workerBaseUrl = {{ worker_base_url|tojson }};
+  if (!('EventSource' in window)) return;
 
-            <form method="post" action="{{ url_for('task_cancel', task_id=task_id, mode=mode) }}">
-              <button class="btn warn" type="submit">Cancel</button>
-            </form>
-            <form method="post" action="{{ url_for('task_delete', task_id=task_id, mode=mode) }}">
-              <input type="hidden" name="purge_files" value="true">
-              <button class="btn danger" type="submit">Delete + purge</button>
-            </form>
-            <a class="btn" href="{{ url_for('list_folder', task_id=task_id) }}" target="_blank">Open folder</a>
-          </div>
-      </section>
-    {% endif %}
-  </main>
+  // Validate and encode URL components to prevent SSRF
+  if (!workerBaseUrl || typeof workerBaseUrl !== 'string') {
+    console.error('Invalid worker base URL');
+    return;
+  }
+  
+  const es = new EventSource(`${workerBaseUrl}/api/tasks/${encodeURIComponent(taskId)}/events`);
+  const statusPill = document.querySelector('[data-task-status]');
+  const filesBody = document.querySelector('[data-files-table]');
+  const fileCount = document.querySelector('[data-file-count]');
+  const isSelectMode = new URLSearchParams(location.search).get('mode') === 'select';
+  const fileMap = new Map();
 
-  <script>
-  (function () {
-    const taskId = "{{ task_id }}";
-    if (!('EventSource' in window)) return;
+  function statusClass(text) {
+    const s = (text || '').toLowerCase();
+    if (s.includes('cancel') || s.includes('fail') || s.includes('error') || s.includes('abort') || s.includes('stop') || s.includes('timeout')) return 'pill bad';
+    if (s.includes('done') || s.includes('complete') || s.includes('ready') || s.includes('finish') || s.includes('success') || s.includes('downloaded')) return 'pill good';
+    if (s.includes('listed')) return 'pill neutral';
+    return 'pill warn';
+  }
 
-    // Original SSE endpoint/flow
-    const es = new EventSource(`/api/tasks/${taskId}/events`);
+  function formatBytes(n) {
+    n = Number(n || 0);
+    const u = ["B","KB","MB","GB","TB"];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    return (i === 0 ? Math.round(n) : n.toFixed(1)) + " " + u[i];
+  }
 
-    const statusPill = document.querySelector('[data-task-status]');
-    const filesBody  = document.querySelector('[data-files-table]');
-    const isSelectMode = new URLSearchParams(location.search).get('mode') === 'select';
-    const fileMap = new Map();
+  function removeEmptyRow() {
+    const empty = filesBody && filesBody.querySelector('[data-empty-row]');
+    if (empty) empty.remove();
+  }
 
-    function statusClass(text) {
-      const s = (text || '').toLowerCase();
-      if (s.includes('cancel') || s.includes('fail') || s.includes('error') || s.includes('abort') || s.includes('stop') || s.includes('timeout')) return 'pill bad';
-      if (s.includes('done') || s.includes('complete') || s.includes('ready') || s.includes('finish') || s.includes('success') || s.includes('downloaded')) return 'pill good';
-      if (s.includes('listed')) return 'pill neutral';
-      return 'pill warn';
+  function upsertRow(f) {
+    if (!filesBody) return;
+    const id = f.fileId || f.id || f.name;
+    if (!id) return;
+
+    removeEmptyRow();
+
+    const merged = Object.assign({}, fileMap.get(id) || {}, f, { fileId: id });
+    fileMap.set(id, merged);
+
+    let tr = filesBody.querySelector(`tr[data-file-id="${CSS.escape(id)}"]`);
+    if (!tr) {
+      tr = document.createElement('tr');
+      tr.setAttribute('data-file-id', id);
+      tr.innerHTML = isSelectMode
+        ? `<td class="checkbox-cell"><input type="checkbox" name="fileIds" value="${id}"></td>
+           <td><div class="file-name"></div></td>
+           <td style="text-align: right; color: var(--muted);"></td>
+           <td><span class="pill">—</span></td>`
+        : `<td><div class="file-name"></div></td>
+           <td style="text-align: right; color: var(--muted);"></td>
+           <td><span class="pill">—</span></td>`;
+      filesBody.appendChild(tr);
     }
 
-    function formatBytes(n) {
-      n = Number(n || 0);
-      const u = ["B","KB","MB","GB","TB"]; let i=0;
-      while (n >= 1024 && i < u.length-1) { n /= 1024; i++; }
-      return (i===0 ? Math.round(n) : n.toFixed(1)) + " " + u[i];
-    }
+    const nameDiv = tr.querySelector('.file-name');
+    const sizeCell = tr.querySelectorAll('td')[isSelectMode ? 2 : 1];
+    const pill = tr.querySelector('.pill');
 
-    function removeEmptyRow() {
-      const empty = filesBody && filesBody.querySelector('[data-empty-row]');
-      if (empty) empty.remove();
-    }
-
-    function upsertRow(f) {
-      if (!filesBody) return;
-      const id = f.fileId || f.id || f.name;
-      if (!id) return;
-
-      removeEmptyRow();
-
-      const merged = Object.assign({}, fileMap.get(id) || {}, f, { fileId: id });
-      fileMap.set(id, merged);
-
-      let tr = filesBody.querySelector(`tr[data-file-id="${CSS.escape(id)}"]`);
-      if (!tr) {
-        tr = document.createElement('tr');
-        tr.setAttribute('data-file-id', id);
-        tr.innerHTML = isSelectMode
-          ? `<td class="check"><input type="checkbox" name="fileIds" value="${id}"></td>
-             <td class="name"></td>
-             <td class="size"></td>
-             <td class="state"><span class="pill">—</span></td>`
-          : `<td class="name"></td>
-             <td class="size"></td>
-             <td class="state"><span class="pill">—</span></td>`;
-        filesBody.appendChild(tr);
-      }
-      const nameEl = tr.querySelector('.name');
-      const sizeEl = tr.querySelector('.size');
-      const pill   = tr.querySelector('.state .pill');
-
-      if (nameEl) {
-        nameEl.textContent = merged.name || id;
-        if (merged.localPath) {
-          let sub = nameEl.querySelector('.small');
-          if (!sub) {
-            sub = document.createElement('div');
-            sub.className = 'small muted';
-            nameEl.appendChild(sub);
-          }
-          sub.textContent = merged.localPath;
+    if (nameDiv) {
+      nameDiv.textContent = merged.name || id;
+      if (merged.localPath) {
+        let pathDiv = nameDiv.nextElementSibling;
+        if (!pathDiv || !pathDiv.classList.contains('file-path')) {
+          pathDiv = document.createElement('div');
+          pathDiv.className = 'file-path';
+          nameDiv.parentNode.appendChild(pathDiv);
         }
+        pathDiv.textContent = merged.localPath;
       }
-      const sizeBytes = merged.size || merged.totalSize || merged.fileSize || merged.bytes || 0;
-      if (sizeEl) sizeEl.textContent = formatBytes(sizeBytes);
-
-      if (pill) {
-        pill.textContent = merged.state || '—';
-        pill.className = statusClass(merged.state);
-      }
-
-      // keep master checkbox state in sync when new rows arrive
-      if (isSelectMode) syncMaster();
     }
 
-    function handleSnapshot(d) {
+    const sizeBytes = merged.size || merged.totalSize || merged.fileSize || merged.bytes || 0;
+    if (sizeCell) sizeCell.textContent = formatBytes(sizeBytes);
+
+    if (pill) {
+      pill.textContent = merged.state || '—';
+      pill.className = statusClass(merged.state);
+    }
+
+    if (isSelectMode) syncMaster();
+    
+    // Update file count
+    if (fileCount) {
+      fileCount.textContent = `(${fileMap.size} files)`;
+    }
+  }
+
+  function handleSnapshot(d) {
+    if (statusPill && d.status !== undefined) {
+      statusPill.textContent = d.status || '';
+      statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
+    }
+    if (Array.isArray(d.files) && filesBody) {
+      d.files.forEach(upsertRow);
+    }
+  }
+
+  function handleDelta(d) {
+    const typ = (d.type || '').toLowerCase();
+    if (typ === 'state' || d.status !== undefined) {
       if (statusPill && d.status !== undefined) {
         statusPill.textContent = d.status || '';
-        statusPill.className   = 'pill ' + statusClass(d.status).split(' ').pop();
-      }
-      if (Array.isArray(d.files) && filesBody) {
-        d.files.forEach(upsertRow);
+        statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
       }
     }
-
-    function handleDelta(d) {
-      const typ = (d.type || '').toLowerCase();
-      if (typ === 'state' || d.status !== undefined) {
-        if (statusPill && d.status !== undefined) {
-          statusPill.textContent = d.status || '';
-          statusPill.className   = 'pill ' + statusClass(d.status).split(' ').pop();
-        }
-      }
-      if (typ === 'file' || d.fileId) {
-        upsertRow(d);
-      }
-      if (Array.isArray(d.files)) {
-        d.files.forEach(upsertRow);
-      }
+    if (typ === 'file' || d.fileId) {
+      upsertRow(d);
     }
+    if (Array.isArray(d.files)) {
+      d.files.forEach(upsertRow);
+    }
+  }
 
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data || '{}');
-        if (d && Array.isArray(d.files)) {
-          handleSnapshot(d);
-        } else {
-          handleDelta(d);
-        }
-      } catch (_) {}
-    };
-
-    es.onerror = () => { /* browser auto-reconnects */ };
-
-    // ---- Select all / Clear all + master checkbox wiring ----
-    if (isSelectMode) {
-      const master = document.getElementById('masterCheck');
-      const btnAll = document.getElementById('btnSelectAll');
-      const btnClr = document.getElementById('btnClearAll');
-
-      function getChecks(){
-        return Array.from(document.querySelectorAll('tbody input[type="checkbox"][name="fileIds"]'));
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data || '{}');
+      if (d && Array.isArray(d.files)) {
+        handleSnapshot(d);
+      } else {
+        handleDelta(d);
       }
-      function setAll(checked){
-        getChecks().forEach(cb => cb.checked = checked);
-        syncMaster();
-      }
-      function syncMaster(){
-        if (!master) return;
-        const cbs = getChecks();
-        if (cbs.length === 0) {
-          master.checked = false;
-          master.indeterminate = false;
-          return;
-        }
-        const checked = cbs.filter(cb => cb.checked).length;
-        master.checked = checked === cbs.length;
-        master.indeterminate = checked > 0 && checked < cbs.length;
-      }
+    } catch (_) {}
+  };
 
-      if (master) {
-        master.addEventListener('change', () => setAll(master.checked));
-      }
-      if (btnAll) btnAll.addEventListener('click', () => setAll(true));
-      if (btnClr) btnClr.addEventListener('click', () => setAll(false));
+  es.onerror = () => { /* browser auto-reconnects */ };
 
-      // keep master state live while user clicks individual boxes
-      if (filesBody) {
-        filesBody.addEventListener('change', (e) => {
-          if (e.target && e.target.matches('input[type="checkbox"][name="fileIds"]')) {
-            syncMaster();
-          }
-        });
-      }
+  // Select all / Clear all + master checkbox wiring
+  if (isSelectMode) {
+    const master = document.getElementById('masterCheck');
+    const btnAll = document.getElementById('btnSelectAll');
+    const btnClr = document.getElementById('btnClearAll');
 
-      // initial sync
+    function getChecks() {
+      return Array.from(document.querySelectorAll('tbody input[type="checkbox"][name="fileIds"]'));
+    }
+    function setAll(checked) {
+      getChecks().forEach(cb => cb.checked = checked);
       syncMaster();
     }
-  })();
-  </script>
-</body>
-</html>
+    function syncMaster() {
+      if (!master) return;
+      const cbs = getChecks();
+      if (cbs.length === 0) {
+        master.checked = false;
+        master.indeterminate = false;
+        return;
+      }
+      const checked = cbs.filter(cb => cb.checked).length;
+      master.checked = checked === cbs.length;
+      master.indeterminate = checked > 0 && checked < cbs.length;
+    }
+
+    if (master) {
+      master.addEventListener('change', () => setAll(master.checked));
+    }
+    if (btnAll) btnAll.addEventListener('click', () => setAll(true));
+    if (btnClr) btnClr.addEventListener('click', () => setAll(false));
+
+    if (filesBody) {
+      filesBody.addEventListener('change', (e) => {
+        if (e.target && e.target.matches('input[type="checkbox"][name="fileIds"]')) {
+          syncMaster();
+        }
+      });
+    }
+
+    syncMaster();
+  }
+})();
+</script>
+{% endblock %}
