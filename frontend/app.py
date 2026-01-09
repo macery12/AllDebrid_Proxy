@@ -220,29 +220,55 @@ def index():
 @app.post("/tasks/new")
 @login_required
 def create_task():
+    """Create a new download task with validation"""
     mode = request.form.get("mode", "auto")
     source = request.form.get("source", "").strip()
     label = request.form.get("label", "").strip() or None
+    
+    # Input validation
     if not source:
-        flash("Enter a magnet/link", "error")
+        flash("Please enter a magnet link or URL", "error")
         return redirect(url_for("index"))
+    
+    if len(source) > 10000:  # Reasonable limit
+        flash("Source URL is too long", "error")
+        return redirect(url_for("index"))
+    
+    if mode not in ("auto", "select"):
+        flash("Invalid mode selected", "error")
+        return redirect(url_for("index"))
+    
+    if label and len(label) > 500:  # Reasonable limit
+        flash("Label is too long (max 500 characters)", "error")
+        return redirect(url_for("index"))
+    
+    # Prepare payload
     payload = {"mode": mode, "source": source}
     if label:
         payload["label"] = label
+    
+    # Make API request
+    log.info(f"Creating task: mode={mode}, label={label}, source_len={len(source)}")
     body, err = w_request("POST", "/api/tasks", json_body=payload)
+    
     if err:
+        log.error(f"Task creation failed: {err[0]}")
         flash(f"Create failed: {err[0]}", "error")
         return redirect(url_for("index"))
+    
     task_id = body.get("taskId") or body.get("id")
     if not task_id:
+        log.error("Task created but no taskId returned")
         flash("Task created but no taskId returned", "error")
         return redirect(url_for("index"))
     
     # Check if task was reused
     if body.get("reused"):
+        log.info(f"Task reused: {task_id}")
         flash(f"♻️ Task reused: {task_id} (files already downloaded)", "success")
     else:
-        flash(f"Task created: {task_id}", "ok")
+        log.info(f"New task created: {task_id}")
+        flash(f"✅ Task created: {task_id}", "ok")
     
     return redirect(url_for("task_view", mode=mode, task_id=task_id, refresh=request.args.get("refresh", 3)))
 
@@ -250,7 +276,22 @@ def create_task():
 @login_required
 def admin_page():
     """Admin dashboard to view and manage all tasks"""
+    log.info("Admin page accessed")
     return render_template("admin.html")
+
+@app.errorhandler(404)
+def not_found(e):
+    """Handle 404 errors"""
+    log.warning(f"404 error: {request.url}")
+    flash("Page not found", "error")
+    return redirect(url_for("index"))
+
+@app.errorhandler(500)
+def server_error(e):
+    """Handle 500 errors"""
+    log.error(f"500 error: {str(e)}")
+    flash("An internal error occurred. Please try again.", "error")
+    return redirect(url_for("index"))
 
 def get_task(task_id: str):
     body, err = w_request("GET", f"/api/tasks/{task_id}")
