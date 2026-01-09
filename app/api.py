@@ -173,7 +173,7 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
             "total": s.execute(select(func.count(Task.id))).scalar()
         }
 
-@router.get("/tasks/{task_id}/events")
+@router.get("/tasks/{task_id}/events", dependencies=[Depends(verify_worker_key)])
 async def task_events(task_id: str):
     with SessionLocal() as s:
         t = s.get(Task, task_id)
