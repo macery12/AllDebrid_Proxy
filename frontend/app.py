@@ -170,6 +170,10 @@ def _is_still_downloading(filepath: Path) -> bool:
     aria2_control = Path(str(filepath) + ".aria2")
     return aria2_control.exists()
 
+def _should_include_file(filepath: Path) -> bool:
+    """Check if a file should be included in listings (exclude .aria2 control files)"""
+    return not filepath.name.endswith(".aria2")
+
 # ------------------------------------------------------------------------------
 # Pages / Routes
 # ------------------------------------------------------------------------------
@@ -317,7 +321,7 @@ def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
     for p in sorted(base.rglob("*")):
-        if p.is_file() and not p.name.endswith(".aria2"):
+        if p.is_file() and _should_include_file(p):
             rel = p.relative_to(base).as_posix()
             items.append({
                 "rel": rel, 
@@ -333,7 +337,7 @@ def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
     for p in sorted(base.rglob("*")):
-        if p.is_file() and not p.name.endswith(".aria2"):
+        if p.is_file() and _should_include_file(p):
             rel = p.relative_to(base).as_posix()
             out.write(f"/d/{task_id}/raw/{rel}\n")
     return out.getvalue(), 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -343,11 +347,15 @@ def links_txt(task_id):
 def tar_all(task_id):
     base = safe_task_base(task_id)
     mem = io.BytesIO()
+    
+    def exclude_aria2(tarinfo):
+        """Filter function to exclude .aria2 files from tar archive"""
+        if tarinfo.name.endswith(".aria2"):
+            return None
+        return tarinfo
+    
     with tarfile.open(fileobj=mem, mode="w:gz") as tar:
-        for p in base.rglob("*"):
-            if p.is_file() and not p.name.endswith(".aria2"):
-                arcname = f"{task_id}/files/{p.relative_to(base).as_posix()}"
-                tar.add(p, arcname=arcname)
+        tar.add(base, arcname=f"{task_id}/files", filter=exclude_aria2)
     mem.seek(0)
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
 
