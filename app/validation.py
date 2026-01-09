@@ -1,7 +1,5 @@
-"""
-Input validation and sanitization functions.
-Provides security against common attacks like path traversal, SQL injection, etc.
-"""
+# Input validation and sanitization functions
+# Provides security against common attacks like path traversal, SQL injection, etc
 
 import re
 import os
@@ -12,18 +10,10 @@ from app.exceptions import ValidationError
 
 
 def validate_task_id(task_id: str) -> str:
-    """
-    Validate task ID format (UUID).
-    
-    Args:
-        task_id: Task identifier to validate
-        
-    Returns:
-        Validated task ID
-        
-    Raises:
-        ValidationError: If task ID is invalid
-    """
+    # Validate task ID format (UUID)
+    # Args: task_id - Task identifier to validate
+    # Returns: Validated task ID
+    # Raises: ValidationError if task ID is invalid
     if not task_id:
         raise ValidationError("Task ID is required")
     
@@ -36,18 +26,10 @@ def validate_task_id(task_id: str) -> str:
 
 
 def validate_magnet_link(magnet: str) -> str:
-    """
-    Validate magnet link format.
-    
-    Args:
-        magnet: Magnet link to validate
-        
-    Returns:
-        Validated magnet link
-        
-    Raises:
-        ValidationError: If magnet link is invalid
-    """
+    # Validate magnet link format
+    # Args: magnet - Magnet link to validate
+    # Returns: Validated magnet link
+    # Raises: ValidationError if magnet link is invalid
     if not magnet:
         raise ValidationError("Magnet link is required")
     
@@ -70,19 +52,10 @@ def validate_magnet_link(magnet: str) -> str:
 
 
 def validate_file_path(file_path: str, base_dir: str) -> str:
-    """
-    Validate and sanitize file path to prevent directory traversal attacks.
-    
-    Args:
-        file_path: File path to validate
-        base_dir: Base directory that file must be within
-        
-    Returns:
-        Validated absolute file path
-        
-    Raises:
-        ValidationError: If path is invalid or attempts traversal
-    """
+    # Validate and sanitize file path to prevent directory traversal attacks
+    # Args: file_path - File path to validate, base_dir - Base directory that file must be within
+    # Returns: Validated absolute file path
+    # Raises: ValidationError if path is invalid or attempts traversal
     if not file_path:
         raise ValidationError("File path is required")
     
@@ -109,18 +82,10 @@ def validate_file_path(file_path: str, base_dir: str) -> str:
 
 
 def validate_file_name(file_name: str) -> str:
-    """
-    Validate and sanitize file name.
-    
-    Args:
-        file_name: File name to validate
-        
-    Returns:
-        Validated file name
-        
-    Raises:
-        ValidationError: If file name is invalid
-    """
+    # Validate and sanitize file name
+    # Args: file_name - File name to validate
+    # Returns: Validated file name
+    # Raises: ValidationError if file name is invalid
     if not file_name:
         raise ValidationError("File name is required")
     
@@ -151,18 +116,10 @@ def validate_file_name(file_name: str) -> str:
 
 
 def validate_label(label: Optional[str]) -> Optional[str]:
-    """
-    Validate task label.
-    
-    Args:
-        label: Label to validate
-        
-    Returns:
-        Validated label or None
-        
-    Raises:
-        ValidationError: If label is invalid
-    """
+    # Validate task label
+    # Args: label - Label to validate
+    # Returns: Validated label or None
+    # Raises: ValidationError if label is invalid
     if label is None:
         return None
     
@@ -180,18 +137,10 @@ def validate_label(label: Optional[str]) -> Optional[str]:
 
 
 def validate_infohash(infohash: str) -> str:
-    """
-    Validate BitTorrent info hash.
-    
-    Args:
-        infohash: Info hash to validate
-        
-    Returns:
-        Validated lowercase info hash
-        
-    Raises:
-        ValidationError: If info hash is invalid
-    """
+    # Validate BitTorrent info hash
+    # Args: infohash - Info hash to validate
+    # Returns: Validated lowercase info hash
+    # Raises: ValidationError if info hash is invalid
     if not infohash:
         raise ValidationError("Info hash is required")
     
@@ -209,20 +158,10 @@ def validate_infohash(infohash: str) -> str:
 
 
 def validate_positive_int(value: int, name: str = "value", max_value: Optional[int] = None) -> int:
-    """
-    Validate positive integer.
-    
-    Args:
-        value: Integer to validate
-        name: Name of the value (for error messages)
-        max_value: Optional maximum value
-        
-    Returns:
-        Validated integer
-        
-    Raises:
-        ValidationError: If value is invalid
-    """
+    # Validate positive integer
+    # Args: value - Integer to validate, name - Name of the value (for error messages), max_value - Optional maximum value
+    # Returns: Validated integer
+    # Raises: ValidationError if value is invalid
     if not isinstance(value, int):
         raise ValidationError(f"{name} must be an integer")
     
@@ -236,16 +175,9 @@ def validate_positive_int(value: int, name: str = "value", max_value: Optional[i
 
 
 def sanitize_for_log(value: str, max_length: int = 200) -> str:
-    """
-    Sanitize string for safe logging (prevent log injection).
-    
-    Args:
-        value: String to sanitize
-        max_length: Maximum length for logged value
-        
-    Returns:
-        Sanitized string
-    """
+    # Sanitize string for safe logging (prevent log injection)
+    # Args: value - String to sanitize, max_length - Maximum length for logged value
+    # Returns: Sanitized string
     if not isinstance(value, str):
         value = str(value)
     
@@ -260,18 +192,10 @@ def sanitize_for_log(value: str, max_length: int = 200) -> str:
 
 
 def validate_url(url: str) -> str:
-    """
-    Validate URL format.
-    
-    Args:
-        url: URL to validate
-        
-    Returns:
-        Validated URL
-        
-    Raises:
-        ValidationError: If URL is invalid
-    """
+    # Validate URL format
+    # Args: url - URL to validate
+    # Returns: Validated URL
+    # Raises: ValidationError if URL is invalid
     if not url:
         raise ValidationError("URL is required")
     
