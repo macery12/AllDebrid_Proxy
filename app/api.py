@@ -9,11 +9,11 @@ from app.db import SessionLocal
 from app.models import Task, TaskFile, UserStats
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
+from app.constants import TaskStatus, FileState, EventType, Limits
+from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int
+from app.exceptions import ValidationError, ResourceNotFoundError
 from starlette.responses import StreamingResponse
 import redis.asyncio as aioredis
-
-# Constants
-COMPLETED_STATUSES = ["ready", "done", "completed"]  # Task statuses considered as completed
 
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -58,23 +58,53 @@ def task_to_response(task: Task, session) -> TaskResponse:
 
 @router.post("/tasks", dependencies=[Depends(verify_worker_key)])
 def create_task(req: CreateTaskRequest):
+    """
+    Create a new download task.
+    
+    Args:
+        req: Task creation request
+        
+    Returns:
+        Task creation response with ID and status
+        
+    Raises:
+        HTTPException: If magnet link is invalid or task creation fails
+    """
+    # Validate inputs
+    try:
+        validate_magnet_link(req.source)
+        if req.label:
+            req.label = validate_label(req.label)
+        if req.user_id:
+            validate_positive_int(req.user_id, "user_id")
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     infohash = parse_infohash(req.source)
     if not infohash:
         raise HTTPException(status_code=400, detail="Invalid magnet (infohash not found)")
+    
     with SessionLocal() as s:
-        # Check for existing completed tasks with the same infohash
-        existing_completed = s.execute(
+        # Check for existing tasks with the same infohash (completed or in-progress)
+        # This prevents duplicate downloads of the same magnet
+        reusable_statuses = (
+            TaskStatus.COMPLETED_STATUSES + 
+            TaskStatus.ACTIVE_STATUSES + 
+            [TaskStatus.QUEUED, TaskStatus.RESOLVING]
+        )
+        
+        existing_task = s.execute(
             select(Task)
             .where(Task.infohash == infohash)
-            .where(Task.status.in_(COMPLETED_STATUSES))
+            .where(Task.status.in_(reusable_statuses))
             .order_by(Task.created_at.desc())
         ).scalars().first()
         
-        if existing_completed:
-            # Reuse existing completed task
+        if existing_task:
+            # Reuse existing task (completed or in-progress)
             return {
-                "taskId": existing_completed.id, 
-                "status": existing_completed.status,
+                "taskId": existing_task.id, 
+                "status": existing_task.status,
                 "reused": True,
                 "message": f"Reusing existing task with matching infohash"
             }
@@ -84,7 +114,7 @@ def create_task(req: CreateTaskRequest):
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         t = Task(
             id=task_id, mode=req.mode, source=req.source, infohash=infohash,
-            provider="alldebrid", status="queued", label=req.label or None,
+            provider="alldebrid", status=TaskStatus.QUEUED, label=req.label or None,
             user_id=req.user_id
         )
         s.add(t)
@@ -98,14 +128,32 @@ def create_task(req: CreateTaskRequest):
                 s.commit()
         
         append_log(base, {"level":"info","event":"task_created","taskId":task_id})
-        write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": infohash, "status": "queued"})
+        write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": infohash, "status": TaskStatus.QUEUED})
         # Notify worker
         r.lpush("queue:tasks", task_id)
-        r.publish(f"task:{task_id}", json.dumps({"type":"hello","taskId":task_id,"mode":req.mode,"status":"queued"}))
-        return {"taskId": task_id, "status": "queued", "reused": False}
+        r.publish(f"task:{task_id}", json.dumps({"type":EventType.HELLO,"taskId":task_id,"mode":req.mode,"status":TaskStatus.QUEUED}))
+        return {"taskId": task_id, "status": TaskStatus.QUEUED, "reused": False}
 
 @router.get("/tasks/{task_id}", dependencies=[Depends(verify_worker_key)])
 def get_task(task_id: str):
+    """
+    Get task details by ID.
+    
+    Args:
+        task_id: Task identifier
+        
+    Returns:
+        Task response with all details
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
@@ -114,62 +162,169 @@ def get_task(task_id: str):
 
 @router.post("/tasks/{task_id}/sse-token", dependencies=[Depends(verify_worker_key)])
 def create_sse_token(task_id: str):
-    """Generate a secure, time-limited token for SSE access (prevents exposing worker key to frontend)"""
+    """
+    Generate a secure, time-limited token for SSE access.
+    Prevents exposing worker key to frontend.
+    
+    Args:
+        task_id: Task identifier
+        
+    Returns:
+        Token and expiry information
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     from app.auth import generate_sse_token
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
     token = generate_sse_token(task_id)
-    return {"token": token, "expiresIn": 3600}
+    return {"token": token, "expiresIn": Limits.SSE_TOKEN_EXPIRY}
 
 @router.post("/tasks/{task_id}/select", dependencies=[Depends(verify_worker_key)])
 def select_files(task_id: str, req: SelectRequest):
+    """
+    Select files to download for a task in select mode.
+    
+    Args:
+        task_id: Task identifier
+        req: File selection request
+        
+    Returns:
+        Updated task status
+        
+    Raises:
+        HTTPException: If task not found, not in selection mode, or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
-        if t.mode != "select" or t.status != "waiting_selection":
+        if t.mode != "select" or t.status != TaskStatus.WAITING_SELECTION:
             raise HTTPException(status_code=400, detail="Task is not waiting for selection")
         ids = set(req.fileIds or [])
         files = s.execute(select(TaskFile).where(TaskFile.task_id == task_id)).scalars().all()
         for f in files:
             if f.id in ids:
-                f.state = "selected"
-        t.status = "downloading"
+                f.state = FileState.SELECTED
+        t.status = TaskStatus.DOWNLOADING
         s.commit()
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         append_log(base, {"level":"info","event":"selection_made","count":len(ids)})
-        r.publish(f"task:{task_id}", json.dumps({"type":"state","taskId":task_id,"status":"downloading"}))
-        return {"status":"downloading"}
+        r.publish(f"task:{task_id}", json.dumps({"type":EventType.STATE,"taskId":task_id,"status":TaskStatus.DOWNLOADING}))
+        return {"status": TaskStatus.DOWNLOADING}
 
 @router.post("/tasks/{task_id}/cancel", dependencies=[Depends(verify_worker_key)])
 def cancel_task(task_id: str):
+    """
+    Cancel a running task.
+    
+    Args:
+        task_id: Task identifier
+        
+    Returns:
+        Updated task status
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
-        t.status = "canceled"
+        t.status = TaskStatus.CANCELED
         s.commit()
-        r.publish(f"task:{task_id}", json.dumps({"type":"state","taskId":task_id,"status":"canceled"}))
-        return {"status":"canceled"}
+        r.publish(f"task:{task_id}", json.dumps({"type":EventType.STATE,"taskId":task_id,"status":TaskStatus.CANCELED}))
+        return {"status": TaskStatus.CANCELED}
 
 @router.delete("/tasks/{task_id}", dependencies=[Depends(verify_worker_key)])
 def delete_task(task_id: str, purge_files: bool = False):
+    """
+    Delete a task and optionally its files.
+    
+    Args:
+        task_id: Task identifier
+        purge_files: Whether to delete associated files
+        
+    Returns:
+        Success confirmation
+        
+    Raises:
+        HTTPException: If task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
             return {"ok": True}
         s.delete(t)
         s.commit()
+    
     # Delete the files and folder associated with the task
-    base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
-    shutil.rmtree(os.path.join(base, "files"))
+    if purge_files:
+        try:
+            base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
+            files_dir = os.path.join(base, "files")
+            if os.path.exists(files_dir):
+                shutil.rmtree(files_dir)
+        except Exception:
+            # Don't fail if file deletion fails
+            pass
+    
     return {"ok": True}
 
 @router.get("/tasks", dependencies=[Depends(verify_worker_key)])
 def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
-    """List all tasks with optional status filter for admin view"""
+    """
+    List all tasks with optional status filter for admin view.
+    
+    Args:
+        status: Optional status filter
+        limit: Maximum number of tasks to return
+        offset: Offset for pagination
+        
+    Returns:
+        List of tasks with total count
+        
+    Raises:
+        HTTPException: If parameters are invalid
+    """
+    # Validate parameters
+    try:
+        if limit:
+            limit = validate_positive_int(limit, "limit", max_value=Limits.DEFAULT_TASK_LIMIT)
+        if offset:
+            offset = validate_positive_int(offset, "offset")
+        if status and status not in TaskStatus.ALL_STATUSES:
+            raise ValidationError(f"Invalid status: {status}")
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         query = select(Task).order_by(Task.created_at.desc())
         if status:
@@ -195,7 +350,26 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
 
 @router.get("/tasks/{task_id}/events")
 async def task_events(task_id: str, _auth=Depends(verify_sse_access)):
-    """SSE endpoint with token-based authentication (doesn't expose worker key to frontend)"""
+    """
+    SSE endpoint with token-based authentication.
+    Streams real-time task updates to clients.
+    
+    Args:
+        task_id: Task identifier
+        _auth: Authentication dependency
+        
+    Returns:
+        Server-Sent Events stream
+        
+    Raises:
+        HTTPException: If task not found or task_id invalid
+    """
+    # Validate task_id
+    try:
+        task_id = validate_task_id(task_id)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     with SessionLocal() as s:
         t = s.get(Task, task_id)
         if not t:
@@ -206,10 +380,11 @@ async def task_events(task_id: str, _auth=Depends(verify_sse_access)):
     pubsub = ar.pubsub()
     await pubsub.subscribe(channel)
 
-    HEARTBEAT_SEC = 25
-    EMPTY_FILES_POLL_SEC = 0.5   # fast poll until we have files
-    PERIODIC_REFRESH_SEC = 5.0   # gentle refresh even with Redis
-    MAX_EMPTY_WAIT_SEC = 60.0    # stop aggressive polling after 1 min
+    # Use constants for timeouts
+    HEARTBEAT_SEC = Limits.SSE_HEARTBEAT_INTERVAL
+    EMPTY_FILES_POLL_SEC = Limits.SSE_EMPTY_FILES_POLL
+    PERIODIC_REFRESH_SEC = Limits.SSE_REFRESH_INTERVAL
+    MAX_EMPTY_WAIT_SEC = Limits.SSE_MAX_EMPTY_WAIT
 
     # Track what we last sent to avoid spamming
     last_sent_json = json.dumps(snapshot.dict(), sort_keys=True, default=str)
