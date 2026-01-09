@@ -472,12 +472,30 @@ def stream_video(task_id, relpath):
         
         length = end - start + 1
         
-        # Stream the requested range in chunks to avoid memory issues
+        # For small ranges (< 5MB), read directly to avoid generator overhead
+        # This significantly improves seeking performance
+        if length < 5 * 1024 * 1024:
+            with open(full, 'rb') as f:
+                f.seek(start)
+                data = f.read(length)
+            
+            resp = make_response(data)
+            resp.status_code = 206
+            resp.headers["Content-Type"] = mime
+            resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            resp.headers["Content-Length"] = str(length)
+            resp.headers["Accept-Ranges"] = "bytes"
+            resp.headers["ETag"] = etag
+            resp.headers["Last-Modified"] = last_mod
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+            return resp
+        
+        # For larger ranges, use chunked streaming
         def generate():
             with open(full, 'rb') as f:
                 f.seek(start)
                 remaining = length
-                chunk_size = 64 * 1024  # 64KB chunks
+                chunk_size = 256 * 1024  # Increased to 256KB for better throughput
                 while remaining > 0:
                     chunk = f.read(min(chunk_size, remaining))
                     if not chunk:
