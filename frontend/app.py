@@ -300,7 +300,7 @@ def admin_list_tasks():
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
 
-@app.delete("/api/admin/tasks/<task_id>")
+@app.route("/api/admin/tasks/<task_id>", methods=["DELETE"])
 @login_required
 def admin_delete_task(task_id):
     """
@@ -341,7 +341,9 @@ def task_view(task_id):
         flash(f"Load failed: {err[0]}", "error")
         t = None
     mode = (t or {}).get("mode") or request.args.get("mode", "auto")
-    return render_template("task.html", task_id=task_id, t=t, mode=mode)
+    # Pass worker_base_url to template for SSE connection
+    return render_template("task.html", task_id=task_id, t=t, mode=mode, 
+                         worker_base_url=app.config["WORKER_BASE_URL"])
 
 @app.post("/tasks/<task_id>/select")
 @login_required
