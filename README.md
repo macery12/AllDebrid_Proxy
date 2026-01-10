@@ -3,6 +3,16 @@ a poorly chatgpt'ed together alldebrid proxy to proxy alldebrid files and be abl
 
 ## Features
 
+### 📊 Real-Time Stats Dashboard
+- **Live System Monitoring**: Real-time statistics updated every 3 seconds
+- **Active Downloads**: Monitor currently downloading files and tasks
+- **Queue Status**: See queued tasks waiting to start
+- **Storage Metrics**: Track available disk space and reserved storage
+- **Download Progress**: Visual progress bars showing overall download status
+- **Worker Health**: System status indicators with automatic health checks
+- **Performance Metrics**: Comprehensive stats about tasks, files, and system resources
+- **Security First**: No sensitive information (API keys, tokens) exposed to frontend
+
 ### 📥 Multi-Source Download Support
 - **Torrent File Upload**: Upload .torrent files directly - they're converted to magnet links and immediately discarded (not stored)
 - **Magnet Links**: Full support for BitTorrent magnet links via AllDebrid
@@ -184,6 +194,55 @@ The application consists of multiple services:
 - `redis`: Message queue and caching
 
 All services are configured via `docker-compose.yml`.
+
+### 📡 API Endpoints
+
+#### Statistics Endpoint
+
+**GET `/api/stats`** - Get comprehensive system statistics
+
+Returns real-time statistics about the system including:
+- **Tasks**: Total, queued, downloading, completed, failed, canceled
+- **Files**: Total, downloading, completed, failed
+- **Downloads**: Active downloads, progress, bytes downloaded/total
+- **Storage**: Free space, reserved space, low space threshold
+- **Users**: Aggregate user statistics
+- **Queue**: Redis queue length
+- **Health**: Worker health status
+
+**Authentication**: Requires valid worker API key via `X-Worker-Key` header (backend) or admin session (frontend proxy at `/api/stats`)
+
+**Example Response**:
+```json
+{
+  "timestamp": 1234567890.0,
+  "tasks": {
+    "total": 100,
+    "queued": 5,
+    "downloading": 3,
+    "active": 3,
+    "completed": 85,
+    "failed": 2
+  },
+  "files": {
+    "total": 500,
+    "downloading": 8,
+    "completed": 480
+  },
+  "downloads": {
+    "active_count": 8,
+    "total_bytes": 10737418240,
+    "downloaded_bytes": 5368709120,
+    "progress_pct": 50
+  },
+  "storage": {
+    "free_bytes": 107374182400,
+    "reserved_bytes": 5368709120
+  }
+}
+```
+
+**Security Note**: This endpoint does not expose any sensitive information such as API keys, tokens, file paths, or user credentials.
 
 ### 📚 Additional Documentation
 

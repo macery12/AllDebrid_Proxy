@@ -498,4 +498,204 @@ async def task_events(task_id: str, _auth=Depends(verify_sse_access)):
     }
     return StreamingResponse(sse_gen(), headers=headers)
 
+@router.get("/stats", dependencies=[Depends(verify_worker_key)])
+def get_system_stats():
+    """
+    Get comprehensive system statistics for dashboard.
+    Returns statistics about tasks, downloads, storage, and system performance.
+    
+    Security: Does not expose sensitive information like API keys or tokens.
+    
+    Returns:
+        System statistics dictionary
+    """
+    with SessionLocal() as s:
+        # Task statistics
+        total_tasks = s.execute(select(func.count(Task.id))).scalar() or 0
+        
+        # Count tasks by status
+        queued_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status == TaskStatus.QUEUED)
+        ).scalar() or 0
+        
+        resolving_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status == TaskStatus.RESOLVING)
+        ).scalar() or 0
+        
+        downloading_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status == TaskStatus.DOWNLOADING)
+        ).scalar() or 0
+        
+        waiting_selection_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status == TaskStatus.WAITING_SELECTION)
+        ).scalar() or 0
+        
+        completed_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status.in_(TaskStatus.COMPLETED_STATUSES))
+        ).scalar() or 0
+        
+        failed_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status == TaskStatus.FAILED)
+        ).scalar() or 0
+        
+        canceled_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status == TaskStatus.CANCELED)
+        ).scalar() or 0
+        
+        # Active tasks (downloading or waiting for selection)
+        active_tasks = s.execute(
+            select(func.count(Task.id)).where(Task.status.in_(TaskStatus.ACTIVE_STATUSES))
+        ).scalar() or 0
+        
+        # File statistics
+        total_files = s.execute(select(func.count(TaskFile.id))).scalar() or 0
+        
+        downloading_files = s.execute(
+            select(func.count(TaskFile.id)).where(TaskFile.state == FileState.DOWNLOADING)
+        ).scalar() or 0
+        
+        completed_files = s.execute(
+            select(func.count(TaskFile.id)).where(TaskFile.state == FileState.DONE)
+        ).scalar() or 0
+        
+        failed_files = s.execute(
+            select(func.count(TaskFile.id)).where(TaskFile.state == FileState.FAILED)
+        ).scalar() or 0
+        
+        # Download progress statistics (only actively downloading files)
+        total_bytes_to_download = s.execute(
+            select(func.sum(TaskFile.size_bytes)).where(
+                TaskFile.state == FileState.DOWNLOADING
+            )
+        ).scalar() or 0
+        
+        total_bytes_downloaded = s.execute(
+            select(func.sum(TaskFile.bytes_downloaded)).where(
+                TaskFile.state == FileState.DOWNLOADING
+            )
+        ).scalar() or 0
+        
+        # Calculate progress percentage (only for actively downloading files)
+        if total_bytes_to_download > 0:
+            download_progress_pct = int((total_bytes_downloaded / total_bytes_to_download) * 100)
+        else:
+            download_progress_pct = 0
+        
+        # Storage statistics
+        free_bytes = disk_free_bytes(settings.STORAGE_ROOT)
+        
+        # Calculate reserved bytes (files queued/downloading)
+        reserved_bytes = 0
+        files = s.execute(
+            select(TaskFile).where(TaskFile.state.in_(FileState.RESERVED_STATES))
+        ).scalars().all()
+        
+        for f in files:
+            sz = f.size_bytes or 0
+            have = f.bytes_downloaded or 0
+            reserved_bytes += max(sz - have, 0)
+        
+        # User statistics (aggregate)
+        total_users = s.execute(select(func.count(UserStats.id))).scalar() or 0
+        aggregate_user_downloads = s.execute(
+            select(func.sum(UserStats.total_downloads))
+        ).scalar() or 0
+        aggregate_bytes_downloaded = s.execute(
+            select(func.sum(UserStats.total_bytes_downloaded))
+        ).scalar() or 0
+        
+        # Redis queue statistics (if available)
+        queue_length = 0
+        try:
+            queue_length = r.llen("queue:tasks") or 0
+        except Exception:
+            pass
+        
+        # Worker health check
+        worker_healthy = True
+        try:
+            # Check if storage is writable
+            test_path = os.path.join(settings.STORAGE_ROOT, ".healthcheck_stats")
+            with open(test_path, "w") as fh:
+                fh.write("ok")
+            os.remove(test_path)
+        except Exception:
+            worker_healthy = False
+        
+        # Get detailed active downloads (only downloading files, not ready/selected)
+        # Order by bytes_downloaded/size_bytes ratio to show least complete first
+        active_downloads = []
+        downloading_files_detailed = s.execute(
+            select(TaskFile)
+            .where(TaskFile.state == FileState.DOWNLOADING)
+            .order_by(TaskFile.bytes_downloaded.asc())  # Show files with least progress first
+            .limit(20)
+        ).scalars().all()
+        
+        for f in downloading_files_detailed:
+            size = f.size_bytes or 0
+            downloaded = f.bytes_downloaded or 0
+            
+            # Ensure we don't show >100% or weird values
+            if downloaded > size and size > 0:
+                downloaded = size
+            
+            progress = int((downloaded / size) * 100) if size > 0 else 0
+            
+            # Cap at 100%
+            if progress > 100:
+                progress = 100
+            
+            active_downloads.append({
+                "file_id": f.id,  # For debugging
+                "filename": f.name or "Unknown",
+                "size_bytes": size,
+                "downloaded_bytes": downloaded,
+                "progress_pct": progress,
+            })
+    
+    return {
+        "timestamp": time.time(),
+        "tasks": {
+            "total": total_tasks,
+            "queued": queued_tasks,
+            "resolving": resolving_tasks,
+            "downloading": downloading_tasks,
+            "waiting_selection": waiting_selection_tasks,
+            "active": active_tasks,
+            "completed": completed_tasks,
+            "failed": failed_tasks,
+            "canceled": canceled_tasks,
+        },
+        "files": {
+            "total": total_files,
+            "downloading": downloading_files,
+            "completed": completed_files,
+            "failed": failed_files,
+        },
+        "downloads": {
+            "active_count": downloading_files,
+            "total_bytes": total_bytes_to_download,
+            "downloaded_bytes": total_bytes_downloaded,
+            "progress_pct": download_progress_pct,
+            "active_files": active_downloads,
+        },
+        "storage": {
+            "free_bytes": free_bytes,
+            "reserved_bytes": reserved_bytes,
+            "low_space_floor_bytes": int(settings.LOW_SPACE_FLOOR_GB) * 1024 * 1024 * 1024,
+        },
+        "users": {
+            "total_users": total_users,
+            "aggregate_downloads": aggregate_user_downloads,
+            "aggregate_bytes_downloaded": aggregate_bytes_downloaded,
+        },
+        "queue": {
+            "length": queue_length,
+        },
+        "health": {
+            "worker_healthy": worker_healthy,
+        }
+    }
+
 

@@ -1,267 +1,790 @@
 {% extends "base.html" %}
-{% block title %}Create Task — AllDebrid Proxy{% endblock %}
+{% block title %}AllDebrid Proxy{% endblock %}
 {% block content %}
 
 <style>
-/* Hero section */
-.hero {
-  text-align: center;
-  padding: 40px 20px;
-  background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(34,197,94,0.1));
-  border-radius: 16px;
-  margin-bottom: 30px;
-  border: 1px solid var(--border);
-}
-.hero h1 {
-  font-size: clamp(24px, 5vw, 36px);
-  margin-bottom: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.hero p {
-  color: var(--muted);
-  font-size: 16px;
-  max-width: 600px;
+/* Professional Clean Design */
+.container {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 32px;
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 32px 24px;
 }
 
-/* Form styling */
-.form-container {
-  max-width: 700px;
-  margin: 0 auto;
+/* Main Content Area */
+.main-content {
+  min-width: 0;
 }
-.form-group {
-  margin-bottom: 20px;
+
+.page-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 8px 0;
+  letter-spacing: -0.3px;
 }
+
+.page-description {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0 0 32px 0;
+  line-height: 1.6;
+}
+
+/* Task Creation Form */
+.form-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.form-section {
+  margin-bottom: 28px;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+  letter-spacing: 0.1px;
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.form-textarea {
+  min-height: 140px;
+  resize: vertical;
+  font-family: ui-monospace, 'Courier New', monospace;
+  line-height: 1.6;
+}
+
 .form-hint {
   display: block;
-  margin-top: 6px;
+  margin-top: 8px;
+  font-size: 13px;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
-.form-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  margin-top: 24px;
-}
-.or-divider {
-  text-align: center;
-  margin: 20px 0;
-  color: var(--muted);
-  font-size: 14px;
-  position: relative;
-}
-.or-divider::before,
-.or-divider::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: calc(50% - 30px);
-  height: 1px;
-  background: var(--border);
-}
-.or-divider::before {
-  left: 0;
-}
-.or-divider::after {
-  right: 0;
-}
-.file-upload-area {
+
+.upload-area {
   border: 2px dashed var(--border);
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 8px;
+  padding: 32px;
   text-align: center;
   background: var(--bg-secondary);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
-.file-upload-area:hover {
+
+.upload-area:hover {
   border-color: var(--accent);
   background: rgba(99, 102, 241, 0.05);
 }
-.file-upload-area input[type="file"] {
+
+.upload-area input[type="file"] {
   display: none;
 }
-.file-upload-label {
-  display: block;
-  cursor: pointer;
-}
-.file-upload-icon {
+
+.upload-icon {
   font-size: 48px;
   margin-bottom: 12px;
+  opacity: 0.7;
 }
-.file-upload-text {
+
+.upload-text {
+  font-size: 15px;
+  font-weight: 500;
   color: var(--text);
-  font-size: 14px;
   margin-bottom: 6px;
 }
-.file-upload-hint {
+
+.upload-subtext {
+  font-size: 13px;
   color: var(--muted);
-  font-size: 12px;
 }
-.info-box {
-  background: rgba(99, 102, 241, 0.05);
+
+.divider {
+  text-align: center;
+  margin: 24px 0;
+  position: relative;
+}
+
+.divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+.divider span {
+  position: relative;
+  background: var(--card);
+  padding: 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  background: var(--card-hover);
+  border-color: var(--border-light);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.info-note {
+  background: rgba(99, 102, 241, 0.08);
   border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 16px;
-  margin-top: 20px;
+  margin-top: 24px;
 }
-.info-box h3 {
+
+.info-note-title {
   font-size: 14px;
-  margin: 0 0 8px 0;
+  font-weight: 600;
   color: var(--accent);
+  margin: 0 0 6px 0;
 }
-.info-box p {
+
+.info-note-text {
   font-size: 13px;
   color: var(--muted);
   margin: 0;
   line-height: 1.6;
 }
-.health-status {
+
+/* Sidebar */
+.sidebar {
+  min-width: 0;
+}
+
+.sidebar-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.sidebar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 18px 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  justify-content: space-between;
+}
+
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-2);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.stat-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.stat-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.stat-item:first-child {
+  padding-top: 0;
+}
+
+.stat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stat-subtext {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.progress-bar {
+  height: 6px;
   background: var(--bg-secondary);
-  border-radius: 10px;
-  margin-top: 20px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.status-badge.online {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--accent-2);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.status-badge.offline {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-secondary), var(--card-hover), var(--bg-secondary));
+  background-size: 200% 100%;
+  animation: skeleton 1.5s infinite;
+  border-radius: 4px;
+  height: 20px;
+}
+
+@keyframes skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.nav-links {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+  background: var(--card-hover);
+  border-color: var(--border-light);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .container {
+    grid-template-columns: 1fr;
+  }
+  
+  .sidebar {
+    order: -1;
+  }
+  
+  .sidebar-section {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 20px 16px;
+  }
+  
+  .form-card {
+    padding: 24px 20px;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>
 
-<div class="hero">
-  <h1>🚀 Create Download Task</h1>
-  <p>Upload a torrent file, paste a magnet link, or direct URL, and let the worker handle the rest</p>
+<div class="nav-links">
+  <a href="{{ url_for('admin_page') }}" class="nav-link">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+    </svg>
+    All Tasks
+  </a>
+  <a href="{{ url_for('admin_users_page') }}" class="nav-link">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+    User Management
+  </a>
 </div>
 
-<div class="form-container">
-  <div class="card">
-    <h2>New Download Task</h2>
-    
-    <form method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
-      <div class="form-group">
-        <label>Upload Torrent File(s)</label>
-        <div class="file-upload-area" onclick="document.getElementById('torrent-files').click()">
-          <label for="torrent-files" class="file-upload-label">
-            <div class="file-upload-icon">📁</div>
-            <div class="file-upload-text">Click to select .torrent file(s)</div>
-            <div class="file-upload-hint">Max 10MB per file. Multiple files supported.</div>
-          </label>
+<div class="container">
+  <!-- Main Content -->
+  <div class="main-content">
+    <h1 class="page-title">Create Download Task</h1>
+    <p class="page-description">Upload torrent files, paste magnet links, or add direct download URLs to start downloading.</p>
+
+    <div class="form-card">
+      <form method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
+        <div class="form-section">
+          <label class="form-label">Upload Torrent File(s)</label>
+          <div class="upload-area" onclick="document.getElementById('torrent-files').click()">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">Click to select .torrent file(s)</div>
+            <div class="upload-subtext">Maximum 10MB per file • Multiple files supported</div>
+            <input 
+              type="file" 
+              id="torrent-files" 
+              name="torrent_files" 
+              accept=".torrent"
+              multiple
+            />
+          </div>
+          <small class="form-hint" id="file-hint" style="display: none;">
+            <span id="file-count">0</span> file(s) selected
+          </small>
+        </div>
+
+        <div class="divider">
+          <span>OR</span>
+        </div>
+
+        <div class="form-section">
+          <label for="source" class="form-label">Magnet Links or Direct URLs</label>
+          <textarea 
+            id="source" 
+            name="source" 
+            class="form-textarea"
+            placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;Paste one link per line for multiple downloads"
+          ></textarea>
+          <small class="form-hint">Enter one or more magnet links or direct download URLs (one per line)</small>
+        </div>
+
+        <div class="form-section">
+          <label for="label" class="form-label">Label (Optional)</label>
           <input 
-            type="file" 
-            id="torrent-files" 
-            name="torrent_files" 
-            accept=".torrent"
-            multiple
+            type="text" 
+            id="label" 
+            name="label" 
+            class="form-input"
+            placeholder="e.g., Movie Name, TV Show S01E01"
           />
         </div>
-        <small class="form-hint" id="file-count-hint" style="display: none;">
-          <span id="file-count">0</span> file(s) selected
-        </small>
+
+        <div class="form-section">
+          <label for="mode" class="form-label">Download Mode</label>
+          <select id="mode" name="mode" class="form-select">
+            <option value="auto">Auto - Download all files automatically</option>
+            <option value="select">Select - Choose specific files manually</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Create Task
+          </button>
+          <a href="{{ url_for('admin_page') }}" class="btn">
+            View All Tasks
+          </a>
+        </div>
+      </form>
+
+      <div class="info-note">
+        <div class="info-note-title">Smart Task Reuse</div>
+        <p class="info-note-text">
+          If you submit a magnet link or URL that's already been downloaded, the system will automatically 
+          reuse the existing files instead of downloading again, saving bandwidth and time.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h2 class="sidebar-title">
+        System Stats
+        <span class="live-indicator">
+          <span class="live-dot"></span>
+          <span id="live-text">Live</span>
+        </span>
+      </h2>
+
+      <div class="stat-item">
+        <div class="stat-header">
+          <span class="stat-label">Active Downloads</span>
+          <span class="stat-value" id="stat-active">
+            <div class="skeleton" style="width: 40px;"></div>
+          </span>
+        </div>
+        <div class="stat-subtext" id="stat-active-desc">Loading...</div>
       </div>
 
-      <div class="or-divider">OR</div>
-
-      <div class="form-group">
-        <label for="source">Magnet Link or URL (one per line for multiple)</label>
-        <textarea 
-          id="source" 
-          name="source" 
-          placeholder="magnet:?xt=urn:btih:... or https://example.com/file.zip&#10;https://example.com/file2.zip&#10;magnet:?xt=urn:btih:..."
-          rows="5"
-        ></textarea>
-        <small class="form-hint">💡 Paste one or more magnet links or direct URLs (one per line). Supported: HTTP/HTTPS links and magnet links.</small>
+      <div class="stat-item">
+        <div class="stat-header">
+          <span class="stat-label">Queued Tasks</span>
+          <span class="stat-value" id="stat-queued">
+            <div class="skeleton" style="width: 40px;"></div>
+          </span>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label for="label">Label (Optional)</label>
-        <input 
-          type="text" 
-          id="label" 
-          name="label" 
-          placeholder="e.g., Movie Name, TV Show S01E01"
-        />
+      <div class="stat-item">
+        <div class="stat-header">
+          <span class="stat-label">Free Storage</span>
+          <span class="stat-value" id="stat-storage">
+            <div class="skeleton" style="width: 60px;"></div>
+          </span>
+        </div>
+        <div class="stat-subtext" id="stat-storage-desc">Loading...</div>
       </div>
 
-      <div class="form-group">
-        <label for="mode">Download Mode</label>
-        <select id="mode" name="mode">
-          <option value="auto">Auto (Download all files automatically)</option>
-          <option value="select">Select (Choose specific files manually)</option>
-        </select>
+      <div class="stat-item">
+        <div class="stat-header">
+          <span class="stat-label">Total Tasks</span>
+          <span class="stat-value" id="stat-total">
+            <div class="skeleton" style="width: 50px;"></div>
+          </span>
+        </div>
+        <div class="stat-subtext" id="stat-total-desc">Loading...</div>
       </div>
-
-      <div class="form-actions">
-        <button class="btn primary" type="submit">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          Create Task
-        </button>
-        <a class="btn" href="{{ url_for('admin_page') }}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v20M2 12h20"></path>
-          </svg>
-          View All Tasks
-        </a>
-      </div>
-    </form>
-
-    <div class="info-box">
-      <h3>💡 Smart Task Reuse</h3>
-      <p>
-        If you submit a magnet link or URL that's already been downloaded, the system will automatically 
-        reuse the existing files instead of downloading again. This saves bandwidth and time! You can also
-        submit multiple sources at once (one per line) to queue multiple downloads.
-      </p>
     </div>
 
-    {% if health %}
-    <div class="health-status">
-      {% set is_ok = health.get('ok') %}
-      <span class="pill {{ 'good' if is_ok else 'bad' }}">
-        {{ '●' if is_ok else '○' }} Worker {{ 'Online' if is_ok else 'Offline' }}
-      </span>
-      {% if not is_ok %}
-        <span class="small muted">{{ health.get('error', 'Unknown error') }}</span>
-      {% endif %}
+    <div class="sidebar-section" id="progress-section" style="display: none;">
+      <h2 class="sidebar-title">Active Downloads</h2>
+      <div id="active-downloads-list"></div>
     </div>
-    {% endif %}
+
+    <div class="sidebar-section">
+      <h2 class="sidebar-title">System Status</h2>
+      <div class="status-badge" id="system-status">
+        <span class="live-dot"></span>
+        <span>Checking...</span>
+      </div>
+      <div class="stat-subtext" style="margin-top: 12px;" id="update-time">Initializing...</div>
+    </div>
   </div>
 </div>
 
+<style>
+.download-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.download-item:last-child {
+  margin-bottom: 0;
+}
+
+.download-filename {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.download-progress {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.download-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #06b6d4);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+</style>
+
 <script>
-// Update file count when torrent files are selected
-document.getElementById('torrent-files').addEventListener('change', function(e) {
-  const fileCount = e.target.files.length;
-  const hint = document.getElementById('file-count-hint');
-  const countSpan = document.getElementById('file-count');
-  
-  if (fileCount > 0) {
-    countSpan.textContent = fileCount;
-    hint.style.display = 'block';
+let updateTimer = null;
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 10) / 10 + ' ' + sizes[i];
+}
+
+function formatNum(num) {
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+async function updateStats() {
+  try {
+    const res = await fetch('/admin/stats');
+    if (!res.ok) throw new Error('Failed to fetch stats');
     
-    // Update the upload area text
-    const uploadText = document.querySelector('.file-upload-text');
-    if (fileCount === 1) {
-      uploadText.textContent = e.target.files[0].name;
+    const stats = await res.json();
+    
+    // Active downloads
+    const active = stats.tasks?.downloading || 0;
+    const activeFiles = stats.files?.downloading || 0;
+    document.getElementById('stat-active').textContent = active;
+    document.getElementById('stat-active-desc').textContent = 
+      `${activeFiles} file${activeFiles !== 1 ? 's' : ''} downloading`;
+    
+    // Queue
+    const queued = (stats.tasks?.queued || 0) + (stats.tasks?.resolving || 0);
+    document.getElementById('stat-queued').textContent = queued;
+    
+    // Storage
+    const free = stats.storage?.free_bytes || 0;
+    const reserved = stats.storage?.reserved_bytes || 0;
+    document.getElementById('stat-storage').textContent = formatBytes(free);
+    document.getElementById('stat-storage-desc').textContent = 
+      `${formatBytes(reserved)} reserved`;
+    
+    // Total
+    const total = stats.tasks?.total || 0;
+    const completed = stats.tasks?.completed || 0;
+    document.getElementById('stat-total').textContent = formatNum(total);
+    document.getElementById('stat-total-desc').textContent = 
+      `${formatNum(completed)} completed`;
+    
+    // Active Downloads List
+    const activeDownloads = stats.downloads?.active_files || [];
+    const progressSection = document.getElementById('progress-section');
+    const downloadsList = document.getElementById('active-downloads-list');
+    
+    if (activeDownloads.length > 0) {
+      progressSection.style.display = 'block';
+      
+      // Render active downloads
+      downloadsList.innerHTML = activeDownloads.map(file => `
+        <div class="download-item">
+          <div class="download-filename" title="${file.filename}">${file.filename}</div>
+          <div class="download-stats">
+            <span>${formatBytes(file.downloaded_bytes)} / ${formatBytes(file.size_bytes)}</span>
+            <span>${file.progress_pct}%</span>
+          </div>
+          <div class="download-progress">
+            <div class="download-progress-fill" style="width: ${file.progress_pct}%"></div>
+          </div>
+        </div>
+      `).join('');
     } else {
-      uploadText.textContent = `${fileCount} torrent files selected`;
+      progressSection.style.display = 'none';
     }
+    
+    // Status
+    const healthy = stats.health?.worker_healthy !== false;
+    const statusEl = document.getElementById('system-status');
+    if (healthy) {
+      statusEl.className = 'status-badge online';
+      statusEl.innerHTML = '<span class="live-dot"></span><span>Online</span>';
+    } else {
+      statusEl.className = 'status-badge offline';
+      statusEl.innerHTML = '<span class="live-dot"></span><span>Offline</span>';
+    }
+    
+    // Update time
+    const now = new Date();
+    document.getElementById('update-time').textContent = 
+      `Updated ${now.toLocaleTimeString()}`;
+    
+  } catch (err) {
+    console.error('Stats update failed:', err);
+    const statusEl = document.getElementById('system-status');
+    statusEl.className = 'status-badge offline';
+    statusEl.innerHTML = '<span class="live-dot"></span><span>Error</span>';
+  }
+}
+
+function startUpdates() {
+  updateStats();
+  if (updateTimer) clearInterval(updateTimer);
+  updateTimer = setInterval(updateStats, 5000);
+}
+
+function stopUpdates() {
+  if (updateTimer) {
+    clearInterval(updateTimer);
+    updateTimer = null;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', startUpdates);
+
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    stopUpdates();
   } else {
-    hint.style.display = 'none';
-    document.querySelector('.file-upload-text').textContent = 'Click to select .torrent file(s)';
+    startUpdates();
   }
 });
 
-// Prevent form submission if no files and no source text
+// File upload
+document.getElementById('torrent-files').addEventListener('change', function(e) {
+  const count = e.target.files.length;
+  const hint = document.getElementById('file-hint');
+  const countSpan = document.getElementById('file-count');
+  
+  if (count > 0) {
+    countSpan.textContent = count;
+    hint.style.display = 'block';
+    
+    const uploadText = document.querySelector('.upload-text');
+    if (count === 1) {
+      uploadText.textContent = e.target.files[0].name;
+    } else {
+      uploadText.textContent = `${count} file${count !== 1 ? 's' : ''} selected`;
+    }
+  } else {
+    hint.style.display = 'none';
+    document.querySelector('.upload-text').textContent = 'Click to select .torrent file(s)';
+  }
+});
+
+// Form validation
 document.querySelector('form').addEventListener('submit', function(e) {
   const files = document.getElementById('torrent-files').files;
   const source = document.getElementById('source').value.trim();
