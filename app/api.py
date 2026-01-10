@@ -562,10 +562,10 @@ def get_system_stats():
             select(func.count(TaskFile.id)).where(TaskFile.state == FileState.FAILED)
         ).scalar() or 0
         
-        # Download progress statistics
+        # Download progress statistics (only actively downloading files)
         total_bytes_to_download = s.execute(
             select(func.sum(TaskFile.size_bytes)).where(
-                TaskFile.state.in_([FileState.DOWNLOADING, FileState.SELECTED, FileState.LISTED])
+                TaskFile.state == FileState.DOWNLOADING
             )
         ).scalar() or 0
         
@@ -575,14 +575,7 @@ def get_system_stats():
             )
         ).scalar() or 0
         
-        # Also count already completed files
-        completed_bytes = s.execute(
-            select(func.sum(TaskFile.size_bytes)).where(TaskFile.state == FileState.DONE)
-        ).scalar() or 0
-        
-        total_bytes_downloaded += (completed_bytes or 0)
-        
-        # Calculate progress percentage
+        # Calculate progress percentage (only for actively downloading files)
         if total_bytes_to_download > 0:
             download_progress_pct = int((total_bytes_downloaded / total_bytes_to_download) * 100)
         else:

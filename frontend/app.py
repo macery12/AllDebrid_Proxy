@@ -20,10 +20,7 @@ from app.validation import validate_torrent_file_data
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
 MAX_LABEL_LENGTH = 500     # Maximum length for task label
 
-logging.basicConfig(
-    level=logging.DEBUG if os.environ.get("DEBUG") == "1" else logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 log = logging.getLogger("ad-frontend-v1")
 
 app = Flask(__name__)
@@ -36,21 +33,11 @@ app.config["STORAGE_ROOT"] = os.environ.get("STORAGE_ROOT", "/srv/storage")
 app.config["USE_X_ACCEL"] = os.environ.get("USE_X_ACCEL", "0") == "1"
 app.config["NGINX_ACCEL_PREFIX"] = os.environ.get("NGINX_ACCEL_PREFIX", "/protected")
 
-# Startup validation
+# Minimal startup validation
 if not app.config["WORKER_KEY"]:
-    log.warning("=" * 80)
-    log.warning("WARNING: WORKER_API_KEY environment variable is not set!")
-    log.warning("Backend API calls will fail with 401 Unauthorized errors.")
-    log.warning("Please set WORKER_API_KEY in your .env file.")
-    log.warning("=" * 80)
+    log.warning("WORKER_API_KEY not set - backend API calls will fail")
 elif app.config["WORKER_KEY"] == "change-me":
-    log.warning("=" * 80)
-    log.warning("WARNING: WORKER_API_KEY is still set to the default 'change-me'!")
-    log.warning("Please change it to a secure value in your .env file.")
-    log.warning("=" * 80)
-else:
-    log.info(f"WORKER_API_KEY configured (length: {len(app.config['WORKER_KEY'])} chars)")
-    log.info(f"WORKER_BASE_URL: {app.config['WORKER_BASE_URL']}")
+    log.warning("WORKER_API_KEY is still set to default 'change-me' - please change it")
 
 login_manager = LoginManager()
 login_manager.login_view = "login"
@@ -155,23 +142,13 @@ def w_request(method: str, path: str, *, params=None, json_body=None):
     url = w_url(path)
     headers = w_headers()
     
-    # Debug logging
     log.info(f"→ WORKER {method} {url}")
-    log.debug(f"  Headers: {list(headers.keys())}")
-    log.debug(f"  Worker key present: {bool(headers.get('X-Worker-Key'))}")
-    if headers.get('X-Worker-Key'):
-        # Log first and last 4 chars for debugging (never log the full key)
-        key = headers['X-Worker-Key']
-        log.debug(f"  Worker key pattern: {key[:4]}...{key[-4:] if len(key) > 8 else ''}")
-    
     try:
         r = requests.request(method, url, headers=headers, params=params, json=json_body, timeout=30)
     except Exception as e:
         log.error(f"WORKER request failed: {e}")
         return None, (str(e), 502)
     log.info(f"← WORKER {r.status_code} {url}")
-    if not r.ok:
-        log.error(f"  Response: {r.text[:200]}")
     try:
         data = r.json()
     except Exception:
@@ -482,12 +459,10 @@ def admin_tasks():
 def get_stats():
     """Proxy endpoint to get system stats without exposing worker key"""
     if not app.config["WORKER_KEY"]:
-        log.error("WORKER_API_KEY environment variable not set - cannot authenticate with backend")
-        return jsonify({"error": "Backend authentication not configured. Please set WORKER_API_KEY in .env file"}), 500
+        return jsonify({"error": "WORKER_API_KEY not configured"}), 500
     
     body, err = w_request("GET", "/api/stats")
     if err:
-        log.error(f"Stats API request failed: {err[0]} (status {err[1]})")
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
 
