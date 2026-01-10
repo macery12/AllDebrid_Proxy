@@ -477,7 +477,7 @@ def admin_tasks():
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
 
-@app.get("/api/stats")
+@app.get("/admin/stats")
 @admin_required
 def get_stats():
     """Proxy endpoint to get system stats without exposing worker key"""
