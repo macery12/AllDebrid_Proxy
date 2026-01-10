@@ -35,6 +35,13 @@
 .form-group {
   margin-bottom: 20px;
 }
+.form-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
 .form-actions {
   display: flex;
   gap: 12px;
@@ -83,14 +90,16 @@
     
     <form method="post" action="{{ url_for('create_task') }}">
       <div class="form-group">
-        <label for="source">Magnet Link / URL</label>
+        <label for="source">Magnet Link or URL (one per line for multiple)</label>
         <textarea 
           id="source" 
           name="source" 
-          placeholder="magnet:?xt=urn:btih:... or https://..." 
+          placeholder="magnet:?xt=urn:btih:... or https://example.com/file.zip&#10;https://example.com/file2.zip&#10;magnet:?xt=urn:btih:..."
           required
           autofocus
+          rows="5"
         ></textarea>
+        <small class="form-hint">💡 Paste one or more magnet links or direct URLs (one per line). Supported: HTTP/HTTPS links and magnet links.</small>
       </div>
 
       <div class="form-group">
@@ -132,8 +141,9 @@
     <div class="info-box">
       <h3>💡 Smart Task Reuse</h3>
       <p>
-        If you submit a magnet link that's already been downloaded, the system will automatically 
-        reuse the existing files instead of downloading again. This saves bandwidth and time!
+        If you submit a magnet link or URL that's already been downloaded, the system will automatically 
+        reuse the existing files instead of downloading again. This saves bandwidth and time! You can also
+        submit multiple sources at once (one per line) to queue multiple downloads.
       </p>
     </div>
 

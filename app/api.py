@@ -68,25 +68,29 @@ def create_task(req: CreateTaskRequest):
         Task creation response with ID and status
         
     Raises:
-        HTTPException: If magnet link is invalid or task creation fails
+        HTTPException: If source is invalid or task creation fails
     """
     # Validate inputs
     try:
-        validate_magnet_link(req.source)
+        # Validate source (magnet or link)
+        from app.validation import validate_source
+        from app.utils import parse_source_identifier
+        
+        validated_source, source_type = validate_source(req.source)
+        identifier = parse_source_identifier(validated_source, source_type)
+        
         if req.label:
             req.label = validate_label(req.label)
         if req.user_id:
             validate_positive_int(req.user_id, "user_id")
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
-    infohash = parse_infohash(req.source)
-    if not infohash:
-        raise HTTPException(status_code=400, detail="Invalid magnet (infohash not found)")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     with SessionLocal() as s:
-        # Check for existing tasks with the same infohash (completed or in-progress)
-        # This prevents duplicate downloads of the same magnet
+        # Check for existing tasks with the same identifier (completed or in-progress)
+        # This prevents duplicate downloads of the same magnet/link
         reusable_statuses = (
             TaskStatus.COMPLETED_STATUSES + 
             TaskStatus.ACTIVE_STATUSES + 
@@ -95,7 +99,8 @@ def create_task(req: CreateTaskRequest):
         
         existing_task = s.execute(
             select(Task)
-            .where(Task.infohash == infohash)
+            .where(Task.infohash == identifier)
+            .where(Task.source_type == source_type)
             .where(Task.status.in_(reusable_statuses))
             .order_by(Task.created_at.desc())
         ).scalars().first()
@@ -106,16 +111,16 @@ def create_task(req: CreateTaskRequest):
                 "taskId": existing_task.id, 
                 "status": existing_task.status,
                 "reused": True,
-                "message": f"Reusing existing task with matching infohash"
+                "message": f"Reusing existing task with matching {'infohash' if source_type == 'magnet' else 'link'}"
             }
         
         # Create new task
         task_id = str(uuid.uuid4())
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
         t = Task(
-            id=task_id, mode=req.mode, source=req.source, infohash=infohash,
-            provider="alldebrid", status=TaskStatus.QUEUED, label=req.label or None,
-            user_id=req.user_id
+            id=task_id, mode=req.mode, source=validated_source, source_type=source_type,
+            infohash=identifier, provider="alldebrid", status=TaskStatus.QUEUED, 
+            label=req.label or None, user_id=req.user_id
         )
         s.add(t)
         s.commit()
@@ -127,8 +132,8 @@ def create_task(req: CreateTaskRequest):
                 stats.total_magnets_processed += 1
                 s.commit()
         
-        append_log(base, {"level":"info","event":"task_created","taskId":task_id})
-        write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": infohash, "status": TaskStatus.QUEUED})
+        append_log(base, {"level":"info","event":"task_created","taskId":task_id,"sourceType":source_type})
+        write_metadata(base, {"taskId": task_id, "mode": req.mode, "label": req.label, "infohash": identifier, "sourceType": source_type, "status": TaskStatus.QUEUED})
         # Notify worker
         r.lpush("queue:tasks", task_id)
         r.publish(f"task:{task_id}", json.dumps({"type":EventType.HELLO,"taskId":task_id,"mode":req.mode,"status":TaskStatus.QUEUED}))
