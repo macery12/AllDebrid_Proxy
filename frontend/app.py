@@ -277,6 +277,30 @@ def create_task():
         flash("Please enter at least one magnet link or URL", "error")
         return redirect(url_for("index"))
     
+    # Deduplicate sources while preserving order
+    seen_sources = set()
+    unique_sources = []
+    duplicate_count = 0
+    for src in sources:
+        src_lower = src.lower()  # Case-insensitive deduplication
+        if src_lower not in seen_sources:
+            seen_sources.add(src_lower)
+            unique_sources.append(src)
+        else:
+            duplicate_count += 1
+    
+    sources = unique_sources
+    
+    if duplicate_count > 0:
+        log.info(f"Removed {duplicate_count} duplicate source(s) from submission")
+        flash(f"ℹ️ Removed {duplicate_count} duplicate source(s) from submission", "info")
+    
+    if not sources:
+        flash("No unique sources to process after removing duplicates", "error")
+        return redirect(url_for("index"))
+    
+    log.info(f"Processing {len(sources)} unique source(s)")
+    
     # Check max sources limit (matching backend limit)
     if len(sources) > Limits.MAX_SOURCES_PER_SUBMISSION:
         flash(f"Too many sources (maximum {Limits.MAX_SOURCES_PER_SUBMISSION} allowed)", "error")
@@ -286,6 +310,7 @@ def create_task():
     created_tasks = []
     reused_tasks = []
     failed_sources = []
+    task_id_to_source = {}  # Track which source created which task
     
     for i, src in enumerate(sources):
         # Prepare payload with user_id for tracking
@@ -316,13 +341,18 @@ def create_task():
             failed_sources.append(f"Source {i+1}: No task ID returned")
             continue
         
+        # Track task ID to source mapping
+        task_id_to_source[task_id] = src
+        
         # Check if task was reused
         if body.get("reused"):
             log.info(f"Task reused: {task_id}")
-            reused_tasks.append(task_id)
+            if task_id not in reused_tasks:  # Avoid duplicate task IDs
+                reused_tasks.append(task_id)
         else:
             log.info(f"New task created: {task_id}")
-            created_tasks.append(task_id)
+            if task_id not in created_tasks:  # Avoid duplicate task IDs
+                created_tasks.append(task_id)
     
     # Show results to user
     if created_tasks:
@@ -332,14 +362,31 @@ def create_task():
     if failed_sources:
         flash(f"❌ Failed to create {len(failed_sources)} task(s): {'; '.join(failed_sources)}", "error")
     
-    # Redirect to the first successfully created task, or admin page if multiple
+    # Redirect logic with better handling
     all_tasks = created_tasks + reused_tasks
-    if len(all_tasks) == 1:
-        return redirect(url_for("task_view", mode=mode, task_id=all_tasks[0], refresh=request.args.get("refresh", 3)))
-    elif all_tasks:
-        return redirect(url_for("admin_page"))
-    else:
+    
+    if len(all_tasks) == 0:
+        # No tasks created or reused, go back to index
+        flash("No tasks were created. Please check your sources and try again.", "error")
         return redirect(url_for("index"))
+    elif len(all_tasks) == 1:
+        # Single task - redirect to task view
+        task_id = all_tasks[0]
+        try:
+            # Verify the task exists before redirecting
+            task_data, err = w_request("GET", f"/api/tasks/{task_id}")
+            if err:
+                log.warning(f"Task {task_id} verification failed: {err[0]}, redirecting to admin page")
+                flash(f"⚠️ Task created but couldn't load details. Check the admin page.", "warning")
+                return redirect(url_for("admin_page"))
+            return redirect(url_for("task_view", mode=mode, task_id=task_id, refresh=request.args.get("refresh", 3)))
+        except Exception as e:
+            log.error(f"Error verifying task {task_id}: {e}")
+            flash(f"⚠️ Task created but couldn't verify. Check the admin page.", "warning")
+            return redirect(url_for("admin_page"))
+    else:
+        # Multiple tasks - redirect to admin page to view all
+        return redirect(url_for("admin_page"))
 
 @app.get("/admin")
 @admin_required
