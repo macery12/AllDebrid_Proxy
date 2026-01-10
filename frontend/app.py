@@ -13,6 +13,8 @@ load_dotenv()
 # Import user management utilities
 from app import user_manager
 from app.constants import Limits
+from app.utils import torrent_to_magnet
+from app.validation import validate_torrent_file_data
 
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
@@ -248,33 +250,63 @@ def index():
 @app.post("/tasks/new")
 @admin_required
 def create_task():
-    """Create a new download task with validation - supports multiple sources"""
+    """Create a new download task with validation - supports multiple sources and torrent files"""
     mode = request.form.get("mode", "auto")
     source = request.form.get("source", "").strip()
     label = request.form.get("label", "").strip() or None
     
-    # Input validation
-    if not source:
-        flash("Please enter at least one magnet link or URL", "error")
+    # Collect sources from text input
+    sources = []
+    if source:
+        # Input validation for text sources
+        if len(source) > MAX_SOURCE_LENGTH:
+            flash(f"Source input is too long (max {MAX_SOURCE_LENGTH} characters)", "error")
+            return redirect(url_for("index"))
+        
+        # Split sources by newline and filter empty lines
+        sources = [line.strip() for line in source.split('\n') if line.strip()]
+    
+    # Process torrent file uploads
+    torrent_files = request.files.getlist('torrent_files')
+    torrent_magnets = []
+    
+    if torrent_files:
+        for i, file in enumerate(torrent_files):
+            if not file or not file.filename:
+                continue
+                
+            try:
+                # Read file data
+                file_data = file.read()
+                
+                # Validate torrent file
+                validate_torrent_file_data(file_data, file.filename)
+                
+                # Convert to magnet link
+                magnet = torrent_to_magnet(file_data)
+                torrent_magnets.append(magnet)
+                
+                log.info(f"Converted torrent file '{file.filename}' to magnet link")
+                
+            except Exception as e:
+                log.error(f"Failed to process torrent file '{file.filename}': {e}")
+                flash(f"❌ Failed to process torrent file '{file.filename}': {str(e)}", "error")
+    
+    # Combine text sources and torrent-derived magnets
+    sources.extend(torrent_magnets)
+    
+    # Validate we have at least one source
+    if not sources:
+        flash("Please either upload torrent file(s) or enter magnet link(s)/URL(s)", "error")
         return redirect(url_for("index"))
     
-    if len(source) > MAX_SOURCE_LENGTH:
-        flash(f"Source input is too long (max {MAX_SOURCE_LENGTH} characters)", "error")
-        return redirect(url_for("index"))
-    
+    # Validate mode
     if mode not in ("auto", "select"):
         flash("Invalid mode selected", "error")
         return redirect(url_for("index"))
     
     if label and len(label) > MAX_LABEL_LENGTH:
         flash(f"Label is too long (max {MAX_LABEL_LENGTH} characters)", "error")
-        return redirect(url_for("index"))
-    
-    # Split sources by newline and filter empty lines
-    sources = [line.strip() for line in source.split('\n') if line.strip()]
-    
-    if not sources:
-        flash("Please enter at least one magnet link or URL", "error")
         return redirect(url_for("index"))
     
     # Deduplicate sources while preserving order
