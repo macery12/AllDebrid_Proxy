@@ -290,3 +290,45 @@ def validate_sources(sources: str) -> list[tuple[str, str]]:
         raise ValidationError("Invalid sources:\n" + "\n".join(errors))
     
     return validated_sources
+
+
+def validate_torrent_file_data(file_data: bytes, filename: str) -> None:
+    """
+    Validate torrent file data.
+    
+    Args:
+        file_data - Raw bytes of torrent file
+        filename - Name of the uploaded file
+        
+    Raises:
+        ValidationError if torrent file is invalid
+    """
+    if not file_data:
+        raise ValidationError("Torrent file is empty")
+    
+    # Check file size
+    if len(file_data) > Limits.MAX_TORRENT_FILE_SIZE:
+        raise ValidationError(f"Torrent file is too large (maximum {Limits.MAX_TORRENT_FILE_SIZE // 1024 // 1024}MB)")
+    
+    # Check file extension
+    if not filename.lower().endswith('.torrent'):
+        raise ValidationError("File must have .torrent extension")
+    
+    # Basic check for bencode format (should start with 'd')
+    if not file_data.startswith(b'd'):
+        raise ValidationError("Invalid torrent file format (not bencoded)")
+    
+    # Try to decode it
+    try:
+        import bencodepy
+        torrent_dict = bencodepy.decode(file_data)
+        
+        # Verify it has the required 'info' key
+        if b'info' not in torrent_dict:
+            raise ValidationError("Invalid torrent file: missing 'info' dictionary")
+    except ImportError:
+        raise ValidationError("Torrent parsing library not available")
+    except ValidationError:
+        raise
+    except Exception as e:
+        raise ValidationError(f"Invalid torrent file: {str(e)}")
