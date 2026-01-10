@@ -12,6 +12,7 @@ load_dotenv()
 
 # Import user management utilities
 from app import user_manager
+from app.constants import Limits
 
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
@@ -277,9 +278,8 @@ def create_task():
         return redirect(url_for("index"))
     
     # Check max sources limit (matching backend limit)
-    MAX_SOURCES = 10  # Should match Limits.MAX_SOURCES_PER_SUBMISSION
-    if len(sources) > MAX_SOURCES:
-        flash(f"Too many sources (maximum {MAX_SOURCES} allowed)", "error")
+    if len(sources) > Limits.MAX_SOURCES_PER_SUBMISSION:
+        flash(f"Too many sources (maximum {Limits.MAX_SOURCES_PER_SUBMISSION} allowed)", "error")
         return redirect(url_for("index"))
     
     # Create tasks for each source
