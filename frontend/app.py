@@ -123,6 +123,8 @@ def w_headers():
     h = {}
     if app.config["WORKER_KEY"]:
         h["X-Worker-Key"] = app.config["WORKER_KEY"]
+    else:
+        log.warning("WORKER_KEY not configured - authentication will fail")
     return h
 
 def w_url(path: str) -> str:
@@ -448,8 +450,13 @@ def admin_tasks():
 @admin_required
 def get_stats():
     """Proxy endpoint to get system stats without exposing worker key"""
+    if not app.config["WORKER_KEY"]:
+        log.error("WORKER_API_KEY environment variable not set - cannot authenticate with backend")
+        return jsonify({"error": "Backend authentication not configured. Please set WORKER_API_KEY in .env file"}), 500
+    
     body, err = w_request("GET", "/api/stats")
     if err:
+        log.error(f"Stats API request failed: {err[0]} (status {err[1]})")
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
 
