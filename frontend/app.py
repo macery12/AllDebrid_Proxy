@@ -33,6 +33,12 @@ app.config["STORAGE_ROOT"] = os.environ.get("STORAGE_ROOT", "/srv/storage")
 app.config["USE_X_ACCEL"] = os.environ.get("USE_X_ACCEL", "0") == "1"
 app.config["NGINX_ACCEL_PREFIX"] = os.environ.get("NGINX_ACCEL_PREFIX", "/protected")
 
+# Minimal startup validation
+if not app.config["WORKER_KEY"]:
+    log.warning("WORKER_API_KEY not set - backend API calls will fail")
+elif app.config["WORKER_KEY"] == "change-me":
+    log.warning("WORKER_API_KEY is still set to default 'change-me' - please change it")
+
 login_manager = LoginManager()
 login_manager.login_view = "login"
 login_manager.init_app(app)
@@ -123,6 +129,8 @@ def w_headers():
     h = {}
     if app.config["WORKER_KEY"]:
         h["X-Worker-Key"] = app.config["WORKER_KEY"]
+    else:
+        log.warning("WORKER_KEY not configured - authentication will fail")
     return h
 
 def w_url(path: str) -> str:
@@ -132,9 +140,11 @@ def w_url(path: str) -> str:
 
 def w_request(method: str, path: str, *, params=None, json_body=None):
     url = w_url(path)
+    headers = w_headers()
+    
     log.info(f"→ WORKER {method} {url}")
     try:
-        r = requests.request(method, url, headers=w_headers(), params=params, json=json_body, timeout=30)
+        r = requests.request(method, url, headers=headers, params=params, json=json_body, timeout=30)
     except Exception as e:
         log.error(f"WORKER request failed: {e}")
         return None, (str(e), 502)
@@ -243,9 +253,7 @@ def test_task_view():
 @app.get("/")
 @admin_required
 def index():
-    hb, err = w_request("GET", "/health")
-    health = {"ok": False, "error": err[0]} if err else hb
-    return render_template("index.html", health=health)
+    return render_template("index.html")
 
 @app.post("/tasks/new")
 @admin_required
@@ -442,6 +450,18 @@ def admin_tasks():
         params["status"] = status
     
     body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+@app.get("/admin/stats")
+@admin_required
+def get_stats():
+    """Proxy endpoint to get system stats without exposing worker key"""
+    if not app.config["WORKER_KEY"]:
+        return jsonify({"error": "WORKER_API_KEY not configured"}), 500
+    
+    body, err = w_request("GET", "/api/stats")
     if err:
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
