@@ -6,14 +6,14 @@
   <title>Access Denied — AllDebrid Proxy</title>
   <style>
     :root { 
-      --bg:#0a0e1a; 
-      --bg-secondary:#0f1420;
-      --card:#141b2e; 
-      --muted:#8aa0c7; 
-      --text:#e8f0ff; 
-      --accent:#6366f1; 
-      --danger:#ef4444; 
-      --border:#1e2a50;
+      --bg:#0d1117; 
+      --bg-secondary:#161b22;
+      --card:#1c2128; 
+      --muted:#8b949e; 
+      --text:#e6edf3; 
+      --accent:#58a6ff; 
+      --danger:#f85149; 
+      --border:#30363d;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body{
@@ -49,7 +49,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(239, 68, 68, 0.1);
+      background: rgba(248, 81, 73, 0.15);
       border: 2px solid var(--danger);
       border-radius: 50%;
     }
@@ -73,7 +73,7 @@
     }
     
     .info-box {
-      background: rgba(99, 102, 241, 0.1);
+      background: rgba(88, 166, 255, 0.15);
       border: 1px solid var(--accent);
       border-radius: 12px;
       padding: 20px;
@@ -104,7 +104,7 @@
       padding: 12px 24px;
       border-radius: 10px;
       border: none;
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      background: var(--accent);
       color: #fff;
       cursor: pointer;
       font-size: 15px;
@@ -115,8 +115,9 @@
     }
     
     .btn:hover {
+      background: var(--accent-hover);
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+      box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
     }
     
     .btn.secondary {
