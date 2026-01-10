@@ -84,15 +84,31 @@ class AllDebrid:
         unlocked_urls: List[str] = []
         for link in links:
             try:
-                data = self._get("/link/unlock", link=link)
-                unlocked_url = data.get("link") or data.get("download") or data.get("url")
-                if not unlocked_url:
-                    raise ADHTTPError(f"Link unlock returned no direct URL for {link}")
+                unlocked_url = self.unlock_link(link)
                 unlocked_urls.append(unlocked_url)
             except Exception as e:
                 # Re-raise with context about which link failed
                 raise ADHTTPError(f"Failed to unlock link {link}: {str(e)}")
         return unlocked_urls
+
+    def unlock_link(self, link: str) -> str:
+        """
+        Unlock a single link and return the direct download URL.
+        
+        Args:
+            link: The URL to unlock
+            
+        Returns:
+            Direct download URL
+            
+        Raises:
+            ADHTTPError: If unlock fails or returns no URL
+        """
+        data = self._get("/link/unlock", link=link)
+        unlocked_url = data.get("link") or data.get("download") or data.get("url")
+        if not unlocked_url:
+            raise ADHTTPError(f"Link unlock returned no direct URL for {link}")
+        return unlocked_url
 
     def get_link_info(self, link: str) -> Dict[str, Any]:
         """

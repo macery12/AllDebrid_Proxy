@@ -226,6 +226,8 @@ def validate_source(source: str) -> tuple[str, str]:
     Raises:
         ValidationError if source is invalid
     """
+    from app.constants import SourceType
+    
     if not source:
         raise ValidationError("Source is required")
     
@@ -237,12 +239,12 @@ def validate_source(source: str) -> tuple[str, str]:
     # Check if it's a magnet link
     if source.startswith("magnet:"):
         validated = validate_magnet_link(source)
-        return (validated, "magnet")
+        return (validated, SourceType.MAGNET)
     
     # Check if it's a URL
     if source.startswith(('http://', 'https://')):
         validated = validate_url(source)
-        return (validated, "link")
+        return (validated, SourceType.LINK)
     
     # Neither magnet nor URL
     raise ValidationError("Source must be a magnet link (magnet:) or HTTP/HTTPS URL")
@@ -271,9 +273,8 @@ def validate_sources(sources: str) -> list[tuple[str, str]]:
         raise ValidationError("At least one source is required")
     
     # Limit number of sources
-    max_sources = 10  # Reasonable limit to prevent abuse
-    if len(lines) > max_sources:
-        raise ValidationError(f"Too many sources (maximum {max_sources})")
+    if len(lines) > Limits.MAX_SOURCES_PER_SUBMISSION:
+        raise ValidationError(f"Too many sources (maximum {Limits.MAX_SOURCES_PER_SUBMISSION})")
     
     validated_sources = []
     errors = []

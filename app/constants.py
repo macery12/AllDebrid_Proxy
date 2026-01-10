@@ -53,6 +53,15 @@ class TaskMode:
     ALL_MODES = [AUTO, SELECT]
 
 
+# Source types
+class SourceType:
+    # Task source types
+    MAGNET = "magnet"
+    LINK = "link"
+    
+    ALL_TYPES = [MAGNET, LINK]
+
+
 # Log levels
 class LogLevel:
     # Logging levels
@@ -128,6 +137,9 @@ class Limits:
     
     # Maximum URL length (HTTP standard)
     MAX_URL_LENGTH = 2048
+    
+    # Maximum number of sources in multi-source submission
+    MAX_SOURCES_PER_SUBMISSION = 10
 
 
 # HTTP constants
