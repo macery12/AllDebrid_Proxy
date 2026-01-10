@@ -286,6 +286,8 @@ def resolve_task(session, task: Task, client):
                 _log(task.id, LogLevel.INFO, "link_file_listed", filename=filename, size=filesize)
             
             # Store the original link as provider_ref for later unlocking
+            # Note: For links, provider_ref stores the original URL (not an AllDebrid ID like magnets)
+            # This is because links are unlocked directly without persistent server-side tracking
             task.provider_ref = task.source
             session.commit()
             
