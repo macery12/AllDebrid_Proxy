@@ -11,6 +11,7 @@
   max-width: 1400px;
   margin: 0 auto;
   padding: 32px 24px;
+  align-items: start;
 }
 
 /* Main Content Area */
@@ -100,7 +101,7 @@
 .upload-area {
   border: 2px dashed var(--border);
   border-radius: 8px;
-  padding: 32px;
+  padding: 20px;
   text-align: center;
   background: var(--bg-secondary);
   cursor: pointer;
@@ -109,7 +110,7 @@
 
 .upload-area:hover {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.05);
+  background: rgba(88, 166, 255, 0.05);
 }
 
 .upload-area input[type="file"] {
@@ -117,20 +118,20 @@
 }
 
 .upload-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
+  font-size: 32px;
+  margin-bottom: 8px;
   opacity: 0.7;
 }
 
 .upload-text {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .upload-subtext {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -198,8 +199,8 @@
 }
 
 .info-note {
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.25);
   border-radius: 8px;
   padding: 16px;
   margin-top: 24px;
@@ -222,6 +223,8 @@
 /* Sidebar */
 .sidebar {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-section {
@@ -231,6 +234,13 @@
   padding: 24px;
   margin-bottom: 20px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.sidebar-section.sidebar-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
 }
 
 .sidebar-title {
@@ -316,7 +326,7 @@
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
@@ -341,15 +351,15 @@
 }
 
 .status-badge.online {
-  background: rgba(34, 197, 94, 0.1);
+  background: rgba(63, 185, 80, 0.15);
   color: var(--accent-2);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(63, 185, 80, 0.25);
 }
 
 .status-badge.offline {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(248, 81, 73, 0.15);
   color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(248, 81, 73, 0.25);
 }
 
 .skeleton {
@@ -432,15 +442,7 @@
       <rect x="3" y="3" width="18" height="18" rx="2"/>
       <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
     </svg>
-    All Tasks
-  </a>
-  <a href="{{ url_for('admin_users_page') }}" class="nav-link">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-      <circle cx="9" cy="7" r="4"/>
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-    </svg>
-    User Management
+    Admin Dashboard
   </a>
 </div>
 
@@ -452,6 +454,21 @@
 
     <div class="form-card">
       <form method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
+        <div class="form-section">
+          <label for="source" class="form-label">Magnet Links or Direct URLs</label>
+          <textarea 
+            id="source" 
+            name="source" 
+            class="form-textarea"
+            placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;Paste one link per line for multiple downloads"
+          ></textarea>
+          <small class="form-hint">Enter one or more magnet links or direct download URLs (one per line)</small>
+        </div>
+
+        <div class="divider">
+          <span>OR</span>
+        </div>
+
         <div class="form-section">
           <label class="form-label">Upload Torrent File(s)</label>
           <div class="upload-area" onclick="document.getElementById('torrent-files').click()">
@@ -469,21 +486,6 @@
           <small class="form-hint" id="file-hint" style="display: none;">
             <span id="file-count">0</span> file(s) selected
           </small>
-        </div>
-
-        <div class="divider">
-          <span>OR</span>
-        </div>
-
-        <div class="form-section">
-          <label for="source" class="form-label">Magnet Links or Direct URLs</label>
-          <textarea 
-            id="source" 
-            name="source" 
-            class="form-textarea"
-            placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;Paste one link per line for multiple downloads"
-          ></textarea>
-          <small class="form-hint">Enter one or more magnet links or direct download URLs (one per line)</small>
         </div>
 
         <div class="form-section">
@@ -532,7 +534,7 @@
 
   <!-- Sidebar -->
   <div class="sidebar">
-    <div class="sidebar-section">
+    <div class="sidebar-section sidebar-main">
       <h2 class="sidebar-title">
         System Stats
         <span class="live-indicator">
@@ -579,20 +581,20 @@
         </div>
         <div class="stat-subtext" id="stat-total-desc">Loading...</div>
       </div>
-    </div>
 
-    <div class="sidebar-section" id="progress-section" style="display: none;">
-      <h2 class="sidebar-title">Active Downloads</h2>
-      <div id="active-downloads-list"></div>
-    </div>
-
-    <div class="sidebar-section">
-      <h2 class="sidebar-title">System Status</h2>
-      <div class="status-badge" id="system-status">
-        <span class="live-dot"></span>
-        <span>Checking...</span>
+      <div class="stat-item" id="progress-section-inline" style="display: none; border-top: 2px solid var(--border); margin-top: 20px; padding-top: 20px;">
+        <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px;">Active Downloads</div>
+        <div id="active-downloads-list"></div>
       </div>
-      <div class="stat-subtext" style="margin-top: 12px;" id="update-time">Initializing...</div>
+
+      <div class="stat-item" style="border: none; padding-bottom: 0; margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border);">
+        <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px;">System Status</div>
+        <div class="status-badge" id="system-status">
+          <span class="live-dot"></span>
+          <span>Checking...</span>
+        </div>
+        <div class="stat-subtext" style="margin-top: 12px;" id="update-time">Initializing...</div>
+      </div>
     </div>
   </div>
 </div>
@@ -637,7 +639,7 @@
 
 .download-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #06b6d4);
+  background: var(--accent);
   transition: width 0.3s ease;
   border-radius: 4px;
 }
@@ -692,7 +694,7 @@ async function updateStats() {
     
     // Active Downloads List
     const activeDownloads = stats.downloads?.active_files || [];
-    const progressSection = document.getElementById('progress-section');
+    const progressSection = document.getElementById('progress-section-inline');
     const downloadsList = document.getElementById('active-downloads-list');
     
     if (activeDownloads.length > 0) {
