@@ -287,7 +287,11 @@ def create_task():
         if label:
             # Add index suffix for multi-source labels
             if len(sources) > 1:
-                payload["label"] = f"{label} ({i+1}/{len(sources)})"
+                suffix = f" ({i+1}/{len(sources)})"
+                # Ensure label doesn't exceed max length with suffix
+                max_base_len = MAX_LABEL_LENGTH - len(suffix)
+                base_label = label[:max_base_len] if len(label) > max_base_len else label
+                payload["label"] = base_label + suffix
             else:
                 payload["label"] = label
         

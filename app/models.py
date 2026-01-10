@@ -34,7 +34,7 @@ class Task(Base):
     label = Column(Text, nullable=True)
     mode = Column(String(16), nullable=False)  # auto|select
     source = Column(Text, nullable=False)
-    source_type = Column(String(16), nullable=False, default="magnet")  # magnet|link
+    source_type = Column(String(16), nullable=False, default="magnet")  # magnet|link (use SourceType constants)
     infohash = Column(String(40), nullable=False, index=True)  # Allow multiple tasks with same infohash (or link hash)
     provider = Column(String(32), nullable=False, default="alldebrid")
     provider_ref = Column(Text, nullable=True)

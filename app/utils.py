@@ -37,7 +37,8 @@ def generate_link_hash(url: str) -> str:
         SHA-1 hash (40 hex characters) of the URL
     """
     # Normalize URL for consistent hashing
-    normalized_url = url.strip().lower()
+    # Only strip whitespace - preserve case for path and query parameters
+    normalized_url = url.strip()
     return hashlib.sha1(normalized_url.encode('utf-8')).hexdigest()
 
 
@@ -52,12 +53,14 @@ def parse_source_identifier(source: str, source_type: str) -> str:
     Returns:
         Unique identifier (infohash for magnets, URL hash for links)
     """
-    if source_type == "magnet":
+    from app.constants import SourceType
+    
+    if source_type == SourceType.MAGNET:
         infohash = parse_infohash(source)
         if not infohash:
             raise ValueError("Could not extract infohash from magnet link")
         return infohash
-    elif source_type == "link":
+    elif source_type == SourceType.LINK:
         return generate_link_hash(source)
     else:
         raise ValueError(f"Unknown source type: {source_type}")

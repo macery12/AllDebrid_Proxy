@@ -16,6 +16,7 @@ depends_on = None
 def upgrade():
     # Add source_type column to task table
     # Default to 'magnet' for backward compatibility with existing tasks
+    # Using literal value to avoid circular import in migration
     op.add_column('task', sa.Column('source_type', sa.String(length=16), nullable=False, server_default='magnet'))
 
 def downgrade():

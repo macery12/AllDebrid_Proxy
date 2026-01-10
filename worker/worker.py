@@ -5,7 +5,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.models import Task, TaskFile, UserStats
 from app.utils import ensure_task_dirs, append_log, write_metadata
-from app.constants import TaskStatus, FileState, EventType, Limits, LogLevel
+from app.constants import TaskStatus, FileState, EventType, Limits, LogLevel, SourceType
 from app.logging_config import setup_logging, get_logger, log_task_event, log_worker_event, log_error
 from app.validation import validate_file_name
 from worker.scheduler import publish, can_start_task, count_active_and_queued
@@ -171,7 +171,7 @@ def resolve_task(session, task: Task, client):
     base, files_dir = ensure_task_dirs(settings.STORAGE_ROOT, task.id)
 
     # Handle based on source type
-    if task.source_type == "magnet":
+    if task.source_type == SourceType.MAGNET:
         # Upload magnet if not already done
         if not task.provider_ref:
             _log(task.id, LogLevel.INFO, "ad_upload_magnet_begin")
@@ -246,7 +246,7 @@ def resolve_task(session, task: Task, client):
             _log(task.id, LogLevel.ERROR, "resolve_timeout_no_files")
             return
 
-    elif task.source_type == "link":
+    elif task.source_type == SourceType.LINK:
         # For links, get link info and unlock immediately
         task.status = TaskStatus.RESOLVING
         session.commit()
@@ -370,13 +370,12 @@ def start_next_files(session, task: Task, client):
 
         # 1) Unlock HTTPS link from provider
         try:
-            if task.source_type == "magnet":
+            if task.source_type == SourceType.MAGNET:
                 # For magnets, use the magnet ID and file index
                 url = client.download_link(task.provider_ref, f.index)
-            elif task.source_type == "link":
+            elif task.source_type == SourceType.LINK:
                 # For direct links, unlock the link directly
-                unlocked_data = client._get("/link/unlock", link=task.provider_ref)
-                url = unlocked_data.get("link") or unlocked_data.get("download") or unlocked_data.get("url")
+                url = client.unlock_link(task.provider_ref)
             else:
                 raise RuntimeError(f"Unknown source type: {task.source_type}")
             
