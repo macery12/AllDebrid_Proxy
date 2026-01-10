@@ -12,6 +12,7 @@ load_dotenv()
 
 # Import user management utilities
 from app import user_manager
+from app.constants import Limits
 
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
@@ -247,18 +248,18 @@ def index():
 @app.post("/tasks/new")
 @admin_required
 def create_task():
-    """Create a new download task with validation"""
+    """Create a new download task with validation - supports multiple sources"""
     mode = request.form.get("mode", "auto")
     source = request.form.get("source", "").strip()
     label = request.form.get("label", "").strip() or None
     
     # Input validation
     if not source:
-        flash("Please enter a magnet link or URL", "error")
+        flash("Please enter at least one magnet link or URL", "error")
         return redirect(url_for("index"))
     
     if len(source) > MAX_SOURCE_LENGTH:
-        flash(f"Source URL is too long (max {MAX_SOURCE_LENGTH} characters)", "error")
+        flash(f"Source input is too long (max {MAX_SOURCE_LENGTH} characters)", "error")
         return redirect(url_for("index"))
     
     if mode not in ("auto", "select"):
@@ -269,35 +270,123 @@ def create_task():
         flash(f"Label is too long (max {MAX_LABEL_LENGTH} characters)", "error")
         return redirect(url_for("index"))
     
-    # Prepare payload with user_id for tracking
-    payload = {"mode": mode, "source": source, "user_id": current_user.id}
-    if label:
-        payload["label"] = label
+    # Split sources by newline and filter empty lines
+    sources = [line.strip() for line in source.split('\n') if line.strip()]
     
-    # Make API request
-    log.info(f"Creating task: mode={mode}, label={label}, source_len={len(source)}, user_id={current_user.id}")
-    body, err = w_request("POST", "/api/tasks", json_body=payload)
-    
-    if err:
-        log.error(f"Task creation failed: {err[0]}")
-        flash(f"Create failed: {err[0]}", "error")
+    if not sources:
+        flash("Please enter at least one magnet link or URL", "error")
         return redirect(url_for("index"))
     
-    task_id = body.get("taskId") or body.get("id")
-    if not task_id:
-        log.error("Task created but no taskId returned")
-        flash("Task created but no taskId returned", "error")
+    # Deduplicate sources while preserving order
+    seen_sources = set()
+    unique_sources = []
+    duplicate_count = 0
+    for src in sources:
+        src_lower = src.lower()  # Case-insensitive deduplication
+        if src_lower not in seen_sources:
+            seen_sources.add(src_lower)
+            unique_sources.append(src)
+        else:
+            duplicate_count += 1
+    
+    sources = unique_sources
+    
+    if duplicate_count > 0:
+        log.info(f"Removed {duplicate_count} duplicate source(s) from submission")
+        flash(f"ℹ️ Removed {duplicate_count} duplicate source(s) from submission", "info")
+    
+    if not sources:
+        flash("No unique sources to process after removing duplicates", "error")
         return redirect(url_for("index"))
     
-    # Check if task was reused
-    if body.get("reused"):
-        log.info(f"Task reused: {task_id}")
-        flash(f"♻️ Task reused: {task_id} (files already downloaded)", "success")
+    log.info(f"Processing {len(sources)} unique source(s)")
+    
+    # Check max sources limit (matching backend limit)
+    if len(sources) > Limits.MAX_SOURCES_PER_SUBMISSION:
+        flash(f"Too many sources (maximum {Limits.MAX_SOURCES_PER_SUBMISSION} allowed)", "error")
+        return redirect(url_for("index"))
+    
+    # Create tasks for each source
+    created_tasks = []
+    reused_tasks = []
+    failed_sources = []
+    task_id_to_source = {}  # Track which source created which task
+    
+    for i, src in enumerate(sources):
+        # Prepare payload with user_id for tracking
+        payload = {"mode": mode, "source": src, "user_id": current_user.id}
+        if label:
+            # Add index suffix for multi-source labels
+            if len(sources) > 1:
+                suffix = f" ({i+1}/{len(sources)})"
+                # Ensure label doesn't exceed max length with suffix
+                max_base_len = MAX_LABEL_LENGTH - len(suffix)
+                base_label = label[:max_base_len] if len(label) > max_base_len else label
+                payload["label"] = base_label + suffix
+            else:
+                payload["label"] = label
+        
+        # Make API request
+        log.info(f"Creating task {i+1}/{len(sources)}: mode={mode}, source_len={len(src)}, user_id={current_user.id}")
+        body, err = w_request("POST", "/api/tasks", json_body=payload)
+        
+        if err:
+            log.error(f"Task creation failed for source {i+1}: {err[0]}")
+            failed_sources.append(f"Source {i+1}: {err[0]}")
+            continue
+        
+        task_id = body.get("taskId") or body.get("id")
+        if not task_id:
+            log.error(f"Task created but no taskId returned for source {i+1}")
+            failed_sources.append(f"Source {i+1}: No task ID returned")
+            continue
+        
+        # Track task ID to source mapping
+        task_id_to_source[task_id] = src
+        
+        # Check if task was reused
+        if body.get("reused"):
+            log.info(f"Task reused: {task_id}")
+            if task_id not in reused_tasks:  # Avoid duplicate task IDs
+                reused_tasks.append(task_id)
+        else:
+            log.info(f"New task created: {task_id}")
+            if task_id not in created_tasks:  # Avoid duplicate task IDs
+                created_tasks.append(task_id)
+    
+    # Show results to user
+    if created_tasks:
+        flash(f"✅ Created {len(created_tasks)} new task(s): {', '.join(created_tasks)}", "ok")
+    if reused_tasks:
+        flash(f"♻️ Reused {len(reused_tasks)} existing task(s): {', '.join(reused_tasks)}", "success")
+    if failed_sources:
+        flash(f"❌ Failed to create {len(failed_sources)} task(s): {'; '.join(failed_sources)}", "error")
+    
+    # Redirect logic with better handling
+    all_tasks = created_tasks + reused_tasks
+    
+    if len(all_tasks) == 0:
+        # No tasks created or reused, go back to index
+        flash("No tasks were created. Please check your sources and try again.", "error")
+        return redirect(url_for("index"))
+    elif len(all_tasks) == 1:
+        # Single task - redirect to task view
+        task_id = all_tasks[0]
+        try:
+            # Verify the task exists before redirecting
+            task_data, err = w_request("GET", f"/api/tasks/{task_id}")
+            if err:
+                log.warning(f"Task {task_id} verification failed: {err[0]}, redirecting to admin page")
+                flash(f"⚠️ Task created but couldn't load details. Check the admin page.", "warning")
+                return redirect(url_for("admin_page"))
+            return redirect(url_for("task_view", mode=mode, task_id=task_id, refresh=request.args.get("refresh", 3)))
+        except Exception as e:
+            log.error(f"Error verifying task {task_id}: {e}")
+            flash(f"⚠️ Task created but couldn't verify. Check the admin page.", "warning")
+            return redirect(url_for("admin_page"))
     else:
-        log.info(f"New task created: {task_id}")
-        flash(f"✅ Task created: {task_id}", "ok")
-    
-    return redirect(url_for("task_view", mode=mode, task_id=task_id, refresh=request.args.get("refresh", 3)))
+        # Multiple tasks - redirect to admin page to view all
+        return redirect(url_for("admin_page"))
 
 @app.get("/admin")
 @admin_required

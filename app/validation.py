@@ -211,3 +211,82 @@ def validate_url(url: str) -> str:
         raise ValidationError("URL contains invalid characters")
     
     return url
+
+
+def validate_source(source: str) -> tuple[str, str]:
+    """
+    Validate source (either magnet link or HTTP/HTTPS URL).
+    
+    Args:
+        source - Source string to validate (magnet or URL)
+        
+    Returns:
+        Tuple of (validated_source, source_type) where source_type is 'magnet' or 'link'
+        
+    Raises:
+        ValidationError if source is invalid
+    """
+    from app.constants import SourceType
+    
+    if not source:
+        raise ValidationError("Source is required")
+    
+    if not isinstance(source, str):
+        raise ValidationError("Source must be a string")
+    
+    source = source.strip()
+    
+    # Check if it's a magnet link
+    if source.startswith("magnet:"):
+        validated = validate_magnet_link(source)
+        return (validated, SourceType.MAGNET)
+    
+    # Check if it's a URL
+    if source.startswith(('http://', 'https://')):
+        validated = validate_url(source)
+        return (validated, SourceType.LINK)
+    
+    # Neither magnet nor URL
+    raise ValidationError("Source must be a magnet link (magnet:) or HTTP/HTTPS URL")
+
+
+def validate_sources(sources: str) -> list[tuple[str, str]]:
+    """
+    Validate multiple sources (magnets or URLs), one per line.
+    
+    Args:
+        sources - Multi-line string with sources (magnets or URLs)
+        
+    Returns:
+        List of tuples (validated_source, source_type) where source_type is 'magnet' or 'link'
+        
+    Raises:
+        ValidationError if any source is invalid
+    """
+    if not sources:
+        raise ValidationError("At least one source is required")
+    
+    # Split by newlines and filter empty lines
+    lines = [line.strip() for line in sources.split('\n') if line.strip()]
+    
+    if not lines:
+        raise ValidationError("At least one source is required")
+    
+    # Limit number of sources
+    if len(lines) > Limits.MAX_SOURCES_PER_SUBMISSION:
+        raise ValidationError(f"Too many sources (maximum {Limits.MAX_SOURCES_PER_SUBMISSION})")
+    
+    validated_sources = []
+    errors = []
+    
+    for i, line in enumerate(lines, 1):
+        try:
+            validated_source, source_type = validate_source(line)
+            validated_sources.append((validated_source, source_type))
+        except ValidationError as e:
+            errors.append(f"Line {i}: {str(e)}")
+    
+    if errors:
+        raise ValidationError("Invalid sources:\n" + "\n".join(errors))
+    
+    return validated_sources
