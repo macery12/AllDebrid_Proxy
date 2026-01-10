@@ -623,17 +623,31 @@ def get_system_stats():
             worker_healthy = False
         
         # Get detailed active downloads (only downloading files, not ready/selected)
+        # Order by bytes_downloaded/size_bytes ratio to show least complete first
         active_downloads = []
         downloading_files_detailed = s.execute(
-            select(TaskFile).where(TaskFile.state == FileState.DOWNLOADING).limit(20)
+            select(TaskFile)
+            .where(TaskFile.state == FileState.DOWNLOADING)
+            .order_by(TaskFile.bytes_downloaded.asc())  # Show files with least progress first
+            .limit(20)
         ).scalars().all()
         
         for f in downloading_files_detailed:
             size = f.size_bytes or 0
             downloaded = f.bytes_downloaded or 0
+            
+            # Ensure we don't show >100% or weird values
+            if downloaded > size and size > 0:
+                downloaded = size
+            
             progress = int((downloaded / size) * 100) if size > 0 else 0
             
+            # Cap at 100%
+            if progress > 100:
+                progress = 100
+            
             active_downloads.append({
+                "file_id": f.id,  # For debugging
                 "filename": f.name or "Unknown",
                 "size_bytes": size,
                 "downloaded_bytes": downloaded,
