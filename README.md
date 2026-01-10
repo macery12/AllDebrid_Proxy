@@ -3,7 +3,14 @@ a poorly chatgpt'ed together alldebrid proxy to proxy alldebrid files and be abl
 
 ## Features
 
-### 🔐 User System (NEW!)
+### 📥 Multi-Source Download Support (NEW!)
+- **Magnet Links**: Full support for BitTorrent magnet links via AllDebrid
+- **Direct Links**: Support for HTTP/HTTPS direct download links via AllDebrid
+- **Multi-Source Submission**: Submit multiple magnets or links at once (one per line)
+- **Smart Task Reuse**: Automatically reuses existing downloads to save bandwidth
+- **Error Handling**: Proper error messages for unsupported or failed links
+
+### 🔐 User System
 - **Database-backed authentication** - Users are stored in PostgreSQL instead of environment variables
 - **Role-based access control**:
   - **Admin users**: Full access to all pages including admin dashboard, user management, and download pages
@@ -48,6 +55,24 @@ If you were previously using `LOGIN_USERS` environment variable:
    ```
 
 5. **Create your admin account** via the first-time setup flow
+
+#### Updating to Link Support Version
+
+If you're upgrading from a version before link support was added:
+
+1. **Run the new database migration**
+   ```bash
+   docker-compose exec adproxy_api alembic upgrade head
+   ```
+   
+   This adds the `source_type` field to the task table to support both magnets and links.
+
+2. **Restart services**
+   ```bash
+   docker-compose restart
+   ```
+
+All existing magnet-based tasks will continue to work normally with the new version.
 
 ### 👥 User Management (Admin Only)
 

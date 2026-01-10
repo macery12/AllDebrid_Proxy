@@ -13,6 +13,8 @@ class AllDebrid:
 
     Methods:
       - upload_magnets(magnets: List[str]) -> List[str]
+      - upload_links(links: List[str]) -> List[str]
+      - get_link_info(link: str) -> Dict[str, Any]
       - get_magnet_status(magnet_id: str) -> Dict[str, Any]  # {"raw":<full>, "files":[{name,size,link?}, ...]}
       - download_link(magnet_id: str, file_index: int) -> str  # unlocked direct URL
     """
@@ -69,6 +71,61 @@ class AllDebrid:
             if mid is not None:
                 ids.append(str(mid))
         return ids
+
+    def upload_links(self, links: List[str]) -> List[str]:
+        """
+        POST /link/unlock (expects link parameter for each link)
+        For direct links, we unlock them immediately to get file info.
+        Returns a list of unlocked URLs that can be used for downloading.
+        
+        Note: Unlike magnets which are uploaded and tracked, links are immediately
+        unlocked and returned as direct download URLs.
+        """
+        unlocked_urls: List[str] = []
+        for link in links:
+            try:
+                unlocked_url = self.unlock_link(link)
+                unlocked_urls.append(unlocked_url)
+            except Exception as e:
+                # Re-raise with context about which link failed
+                raise ADHTTPError(f"Failed to unlock link {link}: {str(e)}")
+        return unlocked_urls
+
+    def unlock_link(self, link: str) -> str:
+        """
+        Unlock a single link and return the direct download URL.
+        
+        Args:
+            link: The URL to unlock
+            
+        Returns:
+            Direct download URL
+            
+        Raises:
+            ADHTTPError: If unlock fails or returns no URL
+        """
+        data = self._get("/link/unlock", link=link)
+        unlocked_url = data.get("link") or data.get("download") or data.get("url")
+        if not unlocked_url:
+            raise ADHTTPError(f"Link unlock returned no direct URL for {link}")
+        return unlocked_url
+
+    def get_link_info(self, link: str) -> Dict[str, Any]:
+        """
+        GET /link/infos to get information about a link before unlocking.
+        Returns file information including filename and size.
+        
+        Args:
+            link: The URL to get information about
+            
+        Returns:
+            Dictionary with link information including 'filename', 'filesize', 'host', etc.
+        """
+        data = self._get("/link/infos", link=link)
+        infos = data.get("infos") or {}
+        if isinstance(infos, list) and infos:
+            infos = infos[0]
+        return infos
 
     def _normalize_items(self, arr: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
