@@ -3,10 +3,11 @@ a poorly chatgpt'ed together alldebrid proxy to proxy alldebrid files and be abl
 
 ## Features
 
-### 📥 Multi-Source Download Support (NEW!)
+### 📥 Multi-Source Download Support
+- **Torrent File Upload**: Upload .torrent files directly - they're converted to magnet links and immediately discarded (not stored)
 - **Magnet Links**: Full support for BitTorrent magnet links via AllDebrid
 - **Direct Links**: Support for HTTP/HTTPS direct download links via AllDebrid
-- **Multi-Source Submission**: Submit multiple magnets or links at once (one per line)
+- **Multi-Source Submission**: Submit multiple sources at once (torrent files, magnets, or links)
 - **Smart Task Reuse**: Automatically reuses existing downloads to save bandwidth
 - **Error Handling**: Proper error messages for unsupported or failed links
 
@@ -92,6 +93,36 @@ Each user has statistics tracked automatically:
 - **Total bytes downloaded**: Sum of all downloaded file sizes
 
 Statistics are viewable in the Admin > Users page.
+
+### 📂 Torrent File Upload
+
+Upload `.torrent` files directly through the web interface for seamless conversion to magnet links:
+
+**How It Works:**
+1. **Upload**: Select one or more `.torrent` files (up to 10MB each)
+2. **Extract**: System automatically extracts info hash and tracker URLs
+3. **Convert**: Generates a proper magnet link with all trackers
+4. **Discard**: Torrent file is immediately deleted from memory (not stored anywhere)
+5. **Process**: The magnet link is used to create a download task via AllDebrid
+
+**Security Features:**
+- ✅ Torrent files are **never stored** on disk or in database
+- ✅ Files are processed entirely in memory
+- ✅ Strict file size limit (10MB max per file)
+- ✅ File type validation (must be `.torrent` extension)
+- ✅ Bencode format validation
+- ✅ Automatic cleanup after conversion
+
+**Usage:**
+- Upload multiple torrent files at once
+- Combine with manual magnet/URL input in the same submission
+- Same smart deduplication and task reuse as other sources
+
+**Technical Details:**
+- Uses `bencodepy` library for torrent parsing
+- Extracts SHA-1 info hash and all tracker tiers
+- Preserves display name in magnet link
+- Compatible with single and multi-tracker torrents
 
 ### 🔒 Security & Access Control
 
