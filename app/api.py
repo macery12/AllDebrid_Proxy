@@ -621,6 +621,24 @@ def get_system_stats():
             os.remove(test_path)
         except Exception:
             worker_healthy = False
+        
+        # Get detailed active downloads (only downloading files, not ready/selected)
+        active_downloads = []
+        downloading_files_detailed = s.execute(
+            select(TaskFile).where(TaskFile.state == FileState.DOWNLOADING).limit(20)
+        ).scalars().all()
+        
+        for f in downloading_files_detailed:
+            size = f.size_bytes or 0
+            downloaded = f.bytes_downloaded or 0
+            progress = int((downloaded / size) * 100) if size > 0 else 0
+            
+            active_downloads.append({
+                "filename": f.name or "Unknown",
+                "size_bytes": size,
+                "downloaded_bytes": downloaded,
+                "progress_pct": progress,
+            })
     
     return {
         "timestamp": time.time(),
@@ -646,6 +664,7 @@ def get_system_stats():
             "total_bytes": total_bytes_to_download,
             "downloaded_bytes": total_bytes_downloaded,
             "progress_pct": download_progress_pct,
+            "active_files": active_downloads,
         },
         "storage": {
             "free_bytes": free_bytes,
