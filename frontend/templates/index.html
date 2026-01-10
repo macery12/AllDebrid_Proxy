@@ -624,7 +624,7 @@ function formatNum(num) {
 
 async function updateStats() {
   try {
-    const res = await fetch('/api/stats');
+    const res = await fetch('/admin/stats');
     if (!res.ok) throw new Error('Failed to fetch stats');
     
     const stats = await res.json();
