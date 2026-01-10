@@ -243,9 +243,7 @@ def test_task_view():
 @app.get("/")
 @admin_required
 def index():
-    hb, err = w_request("GET", "/health")
-    health = {"ok": False, "error": err[0]} if err else hb
-    return render_template("index.html", health=health)
+    return render_template("index.html")
 
 @app.post("/tasks/new")
 @admin_required
@@ -442,6 +440,15 @@ def admin_tasks():
         params["status"] = status
     
     body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+@app.get("/api/stats")
+@admin_required
+def get_stats():
+    """Proxy endpoint to get system stats without exposing worker key"""
+    body, err = w_request("GET", "/api/stats")
     if err:
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
