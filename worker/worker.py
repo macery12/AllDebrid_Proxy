@@ -170,66 +170,139 @@ def resolve_task(session, task: Task, client):
     # Args: session - DB session, task - Task model, client - AllDebrid client
     base, files_dir = ensure_task_dirs(settings.STORAGE_ROOT, task.id)
 
-    if not task.provider_ref:
-        _log(task.id, LogLevel.INFO, "ad_upload_begin")
-        magnet_id = client.upload_magnets([task.source])
-        if isinstance(magnet_id, (list, tuple)):
-            magnet_id = magnet_id[0]
-        task.provider_ref = str(magnet_id)
+    # Handle based on source type
+    if task.source_type == "magnet":
+        # Upload magnet if not already done
+        if not task.provider_ref:
+            _log(task.id, LogLevel.INFO, "ad_upload_magnet_begin")
+            try:
+                magnet_id = client.upload_magnets([task.source])
+                if isinstance(magnet_id, (list, tuple)):
+                    magnet_id = magnet_id[0]
+                task.provider_ref = str(magnet_id)
+                session.commit()
+                _log(task.id, LogLevel.INFO, "ad_upload_magnet_ok", provider_ref=task.provider_ref)
+            except Exception as e:
+                task.status = TaskStatus.FAILED
+                session.commit()
+                publish(task.id, {"type": EventType.STATE, "status": TaskStatus.FAILED, "reason": f"magnet_upload_failed: {str(e)}"})
+                _log(task.id, LogLevel.ERROR, "ad_upload_magnet_failed", error=str(e), tb=traceback.format_exc())
+                return
+
+        # Mark task as resolving
+        task.status = TaskStatus.RESOLVING
         session.commit()
-        _log(task.id, LogLevel.INFO, "ad_upload_ok", provider_ref=task.provider_ref)
+        publish(task.id, {"type": EventType.STATE, "status": TaskStatus.RESOLVING})
+        _log(task.id, LogLevel.INFO, "task_resolving_magnet")
 
-    # Mark task as resolving
-    task.status = TaskStatus.RESOLVING
-    session.commit()
-    publish(task.id, {"type": EventType.STATE, "status": TaskStatus.RESOLVING})
-    _log(task.id, LogLevel.INFO, "task_resolving")
+        # Poll AllDebrid for files (up to ~20 minutes)
+        for _ in range(Limits.MAX_RESOLVE_ATTEMPTS):
+            try:
+                status = client.get_magnet_status(task.provider_ref)
+                if DEBUG:
+                    _log(task.id, LogLevel.DEBUG, "ad_status_raw", payload=status.get("raw"))
 
-    # Poll AllDebrid for files (up to ~20 minutes)
-    for _ in range(Limits.MAX_RESOLVE_ATTEMPTS):
-        status = client.get_magnet_status(task.provider_ref)
-        if DEBUG:
-            _log(task.id, LogLevel.DEBUG, "ad_status_raw", payload=status.get("raw"))
+                files = status.get("files") or []
+                if files:
+                    existing = {f.index: f for f in session.execute(
+                        select(TaskFile).where(TaskFile.task_id == task.id)
+                    ).scalars().all()}
 
-        files = status.get("files") or []
-        if files:
-            existing = {f.index: f for f in session.execute(
+                    listed_payload = []
+                    for i, fi in enumerate(files):
+                        name = fi.get("name") or f"file_{i}"
+                        # Validate file name for security
+                        try:
+                            validate_file_name(name)
+                        except Exception as e:
+                            _log(task.id, LogLevel.WARNING, "invalid_file_name_skipped", 
+                                 index=i, name=name, error=str(e))
+                            continue
+                        
+                        size = int(fi.get("size") or 0)
+                        tf = existing.get(i)
+                        if not tf:
+                            tf = TaskFile(
+                                id=str(uuid.uuid4()), task_id=task.id,
+                                index=i, name=name, size_bytes=size, state=FileState.LISTED
+                            )
+                            session.add(tf)
+                            session.commit()
+                        listed_payload.append({"fileId": tf.id, "index": i, "name": name, "size": size, "state": FileState.LISTED})
+
+                    publish(task.id, {"type": EventType.FILES_LISTED, "files": listed_payload})
+                    _log(task.id, LogLevel.INFO, "files_listed", count=len(listed_payload))
+                    break
+            except Exception as e:
+                _log(task.id, LogLevel.WARNING, "ad_status_check_error", error=str(e))
+                # Continue polling despite errors
+
+            time.sleep(Limits.RESOLVE_POLL_DELAY)
+        else:
+            # Timeout: no files found after max attempts
+            task.status = TaskStatus.FAILED
+            session.commit()
+            publish(task.id, {"type": EventType.STATE, "status": TaskStatus.FAILED, "reason": "timeout_no_files"})
+            _log(task.id, LogLevel.ERROR, "resolve_timeout_no_files")
+            return
+
+    elif task.source_type == "link":
+        # For links, get link info and unlock immediately
+        task.status = TaskStatus.RESOLVING
+        session.commit()
+        publish(task.id, {"type": EventType.STATE, "status": TaskStatus.RESOLVING})
+        _log(task.id, LogLevel.INFO, "task_resolving_link")
+
+        try:
+            # Get link info to extract filename and filesize
+            link_info = client.get_link_info(task.source)
+            filename = link_info.get("filename") or link_info.get("name") or "download"
+            filesize = int(link_info.get("filesize") or link_info.get("size") or 0)
+            
+            # Validate filename for security
+            try:
+                validate_file_name(filename)
+            except Exception as e:
+                # Use a safe default filename if validation fails
+                _log(task.id, LogLevel.WARNING, "invalid_filename_using_default", 
+                     original=filename, error=str(e))
+                filename = f"download_{task.id[:8]}"
+            
+            # Create a single file entry for the link
+            existing = session.execute(
                 select(TaskFile).where(TaskFile.task_id == task.id)
-            ).scalars().all()}
-
-            listed_payload = []
-            for i, fi in enumerate(files):
-                name = fi.get("name") or f"file_{i}"
-                # Validate file name for security
-                try:
-                    validate_file_name(name)
-                except Exception as e:
-                    _log(task.id, LogLevel.WARNING, "invalid_file_name_skipped", 
-                         index=i, name=name, error=str(e))
-                    continue
+            ).scalars().first()
+            
+            if not existing:
+                tf = TaskFile(
+                    id=str(uuid.uuid4()), task_id=task.id,
+                    index=0, name=filename, size_bytes=filesize, state=FileState.LISTED
+                )
+                session.add(tf)
+                session.commit()
                 
-                size = int(fi.get("size") or 0)
-                tf = existing.get(i)
-                if not tf:
-                    tf = TaskFile(
-                        id=str(uuid.uuid4()), task_id=task.id,
-                        index=i, name=name, size_bytes=size, state=FileState.LISTED
-                    )
-                    session.add(tf)
-                    session.commit()
-                listed_payload.append({"fileId": tf.id, "index": i, "name": name, "size": size, "state": FileState.LISTED})
-
-            publish(task.id, {"type": EventType.FILES_LISTED, "files": listed_payload})
-            _log(task.id, LogLevel.INFO, "files_listed", count=len(listed_payload))
-            break
-
-        time.sleep(Limits.RESOLVE_POLL_DELAY)
+                listed_payload = [{"fileId": tf.id, "index": 0, "name": filename, "size": filesize, "state": FileState.LISTED}]
+                publish(task.id, {"type": EventType.FILES_LISTED, "files": listed_payload})
+                _log(task.id, LogLevel.INFO, "link_file_listed", filename=filename, size=filesize)
+            
+            # Store the original link as provider_ref for later unlocking
+            task.provider_ref = task.source
+            session.commit()
+            
+        except Exception as e:
+            task.status = TaskStatus.FAILED
+            session.commit()
+            publish(task.id, {"type": EventType.STATE, "status": TaskStatus.FAILED, 
+                           "reason": f"link_info_failed: {str(e)}"})
+            _log(task.id, LogLevel.ERROR, "link_info_failed", error=str(e), tb=traceback.format_exc())
+            return
     else:
-        # Timeout: no files found after max attempts
+        # Unknown source type
         task.status = TaskStatus.FAILED
         session.commit()
-        publish(task.id, {"type": EventType.STATE, "status": TaskStatus.FAILED, "reason": "timeout_no_files"})
-        _log(task.id, LogLevel.ERROR, "resolve_timeout_no_files")
+        publish(task.id, {"type": EventType.STATE, "status": TaskStatus.FAILED, 
+                       "reason": f"unknown_source_type: {task.source_type}"})
+        _log(task.id, LogLevel.ERROR, "unknown_source_type", source_type=task.source_type)
         return
 
     if task.mode == "select":
@@ -297,11 +370,20 @@ def start_next_files(session, task: Task, client):
 
         # 1) Unlock HTTPS link from provider
         try:
-            url = client.download_link(task.provider_ref, f.index)
+            if task.source_type == "magnet":
+                # For magnets, use the magnet ID and file index
+                url = client.download_link(task.provider_ref, f.index)
+            elif task.source_type == "link":
+                # For direct links, unlock the link directly
+                unlocked_data = client._get("/link/unlock", link=task.provider_ref)
+                url = unlocked_data.get("link") or unlocked_data.get("download") or unlocked_data.get("url")
+            else:
+                raise RuntimeError(f"Unknown source type: {task.source_type}")
+            
             if not url or not url.startswith("http"):
                 raise RuntimeError("unlock returned no http(s) link")
             if DEBUG:
-                _log(task.id, LogLevel.INFO, "unlock_ok", fileId=f.id, index=f.index)
+                _log(task.id, LogLevel.INFO, "unlock_ok", fileId=f.id, index=f.index, source_type=task.source_type)
         except Exception as e:
             f.state = FileState.FAILED
             session.commit()
