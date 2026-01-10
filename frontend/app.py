@@ -13,6 +13,8 @@ load_dotenv()
 # Import user management utilities
 from app import user_manager
 from app.constants import Limits
+from app.utils import torrent_to_magnet
+from app.validation import validate_torrent_file_data
 
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
@@ -269,10 +271,6 @@ def create_task():
     torrent_magnets = []
     
     if torrent_files:
-        from app.utils import torrent_to_magnet
-        from app.validation import validate_torrent_file_data
-        from app.constants import Limits
-        
         for i, file in enumerate(torrent_files):
             if not file or not file.filename:
                 continue

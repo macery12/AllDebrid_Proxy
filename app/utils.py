@@ -3,6 +3,12 @@ from typing import Optional
 from app.validation import validate_infohash
 from app.constants import Patterns
 
+try:
+    import bencodepy
+    HAS_BENCODEPY = True
+except ImportError:
+    HAS_BENCODEPY = False
+
 def parse_infohash(magnet: str) -> Optional[str]:
     """
     Parse and validate info hash from magnet link.
@@ -165,9 +171,7 @@ def torrent_to_magnet(torrent_data: bytes) -> str:
     Raises:
         ValueError: If torrent data is invalid or cannot be parsed
     """
-    try:
-        import bencodepy
-    except ImportError:
+    if not HAS_BENCODEPY:
         raise ValueError("bencodepy library is required to parse torrent files")
     
     try:
