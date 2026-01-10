@@ -276,6 +276,12 @@ def create_task():
         flash("Please enter at least one magnet link or URL", "error")
         return redirect(url_for("index"))
     
+    # Check max sources limit (matching backend limit)
+    MAX_SOURCES = 10  # Should match Limits.MAX_SOURCES_PER_SUBMISSION
+    if len(sources) > MAX_SOURCES:
+        flash(f"Too many sources (maximum {MAX_SOURCES} allowed)", "error")
+        return redirect(url_for("index"))
+    
     # Create tasks for each source
     created_tasks = []
     reused_tasks = []

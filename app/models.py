@@ -20,6 +20,7 @@ class UserStats(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, unique=True)
     total_downloads = Column(Integer, nullable=False, default=0)
+    # Note: Despite the name, this tracks all sources (magnets + links) for backward compatibility
     total_magnets_processed = Column(Integer, nullable=False, default=0)
     total_bytes_downloaded = Column(BigInteger, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
