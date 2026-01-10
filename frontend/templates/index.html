@@ -50,6 +50,61 @@
   flex-wrap: wrap;
   margin-top: 24px;
 }
+.or-divider {
+  text-align: center;
+  margin: 20px 0;
+  color: var(--muted);
+  font-size: 14px;
+  position: relative;
+}
+.or-divider::before,
+.or-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(50% - 30px);
+  height: 1px;
+  background: var(--border);
+}
+.or-divider::before {
+  left: 0;
+}
+.or-divider::after {
+  right: 0;
+}
+.file-upload-area {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.file-upload-area:hover {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.05);
+}
+.file-upload-area input[type="file"] {
+  display: none;
+}
+.file-upload-label {
+  display: block;
+  cursor: pointer;
+}
+.file-upload-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.file-upload-text {
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.file-upload-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
 .info-box {
   background: rgba(99, 102, 241, 0.05);
   border: 1px solid rgba(99, 102, 241, 0.2);
@@ -81,22 +136,43 @@
 
 <div class="hero">
   <h1>🚀 Create Download Task</h1>
-  <p>Paste a magnet link or direct URL, select your preferred mode, and let the worker handle the rest</p>
+  <p>Upload a torrent file, paste a magnet link, or direct URL, and let the worker handle the rest</p>
 </div>
 
 <div class="form-container">
   <div class="card">
     <h2>New Download Task</h2>
     
-    <form method="post" action="{{ url_for('create_task') }}">
+    <form method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
+      <div class="form-group">
+        <label>Upload Torrent File(s)</label>
+        <div class="file-upload-area" onclick="document.getElementById('torrent-files').click()">
+          <label for="torrent-files" class="file-upload-label">
+            <div class="file-upload-icon">📁</div>
+            <div class="file-upload-text">Click to select .torrent file(s)</div>
+            <div class="file-upload-hint">Max 10MB per file. Multiple files supported.</div>
+          </label>
+          <input 
+            type="file" 
+            id="torrent-files" 
+            name="torrent_files" 
+            accept=".torrent"
+            multiple
+          />
+        </div>
+        <small class="form-hint" id="file-count-hint" style="display: none;">
+          <span id="file-count">0</span> file(s) selected
+        </small>
+      </div>
+
+      <div class="or-divider">OR</div>
+
       <div class="form-group">
         <label for="source">Magnet Link or URL (one per line for multiple)</label>
         <textarea 
           id="source" 
           name="source" 
           placeholder="magnet:?xt=urn:btih:... or https://example.com/file.zip&#10;https://example.com/file2.zip&#10;magnet:?xt=urn:btih:..."
-          required
-          autofocus
           rows="5"
         ></textarea>
         <small class="form-hint">💡 Paste one or more magnet links or direct URLs (one per line). Supported: HTTP/HTTPS links and magnet links.</small>
@@ -160,5 +236,42 @@
     {% endif %}
   </div>
 </div>
+
+<script>
+// Update file count when torrent files are selected
+document.getElementById('torrent-files').addEventListener('change', function(e) {
+  const fileCount = e.target.files.length;
+  const hint = document.getElementById('file-count-hint');
+  const countSpan = document.getElementById('file-count');
+  
+  if (fileCount > 0) {
+    countSpan.textContent = fileCount;
+    hint.style.display = 'block';
+    
+    // Update the upload area text
+    const uploadText = document.querySelector('.file-upload-text');
+    if (fileCount === 1) {
+      uploadText.textContent = e.target.files[0].name;
+    } else {
+      uploadText.textContent = `${fileCount} torrent files selected`;
+    }
+  } else {
+    hint.style.display = 'none';
+    document.querySelector('.file-upload-text').textContent = 'Click to select .torrent file(s)';
+  }
+});
+
+// Prevent form submission if no files and no source text
+document.querySelector('form').addEventListener('submit', function(e) {
+  const files = document.getElementById('torrent-files').files;
+  const source = document.getElementById('source').value.trim();
+  
+  if (files.length === 0 && !source) {
+    e.preventDefault();
+    alert('Please either upload torrent file(s) or enter magnet link(s)/URL(s)');
+    return false;
+  }
+});
+</script>
 
 {% endblock %}
