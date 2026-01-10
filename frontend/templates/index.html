@@ -582,18 +582,8 @@
     </div>
 
     <div class="sidebar-section" id="progress-section" style="display: none;">
-      <h2 class="sidebar-title">Download Progress</h2>
-      <div class="stat-header">
-        <span class="stat-label" id="progress-label">Downloading</span>
-        <span class="stat-value" id="progress-pct">0%</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progress-bar" style="width: 0%"></div>
-      </div>
-      <div class="progress-text">
-        <span id="progress-down">0 B</span>
-        <span id="progress-total">of 0 B</span>
-      </div>
+      <h2 class="sidebar-title">Active Downloads</h2>
+      <div id="active-downloads-list"></div>
     </div>
 
     <div class="sidebar-section">
@@ -606,6 +596,52 @@
     </div>
   </div>
 </div>
+
+<style>
+.download-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.download-item:last-child {
+  margin-bottom: 0;
+}
+
+.download-filename {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.download-progress {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.download-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #06b6d4);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+</style>
 
 <script>
 let updateTimer = null;
@@ -654,21 +690,29 @@ async function updateStats() {
     document.getElementById('stat-total-desc').textContent = 
       `${formatNum(completed)} completed`;
     
-    // Progress
-    const downloaded = stats.downloads?.downloaded_bytes || 0;
-    const totalBytes = stats.downloads?.total_bytes || 0;
-    const pct = stats.downloads?.progress_pct || 0;
+    // Active Downloads List
+    const activeDownloads = stats.downloads?.active_files || [];
+    const progressSection = document.getElementById('progress-section');
+    const downloadsList = document.getElementById('active-downloads-list');
     
-    if (activeFiles > 0 || downloaded > 0) {
-      document.getElementById('progress-section').style.display = 'block';
-      document.getElementById('progress-bar').style.width = pct + '%';
-      document.getElementById('progress-pct').textContent = pct + '%';
-      document.getElementById('progress-down').textContent = formatBytes(downloaded);
-      document.getElementById('progress-total').textContent = 'of ' + formatBytes(totalBytes);
-      document.getElementById('progress-label').textContent = 
-        activeFiles > 0 ? `${activeFiles} file${activeFiles !== 1 ? 's' : ''}` : 'Progress';
+    if (activeDownloads.length > 0) {
+      progressSection.style.display = 'block';
+      
+      // Render active downloads
+      downloadsList.innerHTML = activeDownloads.map(file => `
+        <div class="download-item">
+          <div class="download-filename" title="${file.filename}">${file.filename}</div>
+          <div class="download-stats">
+            <span>${formatBytes(file.downloaded_bytes)} / ${formatBytes(file.size_bytes)}</span>
+            <span>${file.progress_pct}%</span>
+          </div>
+          <div class="download-progress">
+            <div class="download-progress-fill" style="width: ${file.progress_pct}%"></div>
+          </div>
+        </div>
+      `).join('');
     } else {
-      document.getElementById('progress-section').style.display = 'none';
+      progressSection.style.display = 'none';
     }
     
     // Status
