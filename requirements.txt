@@ -10,4 +10,5 @@ python-dotenv==1.0.1
 requests==2.32.3
 flask==3.0.3
 flask-login==0.6.3
+bencodepy==0.9.5
 

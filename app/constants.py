@@ -140,6 +140,9 @@ class Limits:
     
     # Maximum number of sources in multi-source submission
     MAX_SOURCES_PER_SUBMISSION = 10
+    
+    # Maximum torrent file size (10MB)
+    MAX_TORRENT_FILE_SIZE = 10 * 1024 * 1024
 
 
 # HTTP constants
