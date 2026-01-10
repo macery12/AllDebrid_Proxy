@@ -698,7 +698,7 @@ async function updateStats() {
 function startUpdates() {
   updateStats();
   if (updateTimer) clearInterval(updateTimer);
-  updateTimer = setInterval(updateStats, 3000);
+  updateTimer = setInterval(updateStats, 5000);
 }
 
 function stopUpdates() {
