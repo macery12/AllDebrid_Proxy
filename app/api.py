@@ -194,8 +194,8 @@ async def upload_file_task(
     
     # Sanitize filename
     original_filename = file.filename
-    # Remove path components and dangerous characters
-    safe_filename = re.sub(r'[^\w\s\-\.]', '_', Path(original_filename).name)
+    # Remove path components and dangerous characters, replace spaces with underscores
+    safe_filename = re.sub(r'[^\w\.\-]', '_', Path(original_filename).name)
     safe_filename = safe_filename[:Limits.MAX_FILENAME_LENGTH]
     
     if not safe_filename or safe_filename == '.':
@@ -217,7 +217,7 @@ async def upload_file_task(
     
     # Create task ID and identifier (hash of filename + timestamp for uniqueness)
     task_id = str(uuid.uuid4())
-    identifier = hashlib.sha1(f"{original_filename}:{time.time()}".encode()).hexdigest()
+    identifier = hashlib.sha256(f"{original_filename}:{time.time()}".encode()).hexdigest()
     
     with SessionLocal() as s:
         # Create task
@@ -261,9 +261,6 @@ async def upload_file_task(
         # Write file to disk
         try:
             file_path = os.path.join(files_dir, safe_filename)
-            
-            # Ensure parent directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # Write all chunks to file
             with open(file_path, 'wb') as f:
