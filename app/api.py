@@ -167,45 +167,77 @@ async def upload_file_task(
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     
-    # Validate file size
-    # Read file in chunks to check size without loading all in memory
-    file_size = 0
-    chunk_size = 1024 * 1024  # 1MB chunks
-    chunks = []
-    
-    try:
-        while True:
-            chunk = await file.read(chunk_size)
-            if not chunk:
-                break
-            file_size += len(chunk)
-            chunks.append(chunk)
-            
-            # Check size limit
-            if file_size > Limits.MAX_UPLOAD_FILE_SIZE:
-                raise HTTPException(
-                    status_code=413, 
-                    detail=f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024*1024*1024)}GB)"
-                )
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
-    
-    # Sanitize filename
+    # Sanitize filename first
     original_filename = file.filename
     # Remove path components and dangerous characters, replace spaces with underscores
+    # Block dots at the start to prevent hidden files and path traversal
     safe_filename = re.sub(r'[^\w\.\-]', '_', Path(original_filename).name)
+    safe_filename = safe_filename.lstrip('.')  # Remove leading dots
+    safe_filename = re.sub(r'\.\.+', '.', safe_filename)  # Replace multiple dots with single dot
     safe_filename = safe_filename[:Limits.MAX_FILENAME_LENGTH]
     
     if not safe_filename or safe_filename == '.':
         safe_filename = "uploaded_file"
+    
+    # Validate file size by streaming to temporary file
+    file_size = 0
+    chunk_size = 1024 * 1024  # 1MB chunks
+    
+    # Create task ID early to set up storage location
+    task_id = str(uuid.uuid4())
+    base, files_dir = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
+    file_path = os.path.join(files_dir, safe_filename)
+    temp_file_path = file_path + ".tmp"
+    
+    try:
+        # Stream file to disk with size validation
+        with open(temp_file_path, 'wb') as f:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                file_size += len(chunk)
+                
+                # Check size limit
+                if file_size > Limits.MAX_UPLOAD_FILE_SIZE:
+                    # Clean up temp file
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
+                    raise HTTPException(
+                        status_code=413, 
+                        detail=f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024*1024*1024)}GB)"
+                    )
+                
+                f.write(chunk)
+        
+        # Rename temp file to final name
+        os.rename(temp_file_path, file_path)
+        
+    except HTTPException:
+        # Clean up on validation error
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        if os.path.exists(base):
+            shutil.rmtree(base)
+        raise
+    except Exception as e:
+        # Clean up on error
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        if os.path.exists(base):
+            shutil.rmtree(base)
+        raise HTTPException(status_code=400, detail=f"Failed to save file: {str(e)}")
     
     # Validate label
     if label:
         try:
             label = validate_label(label)
         except ValidationError as e:
+            # Clean up
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if os.path.exists(base):
+                shutil.rmtree(base)
             raise HTTPException(status_code=400, detail=str(e))
     
     # Validate user_id
@@ -213,16 +245,18 @@ async def upload_file_task(
         try:
             validate_positive_int(user_id, "user_id")
         except ValidationError as e:
+            # Clean up
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if os.path.exists(base):
+                shutil.rmtree(base)
             raise HTTPException(status_code=400, detail=str(e))
     
-    # Create task ID and identifier (hash of filename + timestamp for uniqueness)
-    task_id = str(uuid.uuid4())
+    # Create identifier (hash of filename + timestamp for uniqueness)
     identifier = hashlib.sha256(f"{original_filename}:{time.time()}".encode()).hexdigest()
     
     with SessionLocal() as s:
         # Create task
-        base, files_dir = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
-        
         t = Task(
             id=task_id,
             mode="auto",  # Uploaded files are always auto mode
@@ -230,7 +264,7 @@ async def upload_file_task(
             source_type=SourceType.UPLOAD,
             infohash=identifier,
             provider="upload",  # Special provider for uploads
-            status=TaskStatus.DOWNLOADING,  # Start downloading immediately
+            status=TaskStatus.COMPLETED,  # Mark as completed immediately
             label=label or original_filename,
             user_id=user_id
         )
@@ -244,8 +278,8 @@ async def upload_file_task(
             index=0,
             name=safe_filename,
             size_bytes=file_size,
-            state=FileState.DOWNLOADING,
-            bytes_downloaded=0,
+            state=FileState.DONE,  # Mark as done immediately
+            bytes_downloaded=file_size,
             local_path=safe_filename
         )
         s.add(task_file)
@@ -258,62 +292,32 @@ async def upload_file_task(
                 stats.total_magnets_processed += 1
                 s.commit()
         
-        # Write file to disk
-        try:
-            file_path = os.path.join(files_dir, safe_filename)
-            
-            # Write all chunks to file
-            with open(file_path, 'wb') as f:
-                for chunk in chunks:
-                    f.write(chunk)
-            
-            # Update file as complete
-            task_file.bytes_downloaded = file_size
-            task_file.state = FileState.DONE
-            t.status = TaskStatus.COMPLETED
-            s.commit()
-            
-            # Log and publish events
-            append_log(base, {
-                "level": "info",
-                "event": "upload_completed",
-                "taskId": task_id,
-                "filename": safe_filename,
-                "size": file_size
-            })
-            
-            write_metadata(base, {
-                "taskId": task_id,
-                "mode": "auto",
-                "label": label or original_filename,
-                "infohash": identifier,
-                "sourceType": SourceType.UPLOAD,
-                "status": TaskStatus.COMPLETED,
-                "originalFilename": original_filename,
-                "savedFilename": safe_filename
-            })
-            
-            # Publish completion event
-            r.publish(f"task:{task_id}", json.dumps({
-                "type": EventType.STATE,
-                "taskId": task_id,
-                "status": TaskStatus.COMPLETED
-            }))
-            
-        except Exception as e:
-            # Clean up on error
-            task_file.state = FileState.FAILED
-            t.status = TaskStatus.FAILED
-            s.commit()
-            
-            append_log(base, {
-                "level": "error",
-                "event": "upload_failed",
-                "taskId": task_id,
-                "error": str(e)
-            })
-            
-            raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        # Log and publish events
+        append_log(base, {
+            "level": "info",
+            "event": "upload_completed",
+            "taskId": task_id,
+            "filename": safe_filename,
+            "size": file_size
+        })
+        
+        write_metadata(base, {
+            "taskId": task_id,
+            "mode": "auto",
+            "label": label or original_filename,
+            "infohash": identifier,
+            "sourceType": SourceType.UPLOAD,
+            "status": TaskStatus.COMPLETED,
+            "originalFilename": original_filename,
+            "savedFilename": safe_filename
+        })
+        
+        # Publish completion event
+        r.publish(f"task:{task_id}", json.dumps({
+            "type": EventType.STATE,
+            "taskId": task_id,
+            "status": TaskStatus.COMPLETED
+        }))
     
     return {
         "taskId": task_id,
