@@ -169,15 +169,25 @@ async def upload_file_task(
     
     # Sanitize filename first
     original_filename = file.filename
-    # Remove path components and dangerous characters, replace spaces with underscores
-    # Block dots at the start to prevent hidden files and path traversal
-    safe_filename = re.sub(r'[^\w\.\-]', '_', Path(original_filename).name)
-    safe_filename = safe_filename.lstrip('.')  # Remove leading dots
-    safe_filename = re.sub(r'\.\.+', '.', safe_filename)  # Replace multiple dots with single dot
-    safe_filename = safe_filename[:Limits.MAX_FILENAME_LENGTH]
+    # Extract the base name and extension separately for better control
+    file_base = Path(original_filename).stem
+    file_ext = Path(original_filename).suffix
     
-    if not safe_filename or safe_filename == '.':
-        safe_filename = "uploaded_file"
+    # Sanitize base name: only allow alphanumeric, underscore, and hyphen
+    safe_base = re.sub(r'[^\w\-]', '_', file_base)
+    safe_base = safe_base.strip('._-')[:200]  # Leave room for extension
+    
+    # Sanitize extension: only allow alphanumeric and single dot
+    safe_ext = re.sub(r'[^\w\.]', '', file_ext)[:50]
+    if safe_ext and not safe_ext.startswith('.'):
+        safe_ext = '.' + safe_ext
+    
+    # Combine base and extension
+    safe_filename = safe_base + safe_ext
+    
+    # Final validation
+    if not safe_filename or safe_filename in ('.', '..', ''):
+        safe_filename = f"uploaded_file_{int(time.time())}"
     
     # Validate file size by streaming to temporary file
     file_size = 0
@@ -286,10 +296,11 @@ async def upload_file_task(
         s.commit()
         
         # Update user stats if user_id provided
+        # Note: We use total_magnets_processed for backward compatibility, but it tracks all sources
         if user_id:
             stats = s.query(UserStats).filter(UserStats.user_id == user_id).first()
             if stats:
-                stats.total_magnets_processed += 1
+                stats.total_magnets_processed += 1  # Tracks all tasks (magnets, links, uploads)
                 s.commit()
         
         # Log and publish events
