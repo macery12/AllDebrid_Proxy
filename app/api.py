@@ -183,11 +183,12 @@ async def upload_file_task(
         safe_ext = '.' + safe_ext
     
     # Combine base and extension
-    safe_filename = safe_base + safe_ext
+    safe_filename = safe_base + safe_ext if safe_base else ""
     
-    # Final validation
-    if not safe_filename or safe_filename in ('.', '..', ''):
-        safe_filename = f"uploaded_file_{int(time.time())}"
+    # Final validation - if filename is empty or invalid, generate a safe one
+    if not safe_filename or safe_filename in ('.', '..', '') or not safe_base:
+        # Use timestamp + extension to preserve file type
+        safe_filename = f"uploaded_file_{int(time.time())}{safe_ext}"
     
     # Validate file size by streaming to temporary file
     file_size = 0
