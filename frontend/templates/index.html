@@ -878,7 +878,7 @@ document.querySelector('form').addEventListener('submit', function(e) {
   
   if (files.length === 0 && !source) {
     e.preventDefault();
-    alert('Please either upload torrent file(s), enter magnet link(s)/URL(s), or upload a file directly');
+    alert('Please provide a source:\n• Upload torrent file(s), or\n• Enter magnet link(s)/URL(s), or\n• Upload a file directly');
     return false;
   }
 });
