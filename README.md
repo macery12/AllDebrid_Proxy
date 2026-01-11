@@ -17,9 +17,40 @@ a poorly chatgpt'ed together alldebrid proxy to proxy alldebrid files and be abl
 - **Torrent File Upload**: Upload .torrent files directly - they're converted to magnet links and immediately discarded (not stored)
 - **Magnet Links**: Full support for BitTorrent magnet links via AllDebrid
 - **Direct Links**: Support for HTTP/HTTPS direct download links via AllDebrid
+- **Direct File Upload** (Admin Only): Upload your own files directly to create shareable download links
 - **Multi-Source Submission**: Submit multiple sources at once (torrent files, magnets, or links)
 - **Smart Task Reuse**: Automatically reuses existing downloads to save bandwidth
 - **Error Handling**: Proper error messages for unsupported or failed links
+
+### 📤 Direct File Upload (Admin Only)
+
+Upload your own files directly and create shareable download links without using AllDebrid:
+
+**How It Works:**
+1. **Upload**: Select any file (up to 10GB) from the main page
+2. **Process**: File is uploaded and saved to storage immediately
+3. **Share**: Get a shareable link that works exactly like AllDebrid downloads
+4. **Download**: Users can download or stream the file using the same interface
+
+**Security Features:**
+- ✅ Admin-only access (regular users cannot upload)
+- ✅ File size limit (10GB max per file)
+- ✅ Filename sanitization (removes dangerous characters)
+- ✅ Secure storage (same directory structure as AllDebrid downloads)
+- ✅ User tracking (uploads are tracked per admin user)
+
+**Usage:**
+- Access the main page and scroll to "Upload Your Own File" section
+- Click to select a file or drag and drop
+- Optionally add a label for easier identification
+- File is processed immediately and shows as a completed task
+- Share the task download link with anyone who has access
+
+**Technical Details:**
+- Files are stored in the same `/srv/storage` directory structure
+- Tasks use `source_type: "upload"` to distinguish from AllDebrid downloads
+- Files can be downloaded, streamed (for videos), or packaged as `.tar.gz`
+- Compatible with existing download/streaming infrastructure
 
 ### 🔐 User System
 - **Database-backed authentication** - Users are stored in PostgreSQL instead of environment variables
@@ -141,6 +172,7 @@ Upload `.torrent` files directly through the web interface for seamless conversi
 **Admin Users can:**
 - ✅ Access all admin pages (`/admin`, `/admin/users`, `/admin/tasks`)
 - ✅ Create and manage tasks (main page `/` with magnet submission)
+- ✅ Upload files directly for sharing (up to 10GB per file)
 - ✅ View all tasks in the system
 - ✅ Manage user accounts
 - ✅ Access download pages (`/d/`)
