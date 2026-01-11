@@ -6,19 +6,19 @@
   <title>{% block title %}AllDebrid Proxy — Modern UI{% endblock %}</title>
   <style>
     :root { 
-      --bg:#0a0e1a; 
-      --bg-secondary:#0f1420;
-      --card:#141b2e; 
-      --card-hover:#1a2340;
-      --muted:#8aa0c7; 
-      --text:#e8f0ff; 
-      --accent:#6366f1; 
-      --accent-hover:#7c3aed;
-      --accent-2:#22c55e; 
-      --danger:#ef4444; 
-      --warn:#f59e0b;
-      --border:#1e2a50;
-      --border-light:#2a3a69;
+      --bg:#0d1117; 
+      --bg-secondary:#161b22;
+      --card:#1c2128; 
+      --card-hover:#22272e;
+      --muted:#8b949e; 
+      --text:#e6edf3; 
+      --accent:#58a6ff; 
+      --accent-hover:#1f6feb;
+      --accent-2:#3fb950; 
+      --danger:#f85149; 
+      --warn:#d29922;
+      --border:#30363d;
+      --border-light:#484f58;
     }
     *{box-sizing:border-box; margin:0; padding:0}
     body{
@@ -36,7 +36,7 @@
       align-items:center;
       justify-content:space-between;
       padding:16px 24px;
-      background:rgba(20, 27, 46, 0.95);
+      background:rgba(28, 33, 40, 0.95);
       border-bottom:1px solid var(--border);
       backdrop-filter:blur(10px);
       position:sticky;
@@ -47,10 +47,7 @@
     header h1{
       font-size:20px;
       font-weight:700;
-      background:linear-gradient(135deg, var(--accent), var(--accent-2));
-      -webkit-background-clip:text;
-      -webkit-text-fill-color:transparent;
-      background-clip:text;
+      color:var(--text);
     }
     header nav{
       display:flex;
@@ -164,27 +161,40 @@
       border-color:var(--border-light);
     }
     .btn.primary{
-      background:linear-gradient(135deg, var(--accent), var(--accent-hover));
+      background:var(--accent);
       border-color:var(--accent);
       color:#fff;
     }
     .btn.primary:hover{
-      box-shadow:0 4px 12px rgba(99, 102, 241, 0.4);
+      background:var(--accent-hover);
+      box-shadow:0 4px 12px rgba(88, 166, 255, 0.3);
     }
     .btn.good{
-      background:linear-gradient(135deg, #16a34a, #15803d);
-      border-color:#16a34a;
+      background:var(--accent-2);
+      border-color:var(--accent-2);
       color:#fff;
+    }
+    .btn.good:hover{
+      background:#2ea043;
+      box-shadow:0 4px 12px rgba(63, 185, 80, 0.3);
     }
     .btn.warn{
-      background:linear-gradient(135deg, #f59e0b, #d97706);
-      border-color:#f59e0b;
+      background:var(--warn);
+      border-color:var(--warn);
       color:#fff;
     }
+    .btn.warn:hover{
+      background:#bb8009;
+      box-shadow:0 4px 12px rgba(210, 153, 34, 0.3);
+    }
     .btn.danger{
-      background:linear-gradient(135deg, #ef4444, #dc2626);
-      border-color:#ef4444;
+      background:var(--danger);
+      border-color:var(--danger);
       color:#fff;
+    }
+    .btn.danger:hover{
+      background:#da3633;
+      box-shadow:0 4px 12px rgba(248, 81, 73, 0.3);
     }
     
     /* Pills/badges */
@@ -199,24 +209,24 @@
       font-weight:500;
     }
     .pill.good{
-      background:rgba(34, 197, 94, 0.1);
-      border-color:rgba(34, 197, 94, 0.3);
-      color:#22c55e;
+      background:rgba(63, 185, 80, 0.15);
+      border-color:rgba(63, 185, 80, 0.4);
+      color:#3fb950;
     }
     .pill.warn{
-      background:rgba(245, 158, 11, 0.1);
-      border-color:rgba(245, 158, 11, 0.3);
-      color:#f59e0b;
+      background:rgba(210, 153, 34, 0.15);
+      border-color:rgba(210, 153, 34, 0.4);
+      color:#d29922;
     }
     .pill.bad{
-      background:rgba(239, 68, 68, 0.1);
-      border-color:rgba(239, 68, 68, 0.3);
-      color:#ef4444;
+      background:rgba(248, 81, 73, 0.15);
+      border-color:rgba(248, 81, 73, 0.4);
+      color:#f85149;
     }
     .pill.neutral{
-      background:rgba(99, 102, 241, 0.1);
-      border-color:rgba(99, 102, 241, 0.3);
-      color:#6366f1;
+      background:rgba(88, 166, 255, 0.15);
+      border-color:rgba(88, 166, 255, 0.4);
+      color:#58a6ff;
     }
     
     /* Tables */
@@ -259,7 +269,7 @@
     .progress > i{
       display:block;
       height:100%;
-      background:linear-gradient(90deg, var(--accent), var(--accent-2));
+      background:var(--accent);
       border-radius:999px;
       transition:width 0.3s ease;
     }
@@ -289,19 +299,19 @@
       animation:slideIn 0.3s ease;
     }
     .flash-message.error{
-      background:rgba(239, 68, 68, 0.1);
-      border-color:#ef4444;
-      color:#fca5a5;
+      background:rgba(248, 81, 73, 0.15);
+      border-color:#f85149;
+      color:#ffa198;
     }
     .flash-message.ok, .flash-message.success{
-      background:rgba(34, 197, 94, 0.1);
-      border-color:#22c55e;
-      color:#86efac;
+      background:rgba(63, 185, 80, 0.15);
+      border-color:#3fb950;
+      color:#7ee787;
     }
     .flash-message.info{
-      background:rgba(99, 102, 241, 0.1);
-      border-color:#6366f1;
-      color:#a5b4fc;
+      background:rgba(88, 166, 255, 0.15);
+      border-color:#58a6ff;
+      color:#79c0ff;
     }
     
     @keyframes slideIn {
@@ -327,7 +337,6 @@
       <a href="{{ url_for('index') }}">Home</a>
       {% if current_user.is_authenticated and current_user.is_admin %}
       <a href="{{ url_for('admin_page') }}">Admin</a>
-      <a href="{{ url_for('admin_users_page') }}">Users</a>
       {% endif %}
       <a href="{{ url_for('logout') }}">Logout</a>
     </nav>
