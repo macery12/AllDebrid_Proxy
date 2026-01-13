@@ -428,6 +428,84 @@ def create_task():
         # Multiple tasks - redirect to admin page to view all
         return redirect(url_for("admin_page"))
 
+@app.post("/tasks/upload")
+@admin_required
+def upload_file():
+    """Upload a file directly and create a task - admin only"""
+    # Get uploaded file
+    if 'upload_file' not in request.files:
+        flash("No file provided", "error")
+        return redirect(url_for("index"))
+    
+    file = request.files['upload_file']
+    
+    if not file or not file.filename:
+        flash("No file selected", "error")
+        return redirect(url_for("index"))
+    
+    # Get label
+    label = request.form.get("upload_label", "").strip() or None
+    
+    if label and len(label) > MAX_LABEL_LENGTH:
+        flash(f"Label is too long (max {MAX_LABEL_LENGTH} characters)", "error")
+        return redirect(url_for("index"))
+    
+    # Prepare multipart form data
+    files = {'file': (file.filename, file.stream, file.content_type)}
+    data = {'user_id': str(current_user.id)}
+    if label:
+        data['label'] = label
+    
+    log.info(f"Uploading file: {file.filename}, size: {file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+    
+    # Make API request with file upload
+    url = w_url("/api/tasks/upload")
+    headers = w_headers()
+    
+    try:
+        # Use requests to upload file with streaming to handle large files
+        r = requests.post(url, headers=headers, files=files, data=data, timeout=600)
+        
+        log.info(f"← WORKER {r.status_code} {url}")
+        
+        if not r.ok:
+            try:
+                error_data = r.json()
+                msg = error_data.get("detail") or error_data.get("message") or r.text
+            except Exception:
+                msg = r.text
+            flash(f"Upload failed: {msg}", "error")
+            return redirect(url_for("index"))
+        
+        # Parse response
+        try:
+            body = r.json()
+        except Exception:
+            flash("Upload succeeded but response was invalid", "warning")
+            return redirect(url_for("admin_page"))
+        
+        task_id = body.get("taskId") or body.get("id")
+        if not task_id:
+            flash("Upload succeeded but no task ID returned", "warning")
+            return redirect(url_for("admin_page"))
+        
+        # Show success message
+        filename = body.get("filename", file.filename)
+        size_bytes = body.get("size", 0)
+        size_str = human_bytes(size_bytes) if size_bytes else "unknown size"
+        flash(f"✅ File uploaded successfully: {filename} ({size_str})", "ok")
+        
+        # Redirect to task view
+        return redirect(url_for("task_view", task_id=task_id))
+        
+    except requests.exceptions.Timeout:
+        flash("Upload timed out - file may be too large or connection is slow", "error")
+        return redirect(url_for("index"))
+    except Exception as e:
+        log.error(f"Upload failed: {e}")
+        flash(f"Upload failed: {str(e)}", "error")
+        return redirect(url_for("index"))
+
 @app.get("/admin")
 @admin_required
 def admin_page():
