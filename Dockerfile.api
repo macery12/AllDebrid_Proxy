@@ -11,4 +11,4 @@ COPY alembic.ini .
 COPY .env.example .
 
 EXPOSE 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--limit-max-requests", "0"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
