@@ -58,8 +58,9 @@ class SourceType:
     # Task source types
     MAGNET = "magnet"
     LINK = "link"
+    UPLOAD = "upload"
     
-    ALL_TYPES = [MAGNET, LINK]
+    ALL_TYPES = [MAGNET, LINK, UPLOAD]
 
 
 # Log levels
@@ -143,6 +144,9 @@ class Limits:
     
     # Maximum torrent file size (10MB)
     MAX_TORRENT_FILE_SIZE = 10 * 1024 * 1024
+    
+    # Maximum upload file size (10GB)
+    MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024 * 1024
 
 
 # HTTP constants

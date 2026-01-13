@@ -488,6 +488,26 @@
           </small>
         </div>
 
+        <div class="divider">
+          <span>OR</span>
+        </div>
+
+        <div class="form-section">
+          <label class="form-label">Upload Your Own File</label>
+          <div class="upload-area" onclick="document.getElementById('direct-upload-file').click()">
+            <div class="upload-icon">⬆️</div>
+            <div class="upload-text" id="upload-file-text">Click to select file to upload</div>
+            <div class="upload-subtext">Maximum 10GB • Admin only • File will be immediately available</div>
+            <input 
+              type="file" 
+              id="direct-upload-file"
+            />
+          </div>
+          <small class="form-hint" id="upload-file-hint" style="display: none;">
+            <span id="upload-file-name">No file</span> (<span id="upload-file-size">0</span>)
+          </small>
+        </div>
+
         <div class="form-section">
           <label for="label" class="form-label">Label (Optional)</label>
           <input 
@@ -786,14 +806,79 @@ document.getElementById('torrent-files').addEventListener('change', function(e) 
   }
 });
 
+// Direct file upload
+document.getElementById('direct-upload-file').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  const hint = document.getElementById('upload-file-hint');
+  const nameSpan = document.getElementById('upload-file-name');
+  const sizeSpan = document.getElementById('upload-file-size');
+  const uploadText = document.getElementById('upload-file-text');
+  
+  if (file) {
+    nameSpan.textContent = file.name;
+    sizeSpan.textContent = formatBytes(file.size);
+    hint.style.display = 'block';
+    uploadText.textContent = file.name;
+  } else {
+    hint.style.display = 'none';
+    uploadText.textContent = 'Click to select file to upload';
+  }
+});
+
 // Form validation
 document.querySelector('form').addEventListener('submit', function(e) {
   const files = document.getElementById('torrent-files').files;
   const source = document.getElementById('source').value.trim();
+  const uploadFile = document.getElementById('direct-upload-file').files[0];
+  
+  // If direct upload file is selected, use separate upload form
+  if (uploadFile) {
+    e.preventDefault();
+    
+    // Create FormData for file upload
+    const formData = new FormData();
+    formData.append('upload_file', uploadFile);
+    
+    const label = document.getElementById('label').value.trim();
+    if (label) {
+      formData.append('upload_label', label);
+    }
+    
+    // Show uploading message
+    const btn = e.target.querySelector('.btn-primary');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Uploading...';
+    
+    // Submit to upload endpoint
+    fetch('/tasks/upload', {
+      method: 'POST',
+      body: formData
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.text().then(text => {
+          throw new Error(text || 'Upload failed');
+        });
+      }
+      return response.text();
+    })
+    .then(html => {
+      // Redirect by updating location (response is HTML redirect)
+      window.location.reload();
+    })
+    .catch(error => {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      alert('Upload failed: ' + error.message);
+    });
+    
+    return false;
+  }
   
   if (files.length === 0 && !source) {
     e.preventDefault();
-    alert('Please either upload torrent file(s) or enter magnet link(s)/URL(s)');
+    alert('Please provide a source:\n• Upload torrent file(s), or\n• Enter magnet link(s)/URL(s), or\n• Upload a file directly (admin only)');
     return false;
   }
 });

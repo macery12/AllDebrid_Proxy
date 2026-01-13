@@ -1,5 +1,5 @@
-import uuid, json, os, time, shutil, redis, asyncio
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+import uuid, json, os, time, shutil, redis, asyncio, hashlib
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from app.auth import verify_worker_key, verify_sse_access
@@ -9,7 +9,7 @@ from app.db import SessionLocal
 from app.models import Task, TaskFile, UserStats
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
-from app.constants import TaskStatus, FileState, EventType, Limits
+from app.constants import TaskStatus, FileState, EventType, Limits, SourceType
 from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int
 from app.exceptions import ValidationError, ResourceNotFoundError
 from starlette.responses import StreamingResponse
@@ -138,6 +138,206 @@ def create_task(req: CreateTaskRequest):
         r.lpush("queue:tasks", task_id)
         r.publish(f"task:{task_id}", json.dumps({"type":EventType.HELLO,"taskId":task_id,"mode":req.mode,"status":TaskStatus.QUEUED}))
         return {"taskId": task_id, "status": TaskStatus.QUEUED, "reused": False}
+
+@router.post("/tasks/upload", dependencies=[Depends(verify_worker_key)])
+async def upload_file_task(
+    file: UploadFile = File(...),
+    label: str = Form(None),
+    user_id: int = Form(None)
+):
+    """
+    Create a new task by uploading a file directly.
+    Admin-only feature for uploading files without using AllDebrid.
+    
+    Args:
+        file: File to upload
+        label: Optional task label
+        user_id: User ID for tracking
+        
+    Returns:
+        Task creation response with ID and status
+        
+    Raises:
+        HTTPException: If file is invalid or upload fails
+    """
+    from pathlib import Path
+    import re
+    
+    # Validate file is present
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    # Sanitize filename first
+    original_filename = file.filename
+    # Extract the base name and extension separately for better control
+    file_base = Path(original_filename).stem
+    file_ext = Path(original_filename).suffix
+    
+    # Sanitize base name: only allow alphanumeric, underscore, and hyphen
+    safe_base = re.sub(r'[^\w\-]', '_', file_base)
+    safe_base = safe_base.strip('._-')[:200]  # Leave room for extension
+    
+    # Sanitize extension: only allow alphanumeric and single dot
+    safe_ext = re.sub(r'[^\w\.]', '', file_ext)[:50]
+    if safe_ext and not safe_ext.startswith('.'):
+        safe_ext = '.' + safe_ext
+    
+    # Combine base and extension
+    safe_filename = safe_base + safe_ext if safe_base else ""
+    
+    # Final validation - if filename is empty or invalid, generate a safe one
+    if not safe_filename or safe_filename in ('.', '..', '') or not safe_base:
+        # Use timestamp + extension to preserve file type
+        safe_filename = f"uploaded_file_{int(time.time())}{safe_ext}"
+    
+    # Validate file size by streaming to temporary file
+    file_size = 0
+    chunk_size = 1024 * 1024  # 1MB chunks
+    
+    # Create task ID early to set up storage location
+    task_id = str(uuid.uuid4())
+    base, files_dir = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
+    file_path = os.path.join(files_dir, safe_filename)
+    temp_file_path = file_path + ".tmp"
+    
+    try:
+        # Stream file to disk with size validation
+        with open(temp_file_path, 'wb') as f:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                file_size += len(chunk)
+                
+                # Check size limit
+                if file_size > Limits.MAX_UPLOAD_FILE_SIZE:
+                    # Clean up temp file
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
+                    raise HTTPException(
+                        status_code=413, 
+                        detail=f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024*1024*1024)}GB)"
+                    )
+                
+                f.write(chunk)
+        
+        # Rename temp file to final name
+        os.rename(temp_file_path, file_path)
+        
+    except HTTPException:
+        # Clean up on validation error
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        if os.path.exists(base):
+            shutil.rmtree(base)
+        raise
+    except Exception as e:
+        # Clean up on error
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        if os.path.exists(base):
+            shutil.rmtree(base)
+        raise HTTPException(status_code=400, detail=f"Failed to save file: {str(e)}")
+    
+    # Validate label
+    if label:
+        try:
+            label = validate_label(label)
+        except ValidationError as e:
+            # Clean up
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if os.path.exists(base):
+                shutil.rmtree(base)
+            raise HTTPException(status_code=400, detail=str(e))
+    
+    # Validate user_id
+    if user_id:
+        try:
+            validate_positive_int(user_id, "user_id")
+        except ValidationError as e:
+            # Clean up
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if os.path.exists(base):
+                shutil.rmtree(base)
+            raise HTTPException(status_code=400, detail=str(e))
+    
+    # Create identifier (hash of filename + timestamp for uniqueness)
+    identifier = hashlib.sha256(f"{original_filename}:{time.time()}".encode()).hexdigest()
+    
+    with SessionLocal() as s:
+        # Create task
+        t = Task(
+            id=task_id,
+            mode="auto",  # Uploaded files are always auto mode
+            source=f"upload://{original_filename}",
+            source_type=SourceType.UPLOAD,
+            infohash=identifier,
+            provider="upload",  # Special provider for uploads
+            status=TaskStatus.COMPLETED,  # Mark as completed immediately
+            label=label or original_filename,
+            user_id=user_id
+        )
+        s.add(t)
+        
+        # Create file entry
+        file_id = str(uuid.uuid4())
+        task_file = TaskFile(
+            id=file_id,
+            task_id=task_id,
+            index=0,
+            name=safe_filename,
+            size_bytes=file_size,
+            state=FileState.DONE,  # Mark as done immediately
+            bytes_downloaded=file_size,
+            local_path=safe_filename
+        )
+        s.add(task_file)
+        s.commit()
+        
+        # Update user stats if user_id provided
+        # Note: We use total_magnets_processed for backward compatibility, but it tracks all sources
+        if user_id:
+            stats = s.query(UserStats).filter(UserStats.user_id == user_id).first()
+            if stats:
+                stats.total_magnets_processed += 1  # Tracks all tasks (magnets, links, uploads)
+                s.commit()
+        
+        # Log and publish events
+        append_log(base, {
+            "level": "info",
+            "event": "upload_completed",
+            "taskId": task_id,
+            "filename": safe_filename,
+            "size": file_size
+        })
+        
+        write_metadata(base, {
+            "taskId": task_id,
+            "mode": "auto",
+            "label": label or original_filename,
+            "infohash": identifier,
+            "sourceType": SourceType.UPLOAD,
+            "status": TaskStatus.COMPLETED,
+            "originalFilename": original_filename,
+            "savedFilename": safe_filename
+        })
+        
+        # Publish completion event
+        r.publish(f"task:{task_id}", json.dumps({
+            "type": EventType.STATE,
+            "taskId": task_id,
+            "status": TaskStatus.COMPLETED
+        }))
+    
+    return {
+        "taskId": task_id,
+        "status": TaskStatus.COMPLETED,
+        "filename": safe_filename,
+        "size": file_size,
+        "reused": False
+    }
 
 @router.get("/tasks/{task_id}", dependencies=[Depends(verify_worker_key)])
 def get_task(task_id: str):
