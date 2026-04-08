@@ -708,7 +708,6 @@ def safe_task_base(task_id: str) -> Path:
     return base
 
 @app.get("/d/<task_id>/")
-@login_required
 def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
@@ -724,7 +723,6 @@ def list_folder(task_id):
     return render_template("folder.html", task_id=task_id, entries=items)
 
 @app.get("/d/<task_id>/links.txt")
-@login_required
 def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
@@ -752,7 +750,6 @@ def tar_all(task_id):
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
 
 @app.get("/d/<task_id>/raw/<path:relpath>")
-@login_required
 def raw_file(task_id, relpath):
     base = safe_task_base(task_id)
     full = (base / relpath).resolve()
@@ -805,7 +802,6 @@ def raw_file(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/play/<path:relpath>")
-@login_required
 def play_video(task_id, relpath):
     """Video player page"""
     base = safe_task_base(task_id)
@@ -840,7 +836,6 @@ def play_video(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
-@login_required
 def stream_video(task_id, relpath):
     """Stream video with Range request support"""
     base = safe_task_base(task_id)
