@@ -1,5 +1,6 @@
 
 import os, time, uuid, threading, logging, traceback, urllib.error, json
+from datetime import datetime, timezone
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
@@ -86,6 +87,51 @@ def get_client():
 
 # -------------------- Filesystem-based progress monitor --------------------
 _monitor_started = False
+MIN_SPEED_WINDOW_SEC = 0.2
+EMA_WEIGHT_PREV = 0.65
+EMA_WEIGHT_CURRENT = 0.35
+STALL_DETECTION_MULTIPLIER = 3
+
+def _collect_aria2_metrics_by_path() -> dict[str, dict]:
+    """
+    Fetch active/waiting aria2 transfer metrics keyed by resolved local file path.
+    """
+    if not get_aria2:
+        return {}
+
+    try:
+        rpc = get_aria2()
+        keys = ["status", "completedLength", "totalLength", "downloadSpeed", "files"]
+        entries = []
+        entries.extend(rpc.tellActive(keys) or [])
+        entries.extend(rpc.tellWaiting(0, 1000, keys) or [])
+
+        by_path: dict[str, dict] = {}
+        for item in entries:
+            completed = int(item.get("completedLength") or 0)
+            total = int(item.get("totalLength") or 0)
+            speed = int(item.get("downloadSpeed") or 0)
+            status = item.get("status") or ""
+
+            for file_item in (item.get("files") or []):
+                path = file_item.get("path")
+                if not path:
+                    continue
+                rp = os.path.realpath(path)
+                payload = {
+                    "completed": max(completed, 0),
+                    "total": max(total, 0),
+                    "speed": max(speed, 0),
+                    "status": status,
+                }
+                by_path[rp] = payload
+                if rp.endswith(".aria2"):
+                    by_path[rp[:-6]] = payload
+        return by_path
+    except Exception as e:
+        if DEBUG:
+            _log("", LogLevel.WARNING, "aria2_metrics_fetch_failed", err=str(e))
+        return {}
 
 def _start_monitor_once():
     """Start the progress monitor thread if not already started"""
@@ -104,6 +150,7 @@ def _progress_monitor_loop():
     while True:
         try:
             with SessionLocal() as s:
+                aria2_metrics = _collect_aria2_metrics_by_path()
                 q = select(TaskFile).where(TaskFile.state == FileState.DOWNLOADING)
                 files = s.execute(q).scalars().all()
                 for f in files:
@@ -117,28 +164,125 @@ def _progress_monitor_loop():
                     
                     out_path = os.path.join(settings.STORAGE_ROOT, f.task_id, "files", f.name)
                     tmp_path = f"{out_path}.aria2"
+                    rp_out = os.path.realpath(out_path)
+                    rp_tmp = os.path.realpath(tmp_path)
+                    aria2 = aria2_metrics.get(rp_out) or aria2_metrics.get(rp_tmp)
                     size_path = out_path if os.path.exists(out_path) else tmp_path
-                    cur = os.path.getsize(size_path) if os.path.exists(size_path) else 0
                     total = f.size_bytes or 0
+                    cur = 0
+                    aria2_speed = None
+                    if aria2:
+                        cur = aria2.get("completed", 0)
+                        total = aria2.get("total", 0) or total
+                        aria2_speed = aria2.get("speed", 0)
+                    else:
+                        cur = os.path.getsize(size_path) if os.path.exists(size_path) else 0
 
-                    if cur != (f.bytes_downloaded or 0):
+                    prev_bytes = f.bytes_downloaded or 0
+                    prev_speed = f.speed_bps or 0
+                    prev_eta = f.eta_seconds
+                    prev_progress = f.progress_pct or 0
+                    now_dt = datetime.now(timezone.utc)
+                    elapsed = None
+                    if f.last_progress_at:
+                        try:
+                            elapsed = max((now_dt - f.last_progress_at).total_seconds(), 0)
+                        except Exception:
+                            elapsed = None
+
+                    if aria2_speed is not None:
+                        progress_pct = int((cur / total) * 100) if total > 0 else 0
+                        if progress_pct > 100:
+                            progress_pct = 100
+                        if progress_pct < 0:
+                            progress_pct = 0
+                        if total > 0 and cur < total and aria2_speed > 0:
+                            eta_seconds = int((total - cur) / aria2_speed)
+                        elif total > 0 and cur >= total:
+                            eta_seconds = 0
+                        else:
+                            eta_seconds = None
+
+                        changed = (
+                            cur != prev_bytes
+                            or int(aria2_speed) != prev_speed
+                            or eta_seconds != prev_eta
+                            or progress_pct != prev_progress
+                        )
+
+                        if changed:
+                            f.bytes_downloaded = cur
+                            f.progress_pct = progress_pct
+                            f.speed_bps = max(int(aria2_speed), 0)
+                            f.eta_seconds = eta_seconds
+                            f.last_progress_at = now_dt
+                            s.commit()
+                            publish(f.task_id, {
+                                "type": EventType.FILE_PROGRESS,
+                                "fileId": f.id,
+                                "state": f.state,
+                                "bytesDownloaded": cur,
+                                "total": total,
+                                "progressPct": f.progress_pct,
+                                "speedBps": f.speed_bps,
+                                "etaSeconds": f.eta_seconds
+                            })
+                            if DEBUG:
+                                _log(f.task_id, LogLevel.DEBUG, "file_progress_aria2",
+                                     fileId=f.id, downloaded=cur, total=total, speed=f.speed_bps,
+                                     eta=f.eta_seconds, path=size_path, aria2_status=aria2.get("status"))
+                    elif cur != prev_bytes:
+                        delta_bytes = max(cur - prev_bytes, 0)
+                        inst_speed = 0.0
+                        if elapsed and elapsed > MIN_SPEED_WINDOW_SEC and delta_bytes > 0:
+                            inst_speed = float(delta_bytes) / float(elapsed)
+                        smoothed_speed = float(prev_speed)
+                        if inst_speed > 0:
+                            smoothed_speed = (
+                                (prev_speed * EMA_WEIGHT_PREV) + (inst_speed * EMA_WEIGHT_CURRENT)
+                            ) if prev_speed > 0 else inst_speed
+
                         f.bytes_downloaded = cur
+                        f.progress_pct = int((cur / total) * 100) if total > 0 else 0
+                        if f.progress_pct > 100:
+                            f.progress_pct = 100
+                        f.speed_bps = max(int(smoothed_speed), 0)
+                        if total > 0 and cur < total and f.speed_bps > 0:
+                            f.eta_seconds = int((total - cur) / f.speed_bps)
+                        else:
+                            f.eta_seconds = None
+                        f.last_progress_at = now_dt
                         s.commit()
                         publish(f.task_id, {
                             "type": EventType.FILE_PROGRESS,
                             "fileId": f.id,
+                            "state": f.state,
                             "bytesDownloaded": cur,
-                            "total": total
+                            "total": total,
+                            "progressPct": f.progress_pct,
+                            "speedBps": f.speed_bps,
+                            "etaSeconds": f.eta_seconds
                         })
                         if DEBUG:
                             _log(f.task_id, LogLevel.DEBUG, "file_progress", 
-                                 fileId=f.id, downloaded=cur, total=total, path=size_path)
+                                 fileId=f.id, downloaded=cur, total=total, speed=f.speed_bps,
+                                 eta=f.eta_seconds, path=size_path)
+                    elif elapsed and elapsed > (Limits.PROGRESS_MONITOR_INTERVAL * STALL_DETECTION_MULTIPLIER) and prev_speed > 0:
+                        # If progress stalls, decay transfer metrics to reflect no active transfer.
+                        f.speed_bps = 0
+                        f.eta_seconds = None
+                        f.last_progress_at = now_dt
+                        s.commit()
 
                     # done = final file exists AND aria2 control file does NOT exist AND (unknown size OR size >= expected)
                     if os.path.exists(out_path) and not os.path.exists(tmp_path) and ((total == 0) or (cur >= total)):
                         if f.state != FileState.DONE:
                             f.state = FileState.DONE
                             f.local_path = out_path
+                            f.progress_pct = 100 if total > 0 else f.progress_pct
+                            f.speed_bps = 0
+                            f.eta_seconds = 0
+                            f.last_progress_at = now_dt
                             
                             # Update user stats when file completes
                             task = s.get(Task, f.task_id)
@@ -152,7 +296,13 @@ def _progress_monitor_loop():
                             publish(f.task_id, {
                                 "type": EventType.FILE_DONE,
                                 "fileId": f.id,
-                                "localPath": f.local_path
+                                "state": f.state,
+                                "localPath": f.local_path,
+                                "bytesDownloaded": f.bytes_downloaded or cur,
+                                "total": total,
+                                "progressPct": f.progress_pct,
+                                "speedBps": f.speed_bps,
+                                "etaSeconds": f.eta_seconds
                             })
                             _log(f.task_id, LogLevel.INFO, "file_done", fileId=f.id, path=f.local_path)
                     else:
@@ -388,13 +538,17 @@ def start_next_files(session, task: Task, client):
         except Exception as e:
             f.state = FileState.FAILED
             session.commit()
-            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "reason": f"unlock_failed: {e}"})
+            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "state": f.state, "reason": f"unlock_failed: {e}"})
             _log(task.id, LogLevel.ERROR, "unlock_failed", fileId=f.id, index=f.index, err=str(e), tb=traceback.format_exc())
             continue
 
         # 2) Flip to downloading BEFORE enqueue
         f.unlocked_url = url
         f.state = FileState.DOWNLOADING
+        f.speed_bps = 0
+        f.eta_seconds = None
+        f.progress_pct = 0
+        f.last_progress_at = datetime.now(timezone.utc)
         session.commit()
         publish(task.id, {"type": EventType.FILE_STATE, "fileId": f.id, "state": FileState.DOWNLOADING})
         if DEBUG:
@@ -410,13 +564,13 @@ def start_next_files(session, task: Task, client):
             f.state = FileState.FAILED
             session.commit()
             reason = f"enqueue_failed_http: {e.code} {e.reason}"
-            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "reason": reason})
+            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "state": f.state, "reason": reason})
             _log(task.id, LogLevel.ERROR, "enqueue_failed_http", fileId=f.id, code=e.code, reason=e.reason, url=os.getenv("ARIA2_RPC_URL"))
             continue
         except Exception as e:
             f.state = FileState.FAILED
             session.commit()
-            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "reason": f"enqueue_failed: {e}"})
+            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "state": f.state, "reason": f"enqueue_failed: {e}"})
             _log(task.id, LogLevel.ERROR, "enqueue_failed", fileId=f.id, err=str(e), tb=traceback.format_exc(), url=os.getenv("ARIA2_RPC_URL"))
             continue
 

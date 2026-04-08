@@ -14,6 +14,9 @@ class FileItem(BaseModel):
     size: Optional[int] = None
     state: str
     bytesDownloaded: int = 0
+    speedBps: int = 0
+    etaSeconds: Optional[int] = None
+    progressPct: int = 0
     localPath: Optional[str] = None
 
 class StorageInfo(BaseModel):

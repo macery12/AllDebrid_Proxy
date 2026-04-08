@@ -57,6 +57,10 @@ class TaskFile(Base):
     size_bytes = Column(BigInteger, nullable=True)
     state = Column(String(32), nullable=False, default="listed")  # listed|selected|downloading|done|failed
     bytes_downloaded = Column(BigInteger, nullable=False, default=0)
+    speed_bps = Column(BigInteger, nullable=False, default=0)
+    eta_seconds = Column(Integer, nullable=True)
+    progress_pct = Column(Integer, nullable=False, default=0)
+    last_progress_at = Column(DateTime(timezone=True), nullable=True)
     local_path = Column(Text, nullable=True)
     unlocked_url = Column(Text, nullable=True)
 
