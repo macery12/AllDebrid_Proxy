@@ -275,7 +275,8 @@
         <input type="checkbox" id="autoRefreshEnabled" checked>
         Auto refresh
       </label>
-      <select id="autoRefreshInterval">
+      <label for="autoRefreshInterval">Interval</label>
+      <select id="autoRefreshInterval" aria-label="Auto refresh interval">
         <option value="3">Every 3s</option>
         <option value="5" selected>Every 5s</option>
         <option value="10">Every 10s</option>
@@ -447,9 +448,15 @@
   const refreshNowBtn = document.getElementById('refreshNowBtn');
   const refreshStatus = document.getElementById('refreshStatus');
   const isSelectMode = new URLSearchParams(location.search).get('mode') === 'select';
+  const MIN_REFRESH_INTERVAL_SEC = 1;
+  // Minimum sampling window and EMA weights keep speed/ETA stable between rapid SSE updates.
+  const MIN_SPEED_CALC_WINDOW_SEC = 0.2;
+  const EMA_WEIGHT_PREV = 0.6;
+  const EMA_WEIGHT_CURRENT = 0.4;
   const fileMap = new Map();
   const transferMap = new Map();
   let refreshTimer = null;
+  let currentTaskStatus = initialStatus || '';
 
   function statusClass(text) {
     const s = (text || '').toLowerCase();
@@ -569,28 +576,28 @@
     const prev = transferMap.get(id) || { lastBytes: downloaded, lastTs: now, speedBps: 0 };
     let speedBps = Number(merged.speedBps || merged.downloadSpeedBps || prev.speedBps || 0);
 
-    if (now > prev.lastTs && downloaded >= prev.lastBytes) {
+    if (now >= prev.lastTs && downloaded >= prev.lastBytes) {
       const deltaBytes = downloaded - prev.lastBytes;
       const deltaSec = (now - prev.lastTs) / 1000;
-      if (deltaBytes > 0 && deltaSec > 0.2) {
+      // Ignore very small update windows to reduce noisy/unstable speed calculations.
+      if (deltaBytes > 0 && deltaSec > MIN_SPEED_CALC_WINDOW_SEC) {
         const instant = deltaBytes / deltaSec;
-        speedBps = speedBps > 0 ? (speedBps * 0.6 + instant * 0.4) : instant;
+        // Smooth speed using EMA so ETA/speed does not jump aggressively between updates.
+        speedBps = speedBps > 0
+          ? (speedBps * EMA_WEIGHT_PREV + instant * EMA_WEIGHT_CURRENT)
+          : instant;
       }
     }
 
     const state = (merged.state || '').toLowerCase();
-    if (isFinalState(state) || state === 'done') {
+    if (isFinalState(state)) {
       speedBps = 0;
     }
     transferMap.set(id, { lastBytes: downloaded, lastTs: now, speedBps });
     const etaSec = speedBps > 0 ? (remaining / speedBps) : null;
 
     if (sizeCell) {
-      if (downloaded > 0 && sizeBytes > 0 && downloaded < sizeBytes) {
-        sizeCell.textContent = `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)} (${percent}%)`;
-      } else {
-        sizeCell.textContent = formatBytes(sizeBytes);
-      }
+      sizeCell.textContent = formatBytes(sizeBytes);
     }
 
     if (progressFill) {
@@ -622,6 +629,7 @@
   function handleSnapshot(d) {
     console.log('handleSnapshot called with:', d);
     if (statusPill && d.status !== undefined) {
+      currentTaskStatus = d.status || '';
       statusPill.textContent = d.status || '';
       statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
       
@@ -629,6 +637,11 @@
       if (isFinalState(d.status)) {
         console.log(`Task reached final state "${d.status}" - closing SSE connection`);
         if (es) es.close();
+        if (refreshTimer) {
+          clearInterval(refreshTimer);
+          refreshTimer = null;
+        }
+        if (refreshStatus) refreshStatus.textContent = 'Task completed (auto refresh stopped)';
       }
     }
     if (Array.isArray(d.files) && filesBody) {
@@ -644,6 +657,7 @@
     // Handle status/state changes
     if (typ === 'state' || typ === 'hello' || d.status !== undefined) {
       if (statusPill && d.status !== undefined) {
+        currentTaskStatus = d.status || '';
         statusPill.textContent = d.status || '';
         statusPill.className = 'pill ' + statusClass(d.status).split(' ').pop();
         
@@ -651,6 +665,11 @@
         if (isFinalState(d.status)) {
           console.log(`Task reached final state "${d.status}" - closing SSE connection`);
           if (es) es.close();
+          if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+          }
+          if (refreshStatus) refreshStatus.textContent = 'Task completed (auto refresh stopped)';
         }
       }
     }
@@ -673,19 +692,8 @@
     }
   }
 
-  async function fetchSnapshot() {
-    try {
-      const res = await fetch(`/tasks/${encodeURIComponent(taskId)}/data`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      handleSnapshot(data || {});
-      if (refreshStatus) refreshStatus.textContent = 'Live updates connected';
-    } catch (err) {
-      console.error('refresh fetch failed:', err);
-      if (refreshStatus) refreshStatus.textContent = 'Refresh failed; retrying…';
-    }
+  function reloadPage() {
+    window.location.reload();
   }
 
   function restartAutoRefreshTimer() {
@@ -699,9 +707,13 @@
       if (refreshStatus) refreshStatus.textContent = 'Auto refresh paused';
       return;
     }
+    if (isFinalState(currentTaskStatus)) {
+      if (refreshStatus) refreshStatus.textContent = 'Task completed (auto refresh stopped)';
+      return;
+    }
 
     const sec = Number(refreshIntervalSelect?.value || 5);
-    refreshTimer = setInterval(fetchSnapshot, Math.max(1, sec) * 1000);
+    refreshTimer = setInterval(reloadPage, Math.max(MIN_REFRESH_INTERVAL_SEC, sec) * 1000);
   }
 
   if (es) {
@@ -744,7 +756,7 @@
     refreshIntervalSelect.addEventListener('change', restartAutoRefreshTimer);
   }
   if (refreshNowBtn) {
-    refreshNowBtn.addEventListener('click', fetchSnapshot);
+    refreshNowBtn.addEventListener('click', reloadPage);
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -754,7 +766,6 @@
       }
     } else {
       restartAutoRefreshTimer();
-      fetchSnapshot();
     }
   });
   restartAutoRefreshTimer();
