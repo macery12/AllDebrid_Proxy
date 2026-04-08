@@ -90,6 +90,7 @@ _monitor_started = False
 MIN_SPEED_WINDOW_SEC = 0.2
 EMA_WEIGHT_PREV = 0.65
 EMA_WEIGHT_CURRENT = 0.35
+STALL_DETECTION_MULTIPLIER = 3
 
 def _start_monitor_once():
     """Start the progress monitor thread if not already started"""
@@ -136,12 +137,12 @@ def _progress_monitor_loop():
 
                     if cur != prev_bytes:
                         delta_bytes = max(cur - prev_bytes, 0)
-                        inst_speed = 0
+                        inst_speed = 0.0
                         if elapsed and elapsed > MIN_SPEED_WINDOW_SEC and delta_bytes > 0:
-                            inst_speed = int(delta_bytes / elapsed)
-                        smoothed_speed = prev_speed
+                            inst_speed = float(delta_bytes) / float(elapsed)
+                        smoothed_speed = float(prev_speed)
                         if inst_speed > 0:
-                            smoothed_speed = int(
+                            smoothed_speed = (
                                 (prev_speed * EMA_WEIGHT_PREV) + (inst_speed * EMA_WEIGHT_CURRENT)
                             ) if prev_speed > 0 else inst_speed
 
@@ -149,7 +150,7 @@ def _progress_monitor_loop():
                         f.progress_pct = int((cur / total) * 100) if total > 0 else 0
                         if f.progress_pct > 100:
                             f.progress_pct = 100
-                        f.speed_bps = max(smoothed_speed, 0)
+                        f.speed_bps = max(int(smoothed_speed), 0)
                         if total > 0 and cur < total and f.speed_bps > 0:
                             f.eta_seconds = int((total - cur) / f.speed_bps)
                         else:
@@ -169,7 +170,7 @@ def _progress_monitor_loop():
                             _log(f.task_id, LogLevel.DEBUG, "file_progress", 
                                  fileId=f.id, downloaded=cur, total=total, speed=f.speed_bps,
                                  eta=f.eta_seconds, path=size_path)
-                    elif elapsed and elapsed > (Limits.PROGRESS_MONITOR_INTERVAL * 3) and prev_speed > 0:
+                    elif elapsed and elapsed > (Limits.PROGRESS_MONITOR_INTERVAL * STALL_DETECTION_MULTIPLIER) and prev_speed > 0:
                         # If progress stalls, decay transfer metrics to reflect no active transfer.
                         f.speed_bps = 0
                         f.eta_seconds = None

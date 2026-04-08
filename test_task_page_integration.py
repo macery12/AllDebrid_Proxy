@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 
-REPO_ROOT = pathlib.Path("/home/runner/work/AllDebrid_Proxy/AllDebrid_Proxy")
+REPO_ROOT = pathlib.Path(__file__).resolve().parent
 FRONTEND_APP_PATH = REPO_ROOT / "frontend" / "app.py"
 
 
