@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.exceptions import RequestEntityTooLarge
 from pathlib import Path
 from dotenv import load_dotenv
 import os, io, tarfile, logging, requests, mimetypes, hashlib
@@ -34,6 +35,9 @@ app.config["WORKER_KEY"] = os.environ.get("WORKER_API_KEY", "")
 app.config["STORAGE_ROOT"] = os.environ.get("STORAGE_ROOT", "/srv/storage")
 app.config["USE_X_ACCEL"] = os.environ.get("USE_X_ACCEL", "0") == "1"
 app.config["NGINX_ACCEL_PREFIX"] = os.environ.get("NGINX_ACCEL_PREFIX", "/protected")
+app.config["MAX_CONTENT_LENGTH"] = Limits.MAX_UPLOAD_FILE_SIZE + UPLOAD_MULTIPART_OVERHEAD_BYTES
+# Avoid unexpected RequestEntityTooLarge during multipart parsing for large uploads.
+app.config["MAX_FORM_MEMORY_SIZE"] = int(os.environ.get("MAX_FORM_MEMORY_SIZE", str(8 * 1024 * 1024)))
 
 # Minimal startup validation
 if not app.config["WORKER_KEY"]:
@@ -643,6 +647,17 @@ def server_error(e):
     """Handle 500 errors"""
     log.error(f"500 error: {str(e)}")
     flash("An internal error occurred. Please try again.", "error")
+    return redirect(url_for("index"))
+
+@app.errorhandler(RequestEntityTooLarge)
+def request_too_large(e):
+    """Handle oversized upload payloads with a user-friendly message."""
+    max_size_gb = Limits.MAX_UPLOAD_FILE_SIZE // (1024 * 1024 * 1024)
+    message = f"File too large (max {max_size_gb}GB)"
+    accepts_json = "application/json" in request.headers.get("Accept", "").lower()
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or accepts_json:
+        return jsonify({"ok": False, "message": message}), 413
+    flash(message, "error")
     return redirect(url_for("index"))
 
 def get_task(task_id: str):

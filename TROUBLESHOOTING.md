@@ -92,6 +92,22 @@ WORKER_BASE_URL=http://adproxy_api:8080
 | .env not being read | Variables not set | Check `env_file:` in docker-compose.yml |
 | Wrong backend URL | Connection refused | Check WORKER_BASE_URL matches service name |
 
+### Upload returns 413 even with nginx set to 10G
+
+If large uploads fail with HTTP 413, verify the frontend-to-backend hop is internal:
+
+```bash
+docker-compose exec frontend env | grep WORKER_BASE_URL
+```
+
+It should be:
+
+```
+WORKER_BASE_URL=http://adproxy_api:8080
+```
+
+If this is set to a public domain/proxy URL, the upload can hit external proxy/CDN body limits on the second hop and fail with 413 even when your nginx origin is configured correctly.
+
 ### Testing Authentication
 
 Once configured, test the `/debug/config` endpoint:

@@ -1,5 +1,5 @@
 import uuid, json, os, time, shutil, redis, asyncio, hashlib
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, Request
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from app.auth import verify_worker_key, verify_sse_access
@@ -141,11 +141,7 @@ def create_task(req: CreateTaskRequest):
         return {"taskId": task_id, "status": TaskStatus.QUEUED, "reused": False}
 
 @router.post("/tasks/upload", dependencies=[Depends(verify_worker_key)])
-async def upload_file_task(
-    file: UploadFile = File(...),
-    label: str = Form(None),
-    user_id: int = Form(None)
-):
+async def upload_file_task(request: Request):
     """
     Create a new task by uploading a file directly.
     Admin-only feature for uploading files without using AllDebrid.
@@ -164,9 +160,47 @@ async def upload_file_task(
     from pathlib import Path
     import re
     
+    max_upload_request_bytes = Limits.MAX_UPLOAD_FILE_SIZE + (2 * 1024 * 1024)
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_upload_request_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024*1024*1024)}GB)"
+                )
+        except ValueError:
+            pass
+
+    try:
+        form = await request.form(max_part_size=max_upload_request_bytes)
+    except TypeError:
+        # Backward compatibility for Starlette versions without max_part_size support
+        form = await request.form()
+
+    file = form.get("file")
+    label = form.get("label")
+    user_id = form.get("user_id")
+
+    if isinstance(label, str):
+        label = label.strip() or None
+    else:
+        label = None
+
+    if user_id in ("", None):
+        user_id = None
+    elif isinstance(user_id, str):
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="user_id must be a positive integer")
+
     # Validate file is present
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
+    if not isinstance(file, UploadFile):
+        raise HTTPException(status_code=400, detail="Invalid file payload")
     
     # Sanitize filename first
     original_filename = file.filename
