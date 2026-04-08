@@ -148,6 +148,50 @@
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
+.refresh-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.refresh-controls label {
+  margin: 0;
+  font-size: 13px;
+}
+.refresh-controls select {
+  min-width: 110px;
+  padding: 6px 8px;
+}
+.refresh-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+.progress-wrap {
+  min-width: 220px;
+}
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+  transition: width 0.25s ease;
+}
+.progress-metrics {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -226,6 +270,20 @@
       </div>
       {% endif %}
     </div>
+    <div class="refresh-controls">
+      <label>
+        <input type="checkbox" id="autoRefreshEnabled" checked>
+        Auto refresh
+      </label>
+      <select id="autoRefreshInterval">
+        <option value="3">Every 3s</option>
+        <option value="5" selected>Every 5s</option>
+        <option value="10">Every 10s</option>
+        <option value="30">Every 30s</option>
+      </select>
+      <button type="button" class="btn" id="refreshNowBtn">Refresh now</button>
+      <span class="refresh-status" id="refreshStatus">Live updates connected</span>
+    </div>
   </div>
 
   {% set final_states = ['ready','failed','canceled','cancelled','deleted','done','completed','error'] %}
@@ -252,6 +310,7 @@
             {% endif %}
             <th>File Name</th>
             <th style="width: 140px; text-align: right;">Size</th>
+            <th style="width: 300px;">Progress</th>
             <th style="width: 140px;">State</th>
           </tr>
         </thead>
@@ -259,7 +318,7 @@
           {% if t.files|length == 0 %}
             <tr data-empty-row>
               {% if (mode == 'select') and not is_final %}<td></td>{% endif %}
-              <td colspan="3" class="empty-state">
+              <td colspan="4" class="empty-state">
                 <div class="loading-spinner"></div>
                 <span style="margin-left: 8px;">Waiting for file list...</span>
               </td>
@@ -267,6 +326,10 @@
           {% else %}
             {% for f in t.files %}
               {% set size_bytes = f.size or f.totalSize or f.fileSize or f.bytes or 0 %}
+              {% set downloaded_bytes = f.bytesDownloaded or 0 %}
+              {% set progress_pct = ((downloaded_bytes * 100 / size_bytes)|round|int) if size_bytes > 0 else 0 %}
+              {% if progress_pct < 0 %}{% set progress_pct = 0 %}{% endif %}
+              {% if progress_pct > 100 %}{% set progress_pct = 100 %}{% endif %}
               <tr data-file-id="{{ f.fileId }}">
                 {% if (mode == 'select') and not is_final %}
                   <td class="checkbox-cell">
@@ -279,11 +342,23 @@
                     <div class="file-path">{{ f.localPath }}</div>
                   {% endif %}
                 </td>
-                <td style="text-align: right; color: var(--muted);">
+                <td class="file-size-cell" style="text-align: right; color: var(--muted);">
                   {{ size_bytes|hbytes }}
                 </td>
+                <td class="progress-cell">
+                  <div class="progress-wrap">
+                    <div class="progress-bar">
+                      <div class="progress-fill" style="width: {{ progress_pct }}%"></div>
+                    </div>
+                    <div class="progress-metrics">
+                      <span class="metric-transfer">{{ downloaded_bytes|hbytes }} / {{ size_bytes|hbytes }}</span>
+                      <span class="metric-rate">—/s</span>
+                      <span class="metric-eta">ETA —</span>
+                    </div>
+                  </div>
+                </td>
                 <td>
-                  <span class="pill {{ status_class(f.state) }}">{{ f.state or '—' }}</span>
+                  <span class="pill file-state-pill {{ status_class(f.state) }}">{{ f.state or '—' }}</span>
                 </td>
               </tr>
             {% endfor %}
@@ -348,33 +423,33 @@
   const taskId = {{ task_id|tojson }};
   const sseToken = {{ sse_token|tojson }};
   const initialStatus = {{ (t.status if t else '')|tojson }};
-  
-  if (!('EventSource' in window)) return;
-  
-  if (!sseToken || typeof sseToken !== 'string') {
-    console.error('No SSE token available');
-    return;
-  }
+  const initialTask = {{ (t if t else {})|tojson }};
   
   // Final states where SSE should not run
   const finalStates = ['ready', 'failed', 'canceled', 'cancelled', 'deleted', 'done', 'completed', 'error'];
   const isFinalState = (status) => finalStates.includes((status || '').toLowerCase());
-  
-  // Don't start SSE if task is already in a final state
-  if (isFinalState(initialStatus)) {
-    console.log(`Task already in final state "${initialStatus}" - SSE not started`);
-    return;
-  }
-  
+  let es = null;
+
   // Use relative URL /api (nginx proxies to backend)
   // The token is generated server-side and expires after 1 hour (never exposes WORKER_API_KEY)
-  const sseUrl = `/api/tasks/${encodeURIComponent(taskId)}/events?token=${encodeURIComponent(sseToken)}`;
-  const es = new EventSource(sseUrl);
+  const canUseSSE = ('EventSource' in window) && !!sseToken && typeof sseToken === 'string' && !isFinalState(initialStatus);
+  if (canUseSSE) {
+    const sseUrl = `/api/tasks/${encodeURIComponent(taskId)}/events?token=${encodeURIComponent(sseToken)}`;
+    es = new EventSource(sseUrl);
+  } else {
+    console.log('SSE unavailable for this task view; polling refresh will be used');
+  }
   const statusPill = document.querySelector('[data-task-status]');
   const filesBody = document.querySelector('[data-files-table]');
   const fileCount = document.querySelector('[data-file-count]');
+  const refreshToggle = document.getElementById('autoRefreshEnabled');
+  const refreshIntervalSelect = document.getElementById('autoRefreshInterval');
+  const refreshNowBtn = document.getElementById('refreshNowBtn');
+  const refreshStatus = document.getElementById('refreshStatus');
   const isSelectMode = new URLSearchParams(location.search).get('mode') === 'select';
   const fileMap = new Map();
+  const transferMap = new Map();
+  let refreshTimer = null;
 
   function statusClass(text) {
     const s = (text || '').toLowerCase();
@@ -393,6 +468,24 @@
       i++;
     }
     return (i === 0 ? Math.round(n) : n.toFixed(1)) + " " + u[i];
+  }
+
+  function formatRate(bps) {
+    const rate = Number(bps || 0);
+    if (!Number.isFinite(rate) || rate <= 0) return "—/s";
+    return `${formatBytes(rate)}/s`;
+  }
+
+  function formatEta(seconds) {
+    const s = Number(seconds);
+    if (!Number.isFinite(s) || s <= 0) return "ETA —";
+    if (s < 60) return `ETA ${Math.ceil(s)}s`;
+    const m = Math.floor(s / 60);
+    const r = Math.ceil(s % 60);
+    if (m < 60) return `ETA ${m}m ${r}s`;
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return `ETA ${h}h ${rm}m`;
   }
 
   function removeEmptyRow() {
@@ -417,17 +510,41 @@
       tr.innerHTML = isSelectMode
         ? `<td class="checkbox-cell"><input type="checkbox" name="fileIds" value="${id}"></td>
            <td><div class="file-name"></div></td>
-           <td style="text-align: right; color: var(--muted);"></td>
-           <td><span class="pill">—</span></td>`
+           <td class="file-size-cell" style="text-align: right; color: var(--muted);"></td>
+           <td class="progress-cell">
+             <div class="progress-wrap">
+               <div class="progress-bar"><div class="progress-fill"></div></div>
+               <div class="progress-metrics">
+                 <span class="metric-transfer"></span>
+                 <span class="metric-rate"></span>
+                 <span class="metric-eta"></span>
+               </div>
+             </div>
+           </td>
+           <td><span class="pill file-state-pill">—</span></td>`
         : `<td><div class="file-name"></div></td>
-           <td style="text-align: right; color: var(--muted);"></td>
-           <td><span class="pill">—</span></td>`;
+           <td class="file-size-cell" style="text-align: right; color: var(--muted);"></td>
+           <td class="progress-cell">
+             <div class="progress-wrap">
+               <div class="progress-bar"><div class="progress-fill"></div></div>
+               <div class="progress-metrics">
+                 <span class="metric-transfer"></span>
+                 <span class="metric-rate"></span>
+                 <span class="metric-eta"></span>
+               </div>
+             </div>
+           </td>
+           <td><span class="pill file-state-pill">—</span></td>`;
       filesBody.appendChild(tr);
     }
 
     const nameDiv = tr.querySelector('.file-name');
-    const sizeCell = tr.querySelectorAll('td')[isSelectMode ? 2 : 1];
-    const pill = tr.querySelector('.pill');
+    const sizeCell = tr.querySelector('.file-size-cell');
+    const pill = tr.querySelector('.file-state-pill');
+    const progressFill = tr.querySelector('.progress-fill');
+    const metricTransfer = tr.querySelector('.metric-transfer');
+    const metricRate = tr.querySelector('.metric-rate');
+    const metricEta = tr.querySelector('.metric-eta');
 
     if (nameDiv) {
       nameDiv.textContent = merged.name || id;
@@ -443,15 +560,50 @@
     }
 
     // Show download progress if available
-    const sizeBytes = merged.size || merged.totalSize || merged.fileSize || merged.bytes || 0;
-    const downloaded = merged.bytesDownloaded || 0;
+    const sizeBytes = Number(merged.size || merged.totalSize || merged.fileSize || merged.bytes || 0);
+    const downloaded = Number(merged.bytesDownloaded || 0);
+    const percent = sizeBytes > 0 ? Math.max(0, Math.min(100, Math.round((downloaded / sizeBytes) * 100))) : 0;
+    const remaining = sizeBytes > downloaded ? (sizeBytes - downloaded) : 0;
+
+    const now = Date.now();
+    const prev = transferMap.get(id) || { lastBytes: downloaded, lastTs: now, speedBps: 0 };
+    let speedBps = Number(merged.speedBps || merged.downloadSpeedBps || prev.speedBps || 0);
+
+    if (now > prev.lastTs && downloaded >= prev.lastBytes) {
+      const deltaBytes = downloaded - prev.lastBytes;
+      const deltaSec = (now - prev.lastTs) / 1000;
+      if (deltaBytes > 0 && deltaSec > 0.2) {
+        const instant = deltaBytes / deltaSec;
+        speedBps = speedBps > 0 ? (speedBps * 0.6 + instant * 0.4) : instant;
+      }
+    }
+
+    const state = (merged.state || '').toLowerCase();
+    if (isFinalState(state) || state === 'done') {
+      speedBps = 0;
+    }
+    transferMap.set(id, { lastBytes: downloaded, lastTs: now, speedBps });
+    const etaSec = speedBps > 0 ? (remaining / speedBps) : null;
+
     if (sizeCell) {
       if (downloaded > 0 && sizeBytes > 0 && downloaded < sizeBytes) {
-        const percent = Math.round((downloaded / sizeBytes) * 100);
         sizeCell.textContent = `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)} (${percent}%)`;
       } else {
         sizeCell.textContent = formatBytes(sizeBytes);
       }
+    }
+
+    if (progressFill) {
+      progressFill.style.width = `${percent}%`;
+    }
+    if (metricTransfer) {
+      metricTransfer.textContent = `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)}`;
+    }
+    if (metricRate) {
+      metricRate.textContent = formatRate(speedBps);
+    }
+    if (metricEta) {
+      metricEta.textContent = formatEta(etaSec);
     }
 
     if (pill) {
@@ -476,7 +628,7 @@
       // Close SSE connection if task reached final state
       if (isFinalState(d.status)) {
         console.log(`Task reached final state "${d.status}" - closing SSE connection`);
-        es.close();
+        if (es) es.close();
       }
     }
     if (Array.isArray(d.files) && filesBody) {
@@ -498,7 +650,7 @@
         // Close SSE connection if task reached final state
         if (isFinalState(d.status)) {
           console.log(`Task reached final state "${d.status}" - closing SSE connection`);
-          es.close();
+          if (es) es.close();
         }
       }
     }
@@ -521,33 +673,94 @@
     }
   }
 
-  es.onopen = () => {
-    console.log('SSE connected');
-  };
-
-  es.onmessage = (e) => {
+  async function fetchSnapshot() {
     try {
-      const d = JSON.parse(e.data || '{}');
-      console.log('SSE message:', d);
-      
-      // A snapshot has taskId, status, and files array (complete task state)
-      // A delta has type and maybe fileId (partial update)
-      const isSnapshot = d && (d.taskId || (Array.isArray(d.files) && d.status !== undefined));
-      
-      if (isSnapshot) {
-        handleSnapshot(d);
-      } else {
-        handleDelta(d);
-      }
+      const res = await fetch(`/tasks/${encodeURIComponent(taskId)}/data`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      handleSnapshot(data || {});
+      if (refreshStatus) refreshStatus.textContent = 'Live updates connected';
     } catch (err) {
-      console.error('SSE parse error:', err);
+      console.error('refresh fetch failed:', err);
+      if (refreshStatus) refreshStatus.textContent = 'Refresh failed; retrying…';
     }
-  };
+  }
 
-  es.onerror = (err) => {
-    console.error('SSE error:', err);
-    // Browser auto-reconnects, but log the error
-  };
+  function restartAutoRefreshTimer() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+
+    const enabled = !refreshToggle || refreshToggle.checked;
+    if (!enabled) {
+      if (refreshStatus) refreshStatus.textContent = 'Auto refresh paused';
+      return;
+    }
+
+    const sec = Number(refreshIntervalSelect?.value || 5);
+    refreshTimer = setInterval(fetchSnapshot, Math.max(1, sec) * 1000);
+  }
+
+  if (es) {
+    es.onopen = () => {
+      console.log('SSE connected');
+      if (refreshStatus) refreshStatus.textContent = 'Live updates connected';
+    };
+
+    es.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        console.log('SSE message:', d);
+        
+        // A snapshot has taskId, status, and files array (complete task state)
+        // A delta has type and maybe fileId (partial update)
+        const isSnapshot = d && (d.taskId || (Array.isArray(d.files) && d.status !== undefined));
+        
+        if (isSnapshot) {
+          handleSnapshot(d);
+        } else {
+          handleDelta(d);
+        }
+      } catch (err) {
+        console.error('SSE parse error:', err);
+      }
+    };
+
+    es.onerror = (err) => {
+      console.error('SSE error:', err);
+      if (refreshStatus) refreshStatus.textContent = 'Live stream reconnecting…';
+    };
+  } else if (refreshStatus) {
+    refreshStatus.textContent = 'Polling refresh active';
+  }
+
+  if (refreshToggle) {
+    refreshToggle.addEventListener('change', restartAutoRefreshTimer);
+  }
+  if (refreshIntervalSelect) {
+    refreshIntervalSelect.addEventListener('change', restartAutoRefreshTimer);
+  }
+  if (refreshNowBtn) {
+    refreshNowBtn.addEventListener('click', fetchSnapshot);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    } else {
+      restartAutoRefreshTimer();
+      fetchSnapshot();
+    }
+  });
+  restartAutoRefreshTimer();
+  if (initialTask && typeof initialTask === 'object') {
+    handleSnapshot(initialTask);
+  }
 
   // Select all / Clear all + master checkbox wiring
   if (isSelectMode) {

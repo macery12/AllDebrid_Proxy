@@ -648,6 +648,15 @@ def task_view(task_id):
     return render_template("task.html", task_id=task_id, t=t, mode=mode, 
                          sse_token=sse_token)
 
+@app.get("/tasks/<task_id>/data")
+@admin_required
+def task_data(task_id):
+    """Get task snapshot data for client-side refresh without exposing worker key."""
+    t, err = get_task(task_id)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(t)
+
 @app.post("/tasks/<task_id>/select")
 @admin_required
 def task_select(task_id):
