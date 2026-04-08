@@ -206,7 +206,7 @@ async def upload_file_task(request: Request):
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     if not isinstance(file, UploadFile):
-        raise HTTPException(status_code=400, detail="Invalid file payload")
+        raise HTTPException(status_code=400, detail="File must be uploaded as multipart/form-data")
     
     # Sanitize filename first
     original_filename = file.filename
