@@ -220,6 +220,7 @@ def _progress_monitor_loop():
                             publish(f.task_id, {
                                 "type": EventType.FILE_PROGRESS,
                                 "fileId": f.id,
+                                "state": f.state,
                                 "bytesDownloaded": cur,
                                 "total": total,
                                 "progressPct": f.progress_pct,
@@ -255,6 +256,7 @@ def _progress_monitor_loop():
                         publish(f.task_id, {
                             "type": EventType.FILE_PROGRESS,
                             "fileId": f.id,
+                            "state": f.state,
                             "bytesDownloaded": cur,
                             "total": total,
                             "progressPct": f.progress_pct,
@@ -294,7 +296,13 @@ def _progress_monitor_loop():
                             publish(f.task_id, {
                                 "type": EventType.FILE_DONE,
                                 "fileId": f.id,
-                                "localPath": f.local_path
+                                "state": f.state,
+                                "localPath": f.local_path,
+                                "bytesDownloaded": f.bytes_downloaded or cur,
+                                "total": total,
+                                "progressPct": f.progress_pct,
+                                "speedBps": f.speed_bps,
+                                "etaSeconds": f.eta_seconds
                             })
                             _log(f.task_id, LogLevel.INFO, "file_done", fileId=f.id, path=f.local_path)
                     else:
@@ -530,7 +538,7 @@ def start_next_files(session, task: Task, client):
         except Exception as e:
             f.state = FileState.FAILED
             session.commit()
-            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "reason": f"unlock_failed: {e}"})
+            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "state": f.state, "reason": f"unlock_failed: {e}"})
             _log(task.id, LogLevel.ERROR, "unlock_failed", fileId=f.id, index=f.index, err=str(e), tb=traceback.format_exc())
             continue
 
@@ -556,13 +564,13 @@ def start_next_files(session, task: Task, client):
             f.state = FileState.FAILED
             session.commit()
             reason = f"enqueue_failed_http: {e.code} {e.reason}"
-            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "reason": reason})
+            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "state": f.state, "reason": reason})
             _log(task.id, LogLevel.ERROR, "enqueue_failed_http", fileId=f.id, code=e.code, reason=e.reason, url=os.getenv("ARIA2_RPC_URL"))
             continue
         except Exception as e:
             f.state = FileState.FAILED
             session.commit()
-            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "reason": f"enqueue_failed: {e}"})
+            publish(task.id, {"type": EventType.FILE_FAILED, "fileId": f.id, "state": f.state, "reason": f"enqueue_failed: {e}"})
             _log(task.id, LogLevel.ERROR, "enqueue_failed", fileId=f.id, err=str(e), tb=traceback.format_exc(), url=os.getenv("ARIA2_RPC_URL"))
             continue
 
