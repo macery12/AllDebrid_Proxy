@@ -118,8 +118,8 @@ class Limits:
     # Default task list limit
     DEFAULT_TASK_LIMIT = 100
     
-    # Maximum request body size (100MB)
-    MAX_REQUEST_SIZE = 100 * 1024 * 1024
+    # Maximum request body size (10GB)
+    MAX_REQUEST_SIZE = 10 * 1024 * 1024 * 1024
     
     # Rate limit: requests per minute
     RATE_LIMIT_PER_MINUTE = 60
