@@ -19,6 +19,8 @@ from app.validation import validate_torrent_file_data
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
 MAX_LABEL_LENGTH = 500     # Maximum length for task label
+UPLOAD_MULTIPART_OVERHEAD_BYTES = 2 * 1024 * 1024  # Multipart boundary/header overhead buffer
+UPLOAD_REQUEST_TIMEOUT = (10, 1800)  # (connect timeout, read timeout)
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 log = logging.getLogger("ad-frontend-v1")
@@ -464,7 +466,7 @@ def upload_file():
     if label and len(label) > MAX_LABEL_LENGTH:
         return upload_error(f"Label is too long (max {MAX_LABEL_LENGTH} characters)")
 
-    if request.content_length and request.content_length > (Limits.MAX_UPLOAD_FILE_SIZE + 2 * 1024 * 1024):
+    if request.content_length and request.content_length > (Limits.MAX_UPLOAD_FILE_SIZE + UPLOAD_MULTIPART_OVERHEAD_BYTES):
         return upload_error(
             f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024 * 1024 * 1024)}GB)",
             status_code=413
@@ -484,7 +486,7 @@ def upload_file():
     
     try:
         # Use requests to upload file with streaming to handle large files
-        r = requests.post(url, headers=headers, files=files, data=data, timeout=(10, 1800))
+        r = requests.post(url, headers=headers, files=files, data=data, timeout=UPLOAD_REQUEST_TIMEOUT)
         
         log.info(f"← WORKER {r.status_code} {url}")
         
@@ -524,7 +526,7 @@ def upload_file():
         return upload_error("Upload timed out - file may be too large or connection is slow", status_code=504)
     except Exception as e:
         log.error(f"Upload failed: {e}")
-        return upload_error(f"Upload failed: {str(e)}", status_code=500)
+        return upload_error("Upload failed: unexpected server error", status_code=500)
 
 @app.get("/admin")
 @admin_required

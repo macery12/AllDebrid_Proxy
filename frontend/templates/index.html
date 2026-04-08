@@ -757,7 +757,7 @@ function formatNum(num) {
 }
 
 function formatDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
   if (seconds < 60) return `${Math.round(seconds)}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
@@ -873,6 +873,7 @@ document.getElementById('torrent-files').addEventListener('change', function(e) 
   const hint = document.getElementById('file-hint');
   const countSpan = document.getElementById('file-count');
   const uploadText = document.getElementById('torrent-upload-text');
+  if (!hint || !countSpan || !uploadText) return;
   
   if (count > 0) {
     countSpan.textContent = count;
@@ -895,6 +896,7 @@ document.getElementById('direct-upload-file').addEventListener('change', functio
   const nameSpan = document.getElementById('upload-file-name');
   const sizeSpan = document.getElementById('upload-file-size');
   const uploadText = document.getElementById('upload-file-text');
+  if (!hint || !nameSpan || !sizeSpan || !uploadText) return;
   
   if (file) {
     nameSpan.textContent = file.name;
@@ -964,14 +966,14 @@ document.getElementById('direct-upload-form').addEventListener('submit', functio
   xhr.upload.onprogress = function(event) {
     if (!event.lengthComputable) return;
     const pct = Math.max(0, Math.min(100, (event.loaded / event.total) * 100));
-    const elapsedSec = Math.max((Date.now() - startedAt) / 1000, 0.1);
-    const speed = event.loaded / elapsedSec;
+    const elapsedSec = (Date.now() - startedAt) / 1000;
+    const speed = event.loaded / Math.max(elapsedSec, 1);
     const remaining = Math.max(event.total - event.loaded, 0);
-    const eta = speed > 0 ? remaining / speed : NaN;
+    const eta = (elapsedSec >= 1 && speed > 0 && remaining > 0) ? (remaining / speed) : NaN;
 
     progressFill.style.width = `${pct.toFixed(1)}%`;
     percentText.textContent = `${pct.toFixed(1)}%`;
-    speedText.textContent = `Speed: ${formatBytes(speed)}/s`;
+    speedText.textContent = elapsedSec >= 1 ? `Speed: ${formatBytes(speed)}/s` : 'Speed: calculating...';
     etaText.textContent = `ETA: ${formatDuration(eta)}`;
   };
 
