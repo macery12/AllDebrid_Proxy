@@ -1,5 +1,5 @@
 import uuid, json, os, time, shutil, redis, asyncio, hashlib
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, Request
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from app.auth import verify_worker_key, verify_sse_access
@@ -13,6 +13,7 @@ from app.constants import TaskStatus, FileState, EventType, Limits, SourceType
 from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int, validate_file_name
 from app.exceptions import ValidationError, ResourceNotFoundError
 from starlette.responses import StreamingResponse
+from starlette.datastructures import UploadFile
 import redis.asyncio as aioredis
 
 
