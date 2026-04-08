@@ -6,17 +6,24 @@
 /* Professional Clean Design */
 .container {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 340px minmax(0, 1fr) 320px;
   gap: 32px;
-  max-width: 1400px;
+  max-width: 1700px;
   margin: 0 auto;
   padding: 32px 24px;
   align-items: start;
 }
 
+/* Left Upload Column */
+.upload-column {
+  min-width: 0;
+}
+
 /* Main Content Area */
 .main-content {
   min-width: 0;
+  max-width: 920px;
+  justify-self: center;
 }
 
 .page-title {
@@ -441,13 +448,30 @@
 }
 
 /* Responsive */
+@media (max-width: 1360px) {
+  .container {
+    grid-template-columns: 300px minmax(0, 1fr) 280px;
+    gap: 24px;
+  }
+}
+
 @media (max-width: 1024px) {
   .container {
     grid-template-columns: 1fr;
   }
-  
+
+  .main-content {
+    max-width: none;
+    justify-self: stretch;
+    order: 1;
+  }
+
+  .upload-column {
+    order: 2;
+  }
+
   .sidebar {
-    order: -1;
+    order: 3;
   }
   
   .sidebar-section {
@@ -486,6 +510,69 @@
 </div>
 
 <div class="container">
+  <!-- Left Upload Column -->
+  <div class="upload-column">
+    <div class="form-card">
+      <h2 class="section-title">Upload a File (Admin)</h2>
+      <p class="section-description">Upload your own file to instantly create a completed, shareable task.</p>
+      <form id="direct-upload-form" method="post" action="{{ url_for('upload_file') }}" enctype="multipart/form-data">
+        <div class="form-section">
+          <label class="form-label">File to Upload</label>
+          <div class="upload-area" onclick="document.getElementById('direct-upload-file').click()">
+            <div class="upload-icon">⬆️</div>
+            <div class="upload-text" id="upload-file-text">Click to select file to upload</div>
+            <div class="upload-subtext">Maximum 10GB • Uploads are processed immediately</div>
+            <input 
+              type="file" 
+              id="direct-upload-file"
+              name="upload_file"
+            />
+          </div>
+          <small class="form-hint" id="upload-file-hint" style="display: none;">
+            <span id="upload-file-name">No file</span> (<span id="upload-file-size">0</span>)
+          </small>
+        </div>
+
+        <div class="form-section">
+          <label for="upload-label" class="form-label">Upload Label (Optional)</label>
+          <input
+            type="text"
+            id="upload-label"
+            name="upload_label"
+            class="form-input"
+            placeholder="e.g., Shared archive, Build artifact"
+          />
+          <small class="form-hint">Used as the task title for this uploaded file.</small>
+        </div>
+
+        <div id="upload-progress" class="upload-progress-card" style="display:none;">
+          <div class="upload-progress-header">
+            <span id="upload-status-text">Preparing upload...</span>
+            <span id="upload-percent-text">0%</span>
+          </div>
+          <div class="progress-bar"><div id="upload-progress-fill" class="progress-fill" style="width:0%;"></div></div>
+          <div class="progress-text">
+            <span id="upload-speed">Speed: —</span>
+            <span id="upload-eta">ETA: —</span>
+          </div>
+        </div>
+
+        <div id="upload-feedback" class="form-hint" style="margin-top: 8px;"></div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="upload-submit-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Upload File
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Main Content -->
   <div class="main-content">
     <h1 class="page-title">Dashboard</h1>
@@ -565,66 +652,6 @@
           Existing matching magnets and links are reused automatically to avoid duplicate downloads.
         </p>
       </div>
-    </div>
-
-    <div class="form-card">
-      <h2 class="section-title">Upload a File (Admin)</h2>
-      <p class="section-description">Upload your own file to instantly create a completed, shareable task.</p>
-      <form id="direct-upload-form" method="post" action="{{ url_for('upload_file') }}" enctype="multipart/form-data">
-        <div class="form-section">
-          <label class="form-label">File to Upload</label>
-          <div class="upload-area" onclick="document.getElementById('direct-upload-file').click()">
-            <div class="upload-icon">⬆️</div>
-            <div class="upload-text" id="upload-file-text">Click to select file to upload</div>
-            <div class="upload-subtext">Maximum 10GB • Uploads are processed immediately</div>
-            <input 
-              type="file" 
-              id="direct-upload-file"
-              name="upload_file"
-            />
-          </div>
-          <small class="form-hint" id="upload-file-hint" style="display: none;">
-            <span id="upload-file-name">No file</span> (<span id="upload-file-size">0</span>)
-          </small>
-        </div>
-
-        <div class="form-section">
-          <label for="upload-label" class="form-label">Upload Label (Optional)</label>
-          <input
-            type="text"
-            id="upload-label"
-            name="upload_label"
-            class="form-input"
-            placeholder="e.g., Shared archive, Build artifact"
-          />
-          <small class="form-hint">Used as the task title for this uploaded file.</small>
-        </div>
-
-        <div id="upload-progress" class="upload-progress-card" style="display:none;">
-          <div class="upload-progress-header">
-            <span id="upload-status-text">Preparing upload...</span>
-            <span id="upload-percent-text">0%</span>
-          </div>
-          <div class="progress-bar"><div id="upload-progress-fill" class="progress-fill" style="width:0%;"></div></div>
-          <div class="progress-text">
-            <span id="upload-speed">Speed: —</span>
-            <span id="upload-eta">ETA: —</span>
-          </div>
-        </div>
-
-        <div id="upload-feedback" class="form-hint" style="margin-top: 8px;"></div>
-
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="upload-submit-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Upload File
-          </button>
-        </div>
-      </form>
     </div>
   </div>
 
