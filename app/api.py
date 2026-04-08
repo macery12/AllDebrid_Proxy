@@ -163,20 +163,25 @@ async def upload_file_task(request: Request):
     max_upload_request_bytes = Limits.MAX_UPLOAD_FILE_SIZE + (2 * 1024 * 1024)
 
     content_length = request.headers.get("content-length")
+    parsed_content_length = None
     if content_length:
         try:
-            if int(content_length) > max_upload_request_bytes:
+            parsed_content_length = int(content_length)
+            if parsed_content_length > max_upload_request_bytes:
                 raise HTTPException(
                     status_code=413,
                     detail=f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024*1024*1024)}GB)"
                 )
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header")
 
     try:
         form = await request.form(max_part_size=max_upload_request_bytes)
     except TypeError:
-        # Backward compatibility for Starlette versions without max_part_size support
+        # Backward compatibility for Starlette versions without max_part_size support.
+        # Enforce content-length bound in this path so uploads still respect the 10GB policy.
+        if parsed_content_length is None:
+            raise HTTPException(status_code=411, detail="Content-Length header is required for uploads")
         form = await request.form()
 
     file = form.get("file")
@@ -242,8 +247,22 @@ async def upload_file_task(request: Request):
     temp_file_path = file_path + ".tmp"
     
     try:
+        first_chunk = await file.read(chunk_size)
+        if not first_chunk:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
         # Stream file to disk with size validation
         with open(temp_file_path, 'wb') as f:
+            file_size += len(first_chunk)
+            if file_size > Limits.MAX_UPLOAD_FILE_SIZE:
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024*1024*1024)}GB)"
+                )
+            f.write(first_chunk)
+
             while True:
                 chunk = await file.read(chunk_size)
                 if not chunk:
@@ -262,12 +281,7 @@ async def upload_file_task(request: Request):
                 
                 f.write(chunk)
 
-        if file_size == 0:
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-            raise HTTPException(status_code=400, detail="Uploaded file is empty")
-        
-        # Rename temp file to final name
+        # Use atomic replacement so finalize step is safe across platforms.
         os.replace(temp_file_path, file_path)
         
     except HTTPException:

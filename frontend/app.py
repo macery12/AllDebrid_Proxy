@@ -507,11 +507,11 @@ def upload_file():
         try:
             body = r.json()
         except Exception:
-            return upload_error("Upload succeeded but response was invalid", status_code=502)
+            return upload_error("Upload completed but server response was invalid", status_code=502)
         
         task_id = body.get("taskId") or body.get("id")
         if not task_id:
-            return upload_error("Upload succeeded but no task ID returned", status_code=502)
+            return upload_error("Upload completed but no task ID was returned", status_code=502)
         
         # Show success message
         filename = body.get("filename", file.filename)
