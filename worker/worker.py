@@ -1,5 +1,6 @@
 
 import os, time, uuid, threading, logging, traceback, urllib.error, json
+from datetime import datetime, timezone
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
@@ -86,6 +87,9 @@ def get_client():
 
 # -------------------- Filesystem-based progress monitor --------------------
 _monitor_started = False
+MIN_SPEED_WINDOW_SEC = 0.2
+EMA_WEIGHT_PREV = 0.65
+EMA_WEIGHT_CURRENT = 0.35
 
 def _start_monitor_once():
     """Start the progress monitor thread if not already started"""
@@ -120,25 +124,67 @@ def _progress_monitor_loop():
                     size_path = out_path if os.path.exists(out_path) else tmp_path
                     cur = os.path.getsize(size_path) if os.path.exists(size_path) else 0
                     total = f.size_bytes or 0
+                    prev_bytes = f.bytes_downloaded or 0
+                    prev_speed = f.speed_bps or 0
+                    now_dt = datetime.now(timezone.utc)
+                    elapsed = None
+                    if f.last_progress_at:
+                        try:
+                            elapsed = max((now_dt - f.last_progress_at).total_seconds(), 0)
+                        except Exception:
+                            elapsed = None
 
-                    if cur != (f.bytes_downloaded or 0):
+                    if cur != prev_bytes:
+                        delta_bytes = max(cur - prev_bytes, 0)
+                        inst_speed = 0
+                        if elapsed and elapsed > MIN_SPEED_WINDOW_SEC and delta_bytes > 0:
+                            inst_speed = int(delta_bytes / elapsed)
+                        smoothed_speed = prev_speed
+                        if inst_speed > 0:
+                            smoothed_speed = int(
+                                (prev_speed * EMA_WEIGHT_PREV) + (inst_speed * EMA_WEIGHT_CURRENT)
+                            ) if prev_speed > 0 else inst_speed
+
                         f.bytes_downloaded = cur
+                        f.progress_pct = int((cur / total) * 100) if total > 0 else 0
+                        if f.progress_pct > 100:
+                            f.progress_pct = 100
+                        f.speed_bps = max(smoothed_speed, 0)
+                        if total > 0 and cur < total and f.speed_bps > 0:
+                            f.eta_seconds = int((total - cur) / f.speed_bps)
+                        else:
+                            f.eta_seconds = None
+                        f.last_progress_at = now_dt
                         s.commit()
                         publish(f.task_id, {
                             "type": EventType.FILE_PROGRESS,
                             "fileId": f.id,
                             "bytesDownloaded": cur,
-                            "total": total
+                            "total": total,
+                            "progressPct": f.progress_pct,
+                            "speedBps": f.speed_bps,
+                            "etaSeconds": f.eta_seconds
                         })
                         if DEBUG:
                             _log(f.task_id, LogLevel.DEBUG, "file_progress", 
-                                 fileId=f.id, downloaded=cur, total=total, path=size_path)
+                                 fileId=f.id, downloaded=cur, total=total, speed=f.speed_bps,
+                                 eta=f.eta_seconds, path=size_path)
+                    elif elapsed and elapsed > (Limits.PROGRESS_MONITOR_INTERVAL * 3) and prev_speed > 0:
+                        # If progress stalls, decay transfer metrics to reflect no active transfer.
+                        f.speed_bps = 0
+                        f.eta_seconds = None
+                        f.last_progress_at = now_dt
+                        s.commit()
 
                     # done = final file exists AND aria2 control file does NOT exist AND (unknown size OR size >= expected)
                     if os.path.exists(out_path) and not os.path.exists(tmp_path) and ((total == 0) or (cur >= total)):
                         if f.state != FileState.DONE:
                             f.state = FileState.DONE
                             f.local_path = out_path
+                            f.progress_pct = 100 if total > 0 else f.progress_pct
+                            f.speed_bps = 0
+                            f.eta_seconds = 0
+                            f.last_progress_at = now_dt
                             
                             # Update user stats when file completes
                             task = s.get(Task, f.task_id)
@@ -395,6 +441,10 @@ def start_next_files(session, task: Task, client):
         # 2) Flip to downloading BEFORE enqueue
         f.unlocked_url = url
         f.state = FileState.DOWNLOADING
+        f.speed_bps = 0
+        f.eta_seconds = None
+        f.progress_pct = 0
+        f.last_progress_at = datetime.now(timezone.utc)
         session.commit()
         publish(task.id, {"type": EventType.FILE_STATE, "fileId": f.id, "state": FileState.DOWNLOADING})
         if DEBUG:

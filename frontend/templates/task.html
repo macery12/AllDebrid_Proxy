@@ -167,7 +167,7 @@
   color: var(--muted);
 }
 .progress-wrap {
-  min-width: 220px;
+  min-width: 260px;
 }
 .progress-bar {
   width: 100%;
@@ -185,12 +185,16 @@
   transition: width 0.25s ease;
 }
 .progress-metrics {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  flex-wrap: wrap;
   font-size: 12px;
   color: var(--muted);
+}
+.progress-metrics span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -311,7 +315,7 @@
             {% endif %}
             <th>File Name</th>
             <th style="width: 140px; text-align: right;">Size</th>
-            <th style="width: 300px;">Progress</th>
+            <th style="width: 360px;">Progress</th>
             <th style="width: 140px;">State</th>
           </tr>
         </thead>
@@ -328,6 +332,8 @@
             {% for f in t.files %}
               {% set size_bytes = f.size or f.totalSize or f.fileSize or f.bytes or 0 %}
               {% set downloaded_bytes = f.bytesDownloaded or 0 %}
+              {% set speed_bps = f.speedBps or 0 %}
+              {% set eta_seconds = f.etaSeconds %}
               {% set progress_pct = ((downloaded_bytes * 100 / size_bytes)|round|int) if size_bytes > 0 else 0 %}
               {% if progress_pct < 0 %}{% set progress_pct = 0 %}{% endif %}
               {% if progress_pct > 100 %}{% set progress_pct = 100 %}{% endif %}
@@ -353,8 +359,8 @@
                     </div>
                     <div class="progress-metrics">
                       <span class="metric-transfer">{{ downloaded_bytes|hbytes }} / {{ size_bytes|hbytes }}</span>
-                      <span class="metric-rate">—/s</span>
-                      <span class="metric-eta">ETA —</span>
+                      <span class="metric-rate">{{ speed_bps|hbytes ~ '/s' if speed_bps > 0 else '—/s' }}</span>
+                      <span class="metric-eta">{{ 'ETA ' ~ eta_seconds ~ 's' if eta_seconds is not none and eta_seconds > 0 else 'ETA —' }}</span>
                     </div>
                   </div>
                 </td>
@@ -448,7 +454,7 @@
   const refreshNowBtn = document.getElementById('refreshNowBtn');
   const refreshStatus = document.getElementById('refreshStatus');
   const isSelectMode = new URLSearchParams(location.search).get('mode') === 'select';
-  const MIN_REFRESH_INTERVAL_SEC = 1;
+  const MIN_REFRESH_INTERVAL_SEC = 3;
   // Minimum sampling window and EMA weights keep speed/ETA stable between rapid SSE updates.
   const MIN_SPEED_CALC_WINDOW_SEC = 0.2;
   const EMA_WEIGHT_PREV = 0.6;
@@ -457,6 +463,7 @@
   const transferMap = new Map();
   let refreshTimer = null;
   let currentTaskStatus = initialStatus || '';
+  let fallbackPollingActive = !canUseSSE;
 
   function statusClass(text) {
     const s = (text || '').toLowerCase();
@@ -576,7 +583,7 @@
     const prev = transferMap.get(id) || { lastBytes: downloaded, lastTs: now, speedBps: 0 };
     let speedBps = Number(merged.speedBps || merged.downloadSpeedBps || prev.speedBps || 0);
 
-    if (now >= prev.lastTs && downloaded >= prev.lastBytes) {
+    if (speedBps <= 0 && now > prev.lastTs && downloaded >= prev.lastBytes) {
       const deltaBytes = downloaded - prev.lastBytes;
       const deltaSec = (now - prev.lastTs) / 1000;
       // Ignore very small update windows to reduce noisy/unstable speed calculations.
@@ -594,7 +601,10 @@
       speedBps = 0;
     }
     transferMap.set(id, { lastBytes: downloaded, lastTs: now, speedBps });
-    const etaSec = speedBps > 0 ? (remaining / speedBps) : null;
+    const serverEta = Number(merged.etaSeconds);
+    const etaSec = Number.isFinite(serverEta) && serverEta >= 0
+      ? serverEta
+      : (speedBps > 0 ? (remaining / speedBps) : null);
 
     if (sizeCell) {
       sizeCell.textContent = formatBytes(sizeBytes);
@@ -712,6 +722,10 @@
       return;
     }
 
+    if (!fallbackPollingActive) {
+      return;
+    }
+
     const sec = Number(refreshIntervalSelect?.value || 5);
     refreshTimer = setInterval(reloadPage, Math.max(MIN_REFRESH_INTERVAL_SEC, sec) * 1000);
   }
@@ -719,6 +733,11 @@
   if (es) {
     es.onopen = () => {
       console.log('SSE connected');
+      fallbackPollingActive = false;
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
       if (refreshStatus) refreshStatus.textContent = 'Live updates connected';
     };
 
@@ -743,7 +762,9 @@
 
     es.onerror = (err) => {
       console.error('SSE error:', err);
-      if (refreshStatus) refreshStatus.textContent = 'Live stream reconnecting…';
+      fallbackPollingActive = true;
+      restartAutoRefreshTimer();
+      if (refreshStatus) refreshStatus.textContent = 'SSE unstable, fallback refresh active';
     };
   } else if (refreshStatus) {
     refreshStatus.textContent = 'Polling refresh active';

@@ -37,7 +37,8 @@ def task_to_response(task: Task, session) -> TaskResponse:
     files = session.execute(select(TaskFile).where(TaskFile.task_id == task.id).order_by(TaskFile.index)).scalars().all()
     fitems = [FileItem(
         fileId=f.id, index=f.index, name=f.name, size=f.size_bytes, state=f.state,
-        bytesDownloaded=f.bytes_downloaded, localPath=f.local_path
+        bytesDownloaded=f.bytes_downloaded, speedBps=f.speed_bps or 0,
+        etaSeconds=f.eta_seconds, progressPct=f.progress_pct or 0, localPath=f.local_path
     ) for f in files]
 
     # Basic storage info
@@ -852,6 +853,8 @@ def get_system_stats():
                 "size_bytes": size,
                 "downloaded_bytes": downloaded,
                 "progress_pct": progress,
+                "speed_bps": f.speed_bps or 0,
+                "eta_seconds": f.eta_seconds,
             })
     
     return {
@@ -897,5 +900,4 @@ def get_system_stats():
             "worker_healthy": worker_healthy,
         }
     }
-
 
