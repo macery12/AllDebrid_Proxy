@@ -92,6 +92,47 @@ EMA_WEIGHT_PREV = 0.65
 EMA_WEIGHT_CURRENT = 0.35
 STALL_DETECTION_MULTIPLIER = 3
 
+def _collect_aria2_metrics_by_path() -> dict[str, dict]:
+    """
+    Fetch active/waiting aria2 transfer metrics keyed by resolved local file path.
+    """
+    if not get_aria2:
+        return {}
+
+    try:
+        rpc = get_aria2()
+        keys = ["status", "completedLength", "totalLength", "downloadSpeed", "files"]
+        entries = []
+        entries.extend(rpc.tellActive(keys) or [])
+        entries.extend(rpc.tellWaiting(0, 1000, keys) or [])
+
+        by_path: dict[str, dict] = {}
+        for item in entries:
+            completed = int(item.get("completedLength") or 0)
+            total = int(item.get("totalLength") or 0)
+            speed = int(item.get("downloadSpeed") or 0)
+            status = item.get("status") or ""
+
+            for file_item in (item.get("files") or []):
+                path = file_item.get("path")
+                if not path:
+                    continue
+                rp = os.path.realpath(path)
+                payload = {
+                    "completed": max(completed, 0),
+                    "total": max(total, 0),
+                    "speed": max(speed, 0),
+                    "status": status,
+                }
+                by_path[rp] = payload
+                if rp.endswith(".aria2"):
+                    by_path[rp[:-6]] = payload
+        return by_path
+    except Exception as e:
+        if DEBUG:
+            _log("", LogLevel.WARNING, "aria2_metrics_fetch_failed", err=str(e))
+        return {}
+
 def _start_monitor_once():
     """Start the progress monitor thread if not already started"""
     global _monitor_started
@@ -109,6 +150,7 @@ def _progress_monitor_loop():
     while True:
         try:
             with SessionLocal() as s:
+                aria2_metrics = _collect_aria2_metrics_by_path()
                 q = select(TaskFile).where(TaskFile.state == FileState.DOWNLOADING)
                 files = s.execute(q).scalars().all()
                 for f in files:
@@ -122,11 +164,24 @@ def _progress_monitor_loop():
                     
                     out_path = os.path.join(settings.STORAGE_ROOT, f.task_id, "files", f.name)
                     tmp_path = f"{out_path}.aria2"
+                    rp_out = os.path.realpath(out_path)
+                    rp_tmp = os.path.realpath(tmp_path)
+                    aria2 = aria2_metrics.get(rp_out) or aria2_metrics.get(rp_tmp)
                     size_path = out_path if os.path.exists(out_path) else tmp_path
-                    cur = os.path.getsize(size_path) if os.path.exists(size_path) else 0
                     total = f.size_bytes or 0
+                    cur = 0
+                    aria2_speed = None
+                    if aria2:
+                        cur = aria2.get("completed", 0)
+                        total = aria2.get("total", 0) or total
+                        aria2_speed = aria2.get("speed", 0)
+                    else:
+                        cur = os.path.getsize(size_path) if os.path.exists(size_path) else 0
+
                     prev_bytes = f.bytes_downloaded or 0
                     prev_speed = f.speed_bps or 0
+                    prev_eta = f.eta_seconds
+                    prev_progress = f.progress_pct or 0
                     now_dt = datetime.now(timezone.utc)
                     elapsed = None
                     if f.last_progress_at:
@@ -135,7 +190,47 @@ def _progress_monitor_loop():
                         except Exception:
                             elapsed = None
 
-                    if cur != prev_bytes:
+                    if aria2_speed is not None:
+                        progress_pct = int((cur / total) * 100) if total > 0 else 0
+                        if progress_pct > 100:
+                            progress_pct = 100
+                        if progress_pct < 0:
+                            progress_pct = 0
+                        if total > 0 and cur < total and aria2_speed > 0:
+                            eta_seconds = int((total - cur) / aria2_speed)
+                        elif total > 0 and cur >= total:
+                            eta_seconds = 0
+                        else:
+                            eta_seconds = None
+
+                        changed = (
+                            cur != prev_bytes
+                            or int(aria2_speed) != prev_speed
+                            or eta_seconds != prev_eta
+                            or progress_pct != prev_progress
+                        )
+
+                        if changed:
+                            f.bytes_downloaded = cur
+                            f.progress_pct = progress_pct
+                            f.speed_bps = max(int(aria2_speed), 0)
+                            f.eta_seconds = eta_seconds
+                            f.last_progress_at = now_dt
+                            s.commit()
+                            publish(f.task_id, {
+                                "type": EventType.FILE_PROGRESS,
+                                "fileId": f.id,
+                                "bytesDownloaded": cur,
+                                "total": total,
+                                "progressPct": f.progress_pct,
+                                "speedBps": f.speed_bps,
+                                "etaSeconds": f.eta_seconds
+                            })
+                            if DEBUG:
+                                _log(f.task_id, LogLevel.DEBUG, "file_progress_aria2",
+                                     fileId=f.id, downloaded=cur, total=total, speed=f.speed_bps,
+                                     eta=f.eta_seconds, path=size_path, aria2_status=aria2.get("status"))
+                    elif cur != prev_bytes:
                         delta_bytes = max(cur - prev_bytes, 0)
                         inst_speed = 0.0
                         if elapsed and elapsed > MIN_SPEED_WINDOW_SEC and delta_bytes > 0:
