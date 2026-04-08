@@ -6,24 +6,25 @@
 /* Professional Clean Design */
 .container {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr) 320px;
-  gap: 32px;
-  max-width: 1700px;
+  grid-template-columns: minmax(250px, 290px) minmax(0, 1fr) minmax(230px, 280px);
+  gap: 40px;
+  max-width: 1920px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 36px 36px;
   align-items: start;
 }
 
 /* Left Upload Column */
 .upload-column {
   min-width: 0;
+  max-width: 290px;
 }
 
 /* Main Content Area */
 .main-content {
   min-width: 0;
-  max-width: 920px;
-  justify-self: center;
+  max-width: none;
+  justify-self: stretch;
 }
 
 .page-title {
@@ -58,12 +59,12 @@
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 32px;
+  padding: 36px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .form-section {
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }
 
 .form-section:last-child {
@@ -83,7 +84,7 @@
 .form-textarea,
 .form-select {
   width: 100%;
-  padding: 12px 16px;
+  padding: 13px 16px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -120,7 +121,7 @@
 .upload-area {
   border: 2px dashed var(--border);
   border-radius: 8px;
-  padding: 20px;
+  padding: 24px;
   text-align: center;
   background: var(--bg-secondary);
   cursor: pointer;
@@ -271,6 +272,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  max-width: 280px;
 }
 
 .sidebar-section {
@@ -448,16 +450,18 @@
 }
 
 /* Responsive */
-@media (max-width: 1360px) {
+@media (max-width: 1540px) {
   .container {
-    grid-template-columns: 300px minmax(0, 1fr) 280px;
-    gap: 24px;
+    grid-template-columns: minmax(230px, 270px) minmax(0, 1fr) minmax(220px, 260px);
+    gap: 30px;
+    padding: 32px 24px;
   }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1180px) {
   .container {
     grid-template-columns: 1fr;
+    gap: 24px;
   }
 
   .main-content {
@@ -472,6 +476,11 @@
 
   .sidebar {
     order: 3;
+    max-width: none;
+  }
+
+  .upload-column {
+    max-width: none;
   }
   
   .sidebar-section {
