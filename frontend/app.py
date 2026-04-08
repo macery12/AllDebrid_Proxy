@@ -432,23 +432,43 @@ def create_task():
 @admin_required
 def upload_file():
     """Upload a file directly and create a task - admin only"""
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("Accept", "").lower()
+    )
+
+    def upload_error(message: str, status_code: int = 400):
+        if wants_json:
+            return jsonify({"ok": False, "message": message}), status_code
+        flash(message, "error")
+        return redirect(url_for("index"))
+
+    def upload_success(payload: dict):
+        if wants_json:
+            return jsonify({"ok": True, **payload}), 200
+        flash(payload["message"], "ok")
+        return redirect(url_for("task_view", task_id=payload["task_id"]))
+
     # Get uploaded file
     if 'upload_file' not in request.files:
-        flash("No file provided", "error")
-        return redirect(url_for("index"))
+        return upload_error("No file provided")
     
     file = request.files['upload_file']
     
     if not file or not file.filename:
-        flash("No file selected", "error")
-        return redirect(url_for("index"))
+        return upload_error("No file selected")
     
     # Get label
     label = request.form.get("upload_label", "").strip() or None
     
     if label and len(label) > MAX_LABEL_LENGTH:
-        flash(f"Label is too long (max {MAX_LABEL_LENGTH} characters)", "error")
-        return redirect(url_for("index"))
+        return upload_error(f"Label is too long (max {MAX_LABEL_LENGTH} characters)")
+
+    if request.content_length and request.content_length > (Limits.MAX_UPLOAD_FILE_SIZE + 2 * 1024 * 1024):
+        return upload_error(
+            f"File too large (max {Limits.MAX_UPLOAD_FILE_SIZE // (1024 * 1024 * 1024)}GB)",
+            status_code=413
+        )
     
     # Prepare multipart form data
     files = {'file': (file.filename, file.stream, file.content_type)}
@@ -464,7 +484,7 @@ def upload_file():
     
     try:
         # Use requests to upload file with streaming to handle large files
-        r = requests.post(url, headers=headers, files=files, data=data, timeout=600)
+        r = requests.post(url, headers=headers, files=files, data=data, timeout=(10, 1800))
         
         log.info(f"← WORKER {r.status_code} {url}")
         
@@ -474,37 +494,37 @@ def upload_file():
                 msg = error_data.get("detail") or error_data.get("message") or r.text
             except Exception:
                 msg = r.text
-            flash(f"Upload failed: {msg}", "error")
-            return redirect(url_for("index"))
+            msg = (msg or "Upload failed").strip()
+            return upload_error(f"Upload failed: {msg}", status_code=r.status_code or 502)
         
         # Parse response
         try:
             body = r.json()
         except Exception:
-            flash("Upload succeeded but response was invalid", "warning")
-            return redirect(url_for("admin_page"))
+            return upload_error("Upload succeeded but response was invalid", status_code=502)
         
         task_id = body.get("taskId") or body.get("id")
         if not task_id:
-            flash("Upload succeeded but no task ID returned", "warning")
-            return redirect(url_for("admin_page"))
+            return upload_error("Upload succeeded but no task ID returned", status_code=502)
         
         # Show success message
         filename = body.get("filename", file.filename)
         size_bytes = body.get("size", 0)
         size_str = human_bytes(size_bytes) if size_bytes else "unknown size"
-        flash(f"✅ File uploaded successfully: {filename} ({size_str})", "ok")
-        
-        # Redirect to task view
-        return redirect(url_for("task_view", task_id=task_id))
+        message = f"✅ File uploaded successfully: {filename} ({size_str})"
+        return upload_success({
+            "task_id": task_id,
+            "filename": filename,
+            "size": size_bytes,
+            "message": message,
+            "redirect_url": url_for("task_view", task_id=task_id),
+        })
         
     except requests.exceptions.Timeout:
-        flash("Upload timed out - file may be too large or connection is slow", "error")
-        return redirect(url_for("index"))
+        return upload_error("Upload timed out - file may be too large or connection is slow", status_code=504)
     except Exception as e:
         log.error(f"Upload failed: {e}")
-        flash(f"Upload failed: {str(e)}", "error")
-        return redirect(url_for("index"))
+        return upload_error(f"Upload failed: {str(e)}", status_code=500)
 
 @app.get("/admin")
 @admin_required

@@ -10,7 +10,7 @@ from app.models import Task, TaskFile, UserStats
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
 from app.constants import TaskStatus, FileState, EventType, Limits, SourceType
-from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int
+from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int, validate_file_name
 from app.exceptions import ValidationError, ResourceNotFoundError
 from starlette.responses import StreamingResponse
 import redis.asyncio as aioredis
@@ -191,6 +191,12 @@ async def upload_file_task(
         # Use timestamp + extension to preserve file type
         safe_filename = f"uploaded_file_{int(time.time())}{safe_ext}"
     
+    # Validate sanitized filename
+    try:
+        safe_filename = validate_file_name(safe_filename)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # Validate file size by streaming to temporary file
     file_size = 0
     chunk_size = 1024 * 1024  # 1MB chunks
@@ -221,9 +227,14 @@ async def upload_file_task(
                     )
                 
                 f.write(chunk)
+
+        if file_size == 0:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
         
         # Rename temp file to final name
-        os.rename(temp_file_path, file_path)
+        os.replace(temp_file_path, file_path)
         
     except HTTPException:
         # Clean up on validation error
@@ -238,7 +249,9 @@ async def upload_file_task(
             os.remove(temp_file_path)
         if os.path.exists(base):
             shutil.rmtree(base)
-        raise HTTPException(status_code=400, detail=f"Failed to save file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    finally:
+        await file.close()
     
     # Validate label
     if label:
@@ -900,4 +913,3 @@ def get_system_stats():
             "worker_healthy": worker_healthy,
         }
     }
-

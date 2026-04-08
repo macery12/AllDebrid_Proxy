@@ -34,6 +34,18 @@
   line-height: 1.6;
 }
 
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.section-description {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 22px;
+}
+
 /* Task Creation Form */
 .form-card {
   background: var(--card);
@@ -218,6 +230,33 @@
   color: var(--muted);
   margin: 0;
   line-height: 1.6;
+}
+
+.upload-progress-card {
+  margin-top: 14px;
+  background: rgba(88, 166, 255, 0.06);
+  border: 1px solid rgba(88, 166, 255, 0.25);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.upload-progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.upload-feedback-success {
+  color: var(--accent-2);
+}
+
+.upload-feedback-error {
+  color: var(--danger);
+}
+
+.upload-feedback-info {
+  color: var(--muted);
 }
 
 /* Sidebar */
@@ -449,31 +488,29 @@
 <div class="container">
   <!-- Main Content -->
   <div class="main-content">
-    <h1 class="page-title">Create Download Task</h1>
-    <p class="page-description">Upload torrent files, paste magnet links, or add direct download URLs to start downloading.</p>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-description">Choose a download source or upload your own file with live progress feedback.</p>
 
     <div class="form-card">
-      <form method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
+      <h2 class="section-title">Start a Download Task</h2>
+      <p class="section-description">Use these source inputs to create AllDebrid download tasks.</p>
+      <form id="download-task-form" method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
         <div class="form-section">
-          <label for="source" class="form-label">Magnet Links or Direct URLs</label>
+          <label for="source" class="form-label">Magnet Links + Direct Download URLs</label>
           <textarea 
             id="source" 
             name="source" 
             class="form-textarea"
-            placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;Paste one link per line for multiple downloads"
+            placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;One source per line"
           ></textarea>
-          <small class="form-hint">Enter one or more magnet links or direct download URLs (one per line)</small>
-        </div>
-
-        <div class="divider">
-          <span>OR</span>
+          <small class="form-hint">Paste one or more magnet links or direct URLs.</small>
         </div>
 
         <div class="form-section">
-          <label class="form-label">Upload Torrent File(s)</label>
+          <label class="form-label">Torrent File Upload</label>
           <div class="upload-area" onclick="document.getElementById('torrent-files').click()">
             <div class="upload-icon">📁</div>
-            <div class="upload-text">Click to select .torrent file(s)</div>
+            <div class="upload-text" id="torrent-upload-text">Click to select .torrent file(s)</div>
             <div class="upload-subtext">Maximum 10MB per file • Multiple files supported</div>
             <input 
               type="file" 
@@ -488,28 +525,8 @@
           </small>
         </div>
 
-        <div class="divider">
-          <span>OR</span>
-        </div>
-
         <div class="form-section">
-          <label class="form-label">Upload Your Own File</label>
-          <div class="upload-area" onclick="document.getElementById('direct-upload-file').click()">
-            <div class="upload-icon">⬆️</div>
-            <div class="upload-text" id="upload-file-text">Click to select file to upload</div>
-            <div class="upload-subtext">Maximum 10GB • Admin only • File will be immediately available</div>
-            <input 
-              type="file" 
-              id="direct-upload-file"
-            />
-          </div>
-          <small class="form-hint" id="upload-file-hint" style="display: none;">
-            <span id="upload-file-name">No file</span> (<span id="upload-file-size">0</span>)
-          </small>
-        </div>
-
-        <div class="form-section">
-          <label for="label" class="form-label">Label (Optional)</label>
+          <label for="label" class="form-label">Task Label (Optional)</label>
           <input 
             type="text" 
             id="label" 
@@ -534,7 +551,7 @@
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Create Task
+            Start Download Task
           </button>
           <a href="{{ url_for('admin_page') }}" class="btn">
             View All Tasks
@@ -545,10 +562,69 @@
       <div class="info-note">
         <div class="info-note-title">Smart Task Reuse</div>
         <p class="info-note-text">
-          If you submit a magnet link or URL that's already been downloaded, the system will automatically 
-          reuse the existing files instead of downloading again, saving bandwidth and time.
+          Existing matching magnets and links are reused automatically to avoid duplicate downloads.
         </p>
       </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="section-title">Upload a File (Admin)</h2>
+      <p class="section-description">Upload your own file to instantly create a completed, shareable task.</p>
+      <form id="direct-upload-form" method="post" action="{{ url_for('upload_file') }}" enctype="multipart/form-data">
+        <div class="form-section">
+          <label class="form-label">File to Upload</label>
+          <div class="upload-area" onclick="document.getElementById('direct-upload-file').click()">
+            <div class="upload-icon">⬆️</div>
+            <div class="upload-text" id="upload-file-text">Click to select file to upload</div>
+            <div class="upload-subtext">Maximum 10GB • Uploads are processed immediately</div>
+            <input 
+              type="file" 
+              id="direct-upload-file"
+              name="upload_file"
+            />
+          </div>
+          <small class="form-hint" id="upload-file-hint" style="display: none;">
+            <span id="upload-file-name">No file</span> (<span id="upload-file-size">0</span>)
+          </small>
+        </div>
+
+        <div class="form-section">
+          <label for="upload-label" class="form-label">Upload Label (Optional)</label>
+          <input
+            type="text"
+            id="upload-label"
+            name="upload_label"
+            class="form-input"
+            placeholder="e.g., Shared archive, Build artifact"
+          />
+          <small class="form-hint">Used as the task title for this uploaded file.</small>
+        </div>
+
+        <div id="upload-progress" class="upload-progress-card" style="display:none;">
+          <div class="upload-progress-header">
+            <span id="upload-status-text">Preparing upload...</span>
+            <span id="upload-percent-text">0%</span>
+          </div>
+          <div class="progress-bar"><div id="upload-progress-fill" class="progress-fill" style="width:0%;"></div></div>
+          <div class="progress-text">
+            <span id="upload-speed">Speed: —</span>
+            <span id="upload-eta">ETA: —</span>
+          </div>
+        </div>
+
+        <div id="upload-feedback" class="form-hint" style="margin-top: 8px;"></div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="upload-submit-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Upload File
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -680,6 +756,13 @@ function formatNum(num) {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
 async function updateStats() {
   try {
     const res = await fetch('/admin/stats');
@@ -789,12 +872,11 @@ document.getElementById('torrent-files').addEventListener('change', function(e) 
   const count = e.target.files.length;
   const hint = document.getElementById('file-hint');
   const countSpan = document.getElementById('file-count');
+  const uploadText = document.getElementById('torrent-upload-text');
   
   if (count > 0) {
     countSpan.textContent = count;
     hint.style.display = 'block';
-    
-    const uploadText = document.querySelector('.upload-text');
     if (count === 1) {
       uploadText.textContent = e.target.files[0].name;
     } else {
@@ -802,7 +884,7 @@ document.getElementById('torrent-files').addEventListener('change', function(e) 
     }
   } else {
     hint.style.display = 'none';
-    document.querySelector('.upload-text').textContent = 'Click to select .torrent file(s)';
+    uploadText.textContent = 'Click to select .torrent file(s)';
   }
 });
 
@@ -825,62 +907,111 @@ document.getElementById('direct-upload-file').addEventListener('change', functio
   }
 });
 
-// Form validation
-document.querySelector('form').addEventListener('submit', function(e) {
+// Download source form validation
+document.getElementById('download-task-form').addEventListener('submit', function(e) {
   const files = document.getElementById('torrent-files').files;
   const source = document.getElementById('source').value.trim();
-  const uploadFile = document.getElementById('direct-upload-file').files[0];
-  
-  // If direct upload file is selected, use separate upload form
-  if (uploadFile) {
-    e.preventDefault();
-    
-    // Create FormData for file upload
-    const formData = new FormData();
-    formData.append('upload_file', uploadFile);
-    
-    const label = document.getElementById('label').value.trim();
-    if (label) {
-      formData.append('upload_label', label);
-    }
-    
-    // Show uploading message
-    const btn = e.target.querySelector('.btn-primary');
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Uploading...';
-    
-    // Submit to upload endpoint
-    fetch('/tasks/upload', {
-      method: 'POST',
-      body: formData
-    })
-    .then(response => {
-      if (!response.ok) {
-        return response.text().then(text => {
-          throw new Error(text || 'Upload failed');
-        });
-      }
-      return response.text();
-    })
-    .then(html => {
-      // Redirect by updating location (response is HTML redirect)
-      window.location.reload();
-    })
-    .catch(error => {
-      btn.disabled = false;
-      btn.innerHTML = originalText;
-      alert('Upload failed: ' + error.message);
-    });
-    
-    return false;
-  }
-  
+
   if (files.length === 0 && !source) {
     e.preventDefault();
-    alert('Please provide a source:\n• Upload torrent file(s), or\n• Enter magnet link(s)/URL(s), or\n• Upload a file directly (admin only)');
+    alert('Please provide a download source:\n• Upload torrent file(s), or\n• Enter magnet link(s)/URL(s)');
     return false;
   }
+});
+
+// Direct upload form with progress/speed/ETA
+let uploadInProgress = false;
+document.getElementById('direct-upload-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (uploadInProgress) return false;
+
+  const file = document.getElementById('direct-upload-file').files[0];
+  if (!file) {
+    alert('Please select a file to upload.');
+    return false;
+  }
+
+  const progressCard = document.getElementById('upload-progress');
+  const statusText = document.getElementById('upload-status-text');
+  const percentText = document.getElementById('upload-percent-text');
+  const progressFill = document.getElementById('upload-progress-fill');
+  const speedText = document.getElementById('upload-speed');
+  const etaText = document.getElementById('upload-eta');
+  const feedback = document.getElementById('upload-feedback');
+  const submitBtn = document.getElementById('upload-submit-btn');
+  const originalBtnHtml = submitBtn.innerHTML;
+
+  uploadInProgress = true;
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Uploading...';
+  progressCard.style.display = 'block';
+  feedback.className = 'form-hint upload-feedback-info';
+  feedback.textContent = 'Uploading file...';
+  statusText.textContent = 'Uploading...';
+  percentText.textContent = '0%';
+  progressFill.style.width = '0%';
+  speedText.textContent = 'Speed: —';
+  etaText.textContent = 'ETA: —';
+
+  const formData = new FormData(e.target);
+  const xhr = new XMLHttpRequest();
+  const startedAt = Date.now();
+
+  xhr.open('POST', e.target.action, true);
+  xhr.setRequestHeader('Accept', 'application/json');
+  xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+  xhr.upload.onprogress = function(event) {
+    if (!event.lengthComputable) return;
+    const pct = Math.max(0, Math.min(100, (event.loaded / event.total) * 100));
+    const elapsedSec = Math.max((Date.now() - startedAt) / 1000, 0.1);
+    const speed = event.loaded / elapsedSec;
+    const remaining = Math.max(event.total - event.loaded, 0);
+    const eta = speed > 0 ? remaining / speed : NaN;
+
+    progressFill.style.width = `${pct.toFixed(1)}%`;
+    percentText.textContent = `${pct.toFixed(1)}%`;
+    speedText.textContent = `Speed: ${formatBytes(speed)}/s`;
+    etaText.textContent = `ETA: ${formatDuration(eta)}`;
+  };
+
+  xhr.onload = function() {
+    uploadInProgress = false;
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalBtnHtml;
+
+    let body = {};
+    try {
+      body = JSON.parse(xhr.responseText || '{}');
+    } catch (_) {}
+
+    if (xhr.status >= 200 && xhr.status < 300 && body.ok) {
+      progressFill.style.width = '100%';
+      percentText.textContent = '100%';
+      statusText.textContent = 'Upload complete';
+      feedback.className = 'form-hint upload-feedback-success';
+      feedback.textContent = body.message || 'Upload completed successfully.';
+      setTimeout(() => {
+        window.location.href = body.redirect_url || '{{ url_for("admin_page") }}';
+      }, 500);
+      return;
+    }
+
+    statusText.textContent = 'Upload failed';
+    feedback.className = 'form-hint upload-feedback-error';
+    feedback.textContent = body.message || `Upload failed (HTTP ${xhr.status})`;
+  };
+
+  xhr.onerror = function() {
+    uploadInProgress = false;
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalBtnHtml;
+    statusText.textContent = 'Upload failed';
+    feedback.className = 'form-hint upload-feedback-error';
+    feedback.textContent = 'Upload failed due to a network error.';
+  };
+
+  xhr.send(formData);
 });
 </script>
 
