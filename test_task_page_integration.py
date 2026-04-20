@@ -178,6 +178,30 @@ class RoleAccessControlTests(unittest.TestCase):
             resp = client.get("/admin")
         self.assertEqual(resp.status_code, 403)
 
+    def test_access_denied_page_shows_download_only_message_for_user_role(self):
+        """User role should see download-only guidance on the 403 page."""
+        client, mock_fn = self._make_client_for_role("user")
+        with patch.object(self.frontend, "w_request", side_effect=mock_fn):
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 403)
+        html = resp.get_data(as_text=True)
+        self.assertIn("download-only", html)
+        self.assertIn("/d/", html)
+        # Should NOT show the member info box
+        self.assertNotIn("member", html.lower().replace("Member access", ""))
+
+    def test_access_denied_page_shows_member_message_for_member_role(self):
+        """Member role should see member-specific guidance on the 403 page."""
+        client, mock_fn = self._make_client_for_role("member")
+        with patch.object(self.frontend, "w_request", side_effect=mock_fn):
+            resp = client.get("/admin")
+        self.assertEqual(resp.status_code, 403)
+        html = resp.get_data(as_text=True)
+        self.assertIn("Member Access", html)
+        self.assertIn("Go to Home", html)
+        # Should NOT show the download-only user message
+        self.assertNotIn("download-only", html)
+
 
 if __name__ == "__main__":
     unittest.main()
