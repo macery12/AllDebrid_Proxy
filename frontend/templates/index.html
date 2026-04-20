@@ -6,12 +6,27 @@
 /* ===== Layout ===== */
 .container {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 24px;
-  max-width: 1200px;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  gap: 20px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 24px 20px;
   align-items: start;
+}
+
+/* Left column */
+.col-left {
+  min-width: 0;
+}
+
+/* Center column */
+.col-center {
+  min-width: 0;
+}
+
+/* Right column */
+.col-right {
+  min-width: 0;
 }
 
 /* ===== Page header ===== */
@@ -101,15 +116,18 @@
   display: none;
 }
 
-/* ===== Options row ===== */
-.options-row {
-  display: flex;
+/* ===== Options inside card ===== */
+.card-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-bottom: 10px;
-  align-items: stretch;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
-.options-row input[type="text"],
-.options-row select {
+.card-options input[type="text"],
+.card-options select {
+  width: 100%;
   padding: 9px 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -119,20 +137,20 @@
   font-family: inherit;
   transition: border-color .2s, box-shadow .2s;
 }
-.options-row input[type="text"] { flex: 1; }
-.options-row select { flex: 0 0 auto; min-width: 180px; cursor: pointer; }
-.options-row input[type="text"]:focus,
-.options-row select:focus {
+.card-options input[type="text"]:focus,
+.card-options select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(88,166,255,.12);
 }
+.card-options select { cursor: pointer; }
 
 /* ===== Action row ===== */
 .action-row {
   display: flex;
   gap: 10px;
   align-items: center;
+  margin-top: 10px;
 }
 
 .btn-create {
@@ -234,13 +252,15 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ===== Recent tasks strip ===== */
+/* ===== Recent tasks (left column) ===== */
 .recent-strip {
-  margin-top: 18px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  position: sticky;
+  top: 72px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .recent-hdr {
   display: flex;
@@ -440,14 +460,20 @@
 .breadcrumb a:hover { color: var(--text); }
 
 /* ===== Responsive ===== */
-@media (max-width: 900px) {
-  .container { grid-template-columns: 1fr; }
-  .sys-panel { position: static; }
+@media (max-width: 1100px) {
+  .container { grid-template-columns: 200px minmax(0, 1fr) 260px; gap: 16px; }
 }
-@media (max-width: 580px) {
-  .container { padding: 16px 12px; }
-  .options-row { flex-direction: column; }
-  .options-row select { min-width: 100%; }
+@media (max-width: 860px) {
+  /* Drop to 2 columns: recent tasks hidden or stacked, form + sys panel */
+  .container { grid-template-columns: minmax(0, 1fr) 260px; }
+  .col-left { grid-column: 1 / -1; }
+  .recent-strip { position: static; }
+}
+@media (max-width: 640px) {
+  .container { grid-template-columns: 1fr; padding: 16px 12px; }
+  .col-left { grid-column: auto; }
+  .sys-panel { position: static; }
+  .card-options { grid-template-columns: 1fr; }
   .action-row { flex-wrap: wrap; }
   .btn-create { flex: 1; justify-content: center; }
 }
@@ -459,8 +485,24 @@
 </style>
 
 <div class="container">
-  <!-- ═══════════ LEFT COLUMN ═══════════ -->
-  <div>
+  <!-- ═══════════ LEFT COLUMN — Recent Tasks ═══════════ -->
+  <div class="col-left">
+    <div class="recent-strip">
+      <div class="recent-hdr">
+        <h3>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Recent Tasks
+        </h3>
+        <a href="{{ url_for('admin_page') }}">All →</a>
+      </div>
+      <div id="recent-tasks-list">
+        <div class="recent-empty">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ CENTER COLUMN — Main Form ═══════════ -->
+  <div class="col-center">
     <!-- Breadcrumb nav -->
     <div class="breadcrumb">
       <a href="{{ url_for('admin_page') }}">
@@ -498,15 +540,15 @@
           <span class="dz-files-hint" id="dz-hint"></span>
           <input type="file" id="torrent-files" name="torrent_files" accept=".torrent" multiple />
         </div>
-      </div>
 
-      <!-- ── Compact options row ── -->
-      <div class="options-row">
-        <input type="text" id="label" name="label" placeholder="Label (optional)" />
-        <select id="mode" name="mode">
-          <option value="auto">Auto — download all files</option>
-          <option value="select">Select — choose files manually</option>
-        </select>
+        <!-- ── Label + Mode inside the card ── -->
+        <div class="card-options">
+          <input type="text" id="label" name="label" placeholder="Label (optional)" />
+          <select id="mode" name="mode">
+            <option value="auto">Auto — download all files</option>
+            <option value="select">Select — choose files manually</option>
+          </select>
+        </div>
       </div>
 
       <!-- ── Primary action row ── -->
@@ -535,24 +577,10 @@
       </div>
 
     </form>
-
-    <!-- ── Recent Tasks strip ── -->
-    <div class="recent-strip">
-      <div class="recent-hdr">
-        <h3>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          Recent Tasks
-        </h3>
-        <a href="{{ url_for('admin_page') }}">View all →</a>
-      </div>
-      <div id="recent-tasks-list">
-        <div class="recent-empty">Loading…</div>
-      </div>
-    </div>
   </div>
 
   <!-- ═══════════ RIGHT COLUMN — System Dashboard ═══════════ -->
-  <div>
+  <div class="col-right">
     <div class="sys-panel">
       <div class="sys-panel-hdr">
         <h3>System</h3>
