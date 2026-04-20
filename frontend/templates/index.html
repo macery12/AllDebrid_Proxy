@@ -646,6 +646,14 @@ function setVal(id, text) {
   const el = document.getElementById(id);
   if (el) { el.classList.remove('skeleton-val'); el.textContent = text; }
 }
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /* ── Stats polling ── */
 async function updateStats() {
@@ -682,15 +690,18 @@ async function updateStats() {
     const dlList     = document.getElementById('active-dl-list');
     if (activeDls.length > 0) {
       dlSection.style.display = 'block';
-      dlList.innerHTML = activeDls.map(f => `
+      dlList.innerHTML = activeDls.map(f => {
+        const pct = Math.max(0, Math.min(100, Number(f.progress_pct) || 0));
+        return `
         <div class="dl-item">
-          <div class="dl-name" title="${f.filename}">${f.filename}</div>
+          <div class="dl-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</div>
           <div class="dl-stats">
-            <span>${formatBytes(f.downloaded_bytes)} / ${formatBytes(f.size_bytes)}</span>
-            <span>${f.progress_pct}%</span>
+            <span>${escapeHtml(formatBytes(f.downloaded_bytes))} / ${escapeHtml(formatBytes(f.size_bytes))}</span>
+            <span>${pct}%</span>
           </div>
-          <div class="dl-bar"><div class="dl-bar-fill" style="width:${f.progress_pct}%"></div></div>
-        </div>`).join('');
+          <div class="dl-bar"><div class="dl-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('');
     } else {
       dlSection.style.display = 'none';
     }
@@ -746,7 +757,7 @@ const RECENT_TASKS_LIMIT = 6;
 async function loadRecentTasks() {
   const container = document.getElementById('recent-tasks-list');
   try {
-    const res = await fetch('/admin/tasks?limit=' + RECENT_TASKS_LIMIT);
+    const res = await fetch('/admin/tasks?limit=' + encodeURIComponent(RECENT_TASKS_LIMIT));
     if (!res.ok) throw new Error('failed');
     const data = await res.json();
     const tasks = data.tasks || data || [];
@@ -760,10 +771,12 @@ async function loadRecentTasks() {
                         : t.status === 'error' || t.status === 'failed' ? 'error'
                         : ['queued','resolving','pending'].includes(t.status) ? 'queued'
                         : 'other';
-      const label = t.label || t.name || t.id || 'Unnamed task';
-      const size  = t.total_size ? formatBytes(t.total_size) : t.status;
-      const href  = t.id ? `/tasks/${t.id}` : '#';
-      return `<a class="recent-task" href="${href}">
+      const label = escapeHtml(t.label || t.name || t.id || 'Unnamed task');
+      const size  = escapeHtml(t.total_size ? formatBytes(t.total_size) : t.status);
+      // Only allow safe relative paths for task IDs
+      const rawId = t.id ? String(t.id).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+      const href  = rawId ? `/tasks/${rawId}` : '#';
+      return `<a class="recent-task" href="${escapeHtml(href)}">
         <div class="rt-dot ${statusClass}"></div>
         <div class="rt-name" title="${label}">${label}</div>
         <div class="rt-meta">${size}</div>
@@ -798,11 +811,12 @@ function handleDrop(e) {
   const files = allDropped.filter(f => f.name.toLowerCase().endsWith('.torrent'));
   if (files.length === 0) {
     if (allDropped.length > 0) {
-      alert('Only .torrent files are accepted. Please drop a valid .torrent file.');
+      alert('Only .torrent files are accepted.');
     }
     return;
   }
   // Try assigning via DataTransfer (modern browsers); fall back to storing in droppedTorrentFiles
+  // (Some older browsers make input.files read-only so assignment throws)
   try {
     const dt = new DataTransfer();
     files.forEach(f => dt.items.add(f));
@@ -810,7 +824,8 @@ function handleDrop(e) {
     input.files = dt.files;
     droppedTorrentFiles = []; // input.files assignment worked — no need for fallback store
   } catch(err) {
-    // Older browsers: store files so form submission can include them via FormData
+    // Fallback for browsers where input.files is read-only; files stored and appended on submit
+    console.debug('DataTransfer assignment not supported, using fallback:', err);
     droppedTorrentFiles = files;
   }
   updateDropZoneDisplay(files);
