@@ -3,882 +3,940 @@
 {% block content %}
 
 <style>
-/* Professional Clean Design */
+/* ===== Layout ===== */
 .container {
   display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 32px;
-  max-width: 1400px;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  gap: 20px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 24px 20px;
   align-items: start;
 }
 
-/* Main Content Area */
-.main-content {
+.top-intro {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* Left column */
+.col-left {
   min-width: 0;
 }
 
-.page-title {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0 0 8px 0;
-  letter-spacing: -0.3px;
+/* Center column */
+.col-center {
+  min-width: 0;
 }
 
-.page-description {
-  font-size: 15px;
-  color: var(--muted);
-  margin: 0 0 32px 0;
-  line-height: 1.6;
+/* Right column */
+.col-right {
+  min-width: 0;
 }
 
-/* Task Creation Form */
-.form-card {
+/* ===== Page header ===== */
+.page-hdr { margin-bottom: 18px; }
+.page-hdr h1 { font-size: 22px; font-weight: 700; color: var(--text); margin: 0 0 3px; }
+.page-hdr p { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* ===== Unified input card ===== */
+.input-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 32px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.form-section {
-  margin-bottom: 28px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.form-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
+  padding: 20px;
   margin-bottom: 10px;
-  letter-spacing: 0.1px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
-.form-input,
-.form-textarea,
-.form-select {
+.link-textarea {
   width: 100%;
-  padding: 12px 16px;
+  min-height: 110px;
+  padding: 12px 14px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
-  font-size: 15px;
-  font-family: inherit;
-  transition: all 0.2s ease;
-}
-
-.form-input:focus,
-.form-textarea:focus,
-.form-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  background: var(--card);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.form-textarea {
-  min-height: 140px;
-  resize: vertical;
+  font-size: 14px;
   font-family: ui-monospace, 'Courier New', monospace;
   line-height: 1.6;
+  resize: vertical;
+  transition: border-color .2s, box-shadow .2s;
 }
-
-.form-hint {
-  display: block;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-.upload-area {
-  border: 2px dashed var(--border);
-  border-radius: 8px;
-  padding: 20px;
-  text-align: center;
-  background: var(--bg-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.upload-area:hover {
+.link-textarea:focus {
+  outline: none;
   border-color: var(--accent);
-  background: rgba(88, 166, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(88,166,255,.12);
 }
+.link-textarea::placeholder { color: var(--muted); opacity: .7; }
 
-.upload-area input[type="file"] {
-  display: none;
-}
-
-.upload-icon {
-  font-size: 32px;
-  margin-bottom: 8px;
-  opacity: 0.7;
-}
-
-.upload-text {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.upload-subtext {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.divider {
+/* OR divider */
+.or-divider {
   text-align: center;
-  margin: 24px 0;
   position: relative;
+  margin: 14px 0;
 }
-
-.divider::before {
+.or-divider::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
+  top: 50%; left: 0; right: 0;
   height: 1px;
   background: var(--border);
 }
-
-.divider span {
+.or-divider span {
   position: relative;
   background: var(--card);
-  padding: 0 16px;
-  font-size: 13px;
+  padding: 0 12px;
+  font-size: 11px;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
 }
 
-.form-actions {
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 22px 18px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  transition: border-color .2s, background .2s;
+  position: relative;
+}
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(88,166,255,.07);
+}
+.drop-zone input[type="file"] { display: none; }
+.dz-icon { font-size: 26px; display: block; margin-bottom: 6px; }
+.dz-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.dz-sub { font-size: 12px; color: var(--muted); }
+.dz-files-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--accent);
+  display: none;
+}
+
+/* ===== Options inside card ===== */
+.card-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.card-options input[type="text"],
+.card-options select {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color .2s, box-shadow .2s;
+}
+.card-options input[type="text"]:focus,
+.card-options select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(88,166,255,.12);
+}
+.card-options select { cursor: pointer; }
+
+/* ===== Action row ===== */
+.action-row {
   display: flex;
-  gap: 12px;
-  margin-top: 28px;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
 }
 
-.btn {
+.btn-create {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
+  gap: 7px;
+  padding: 10px 22px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 8px;
+  color: #fff;
   font-size: 15px;
   font-weight: 600;
-  text-decoration: none;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background .2s, box-shadow .2s, transform .1s;
+  white-space: nowrap;
 }
-
-.btn:hover {
-  background: var(--card-hover);
-  border-color: var(--border-light);
-}
-
-.btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.btn-primary:hover {
+.btn-create:hover {
   background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(88,166,255,.3);
+  transform: translateY(-1px);
+}
+.btn-create:active { transform: translateY(0); }
+.btn-create:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  transform: none;
 }
 
-.info-note {
-  background: rgba(88, 166, 255, 0.1);
-  border: 1px solid rgba(88, 166, 255, 0.25);
+.btn-advanced {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 16px;
-  margin-top: 24px;
-}
-
-.info-note-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
-  margin: 0 0 6px 0;
-}
-
-.info-note-text {
-  font-size: 13px;
   color: var(--muted);
-  margin: 0;
-  line-height: 1.6;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color .2s, color .2s, background .2s;
+  white-space: nowrap;
+}
+.btn-advanced:hover {
+  border-color: var(--border-light);
+  color: var(--text);
+  background: var(--bg-secondary);
+}
+.btn-advanced.open {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-advanced .adv-arrow { display: inline-block; transition: transform .2s; }
+.btn-advanced.open .adv-arrow { transform: rotate(180deg); }
+
+/* ===== Advanced section ===== */
+.advanced-section {
+  display: none;
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  animation: fadeSlide .2s ease;
+}
+.advanced-section.open { display: block; }
+.adv-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 12px;
+}
+.adv-upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--card);
+  transition: border-color .2s, background .2s;
+}
+.adv-upload-zone:hover {
+  border-color: var(--accent);
+  background: rgba(88,166,255,.05);
+}
+.adv-upload-zone input[type="file"] { display: none; }
+.adv-file-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  display: none;
 }
 
-/* Sidebar */
-.sidebar {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.sidebar-section {
+/* ===== Recent tasks (left column) ===== */
+.recent-strip {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  overflow: hidden;
+  position: sticky;
+  top: 72px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
-
-.sidebar-section.sidebar-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 0;
-}
-
-.sidebar-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0 0 18px 0;
+.recent-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.live-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--accent-2);
-}
-
-.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-2);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.stat-item {
-  padding: 14px 0;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
-
-.stat-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.stat-item:first-child {
-  padding-top: 0;
-}
-
-.stat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.stat-label {
+.recent-hdr h3 {
   font-size: 13px;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.stat-value {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.stat-subtext {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 4px;
-}
-
-.progress-bar {
-  height: 6px;
-  background: var(--bg-secondary);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 12px;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.progress-text {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 8px;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
   font-weight: 600;
-  margin-top: 12px;
-}
-
-.status-badge.online {
-  background: rgba(63, 185, 80, 0.15);
-  color: var(--accent-2);
-  border: 1px solid rgba(63, 185, 80, 0.25);
-}
-
-.status-badge.offline {
-  background: rgba(248, 81, 73, 0.15);
-  color: var(--danger);
-  border: 1px solid rgba(248, 81, 73, 0.25);
-}
-
-.skeleton {
-  background: linear-gradient(90deg, var(--bg-secondary), var(--card-hover), var(--bg-secondary));
-  background-size: 200% 100%;
-  animation: skeleton 1.5s infinite;
-  border-radius: 4px;
-  height: 20px;
-}
-
-@keyframes skeleton {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.nav-links {
+  color: var(--text);
+  margin: 0;
   display: flex;
-  gap: 8px;
-  margin-bottom: 32px;
-}
-
-.nav-link {
-  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
+}
+.recent-hdr a { font-size: 12px; color: var(--accent); }
+.recent-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background .15s;
   text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  color: inherit;
 }
-
-.nav-link:hover {
-  background: var(--card-hover);
-  border-color: var(--border-light);
+.recent-task:last-child { border-bottom: none; }
+.recent-task:hover { background: var(--card-hover); }
+.rt-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
-
-/* Responsive */
-@media (max-width: 1024px) {
-  .container {
-    grid-template-columns: 1fr;
-  }
-  
-  .sidebar {
-    order: -1;
-  }
-  
-  .sidebar-section {
-    padding: 20px;
-  }
-}
-
-@media (max-width: 640px) {
-  .container {
-    padding: 20px 16px;
-  }
-  
-  .form-card {
-    padding: 24px 20px;
-  }
-  
-  .form-actions {
-    flex-direction: column;
-  }
-  
-  .btn {
-    width: 100%;
-    justify-content: center;
-  }
-}
-</style>
-
-<div class="nav-links">
-  <a href="{{ url_for('admin_page') }}" class="nav-link">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="3" y="3" width="18" height="18" rx="2"/>
-      <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
-    </svg>
-    Admin Dashboard
-  </a>
-</div>
-
-<div class="container">
-  <!-- Main Content -->
-  <div class="main-content">
-    <h1 class="page-title">Create Download Task</h1>
-    <p class="page-description">Upload torrent files, paste magnet links, or add direct download URLs to start downloading.</p>
-
-    <div class="form-card">
-      <form method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
-        <div class="form-section">
-          <label for="source" class="form-label">Magnet Links or Direct URLs</label>
-          <textarea 
-            id="source" 
-            name="source" 
-            class="form-textarea"
-            placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;Paste one link per line for multiple downloads"
-          ></textarea>
-          <small class="form-hint">Enter one or more magnet links or direct download URLs (one per line)</small>
-        </div>
-
-        <div class="divider">
-          <span>OR</span>
-        </div>
-
-        <div class="form-section">
-          <label class="form-label">Upload Torrent File(s)</label>
-          <div class="upload-area" onclick="document.getElementById('torrent-files').click()">
-            <div class="upload-icon">📁</div>
-            <div class="upload-text">Click to select .torrent file(s)</div>
-            <div class="upload-subtext">Maximum 10MB per file • Multiple files supported</div>
-            <input 
-              type="file" 
-              id="torrent-files" 
-              name="torrent_files" 
-              accept=".torrent"
-              multiple
-            />
-          </div>
-          <small class="form-hint" id="file-hint" style="display: none;">
-            <span id="file-count">0</span> file(s) selected
-          </small>
-        </div>
-
-        <div class="divider">
-          <span>OR</span>
-        </div>
-
-        <div class="form-section">
-          <label class="form-label">Upload Your Own File</label>
-          <div class="upload-area" onclick="document.getElementById('direct-upload-file').click()">
-            <div class="upload-icon">⬆️</div>
-            <div class="upload-text" id="upload-file-text">Click to select file to upload</div>
-            <div class="upload-subtext">Maximum 10GB • Admin only • File will be immediately available</div>
-            <input 
-              type="file" 
-              id="direct-upload-file"
-            />
-          </div>
-          <small class="form-hint" id="upload-file-hint" style="display: none;">
-            <span id="upload-file-name">No file</span> (<span id="upload-file-size">0</span>)
-          </small>
-        </div>
-
-        <div class="form-section">
-          <label for="label" class="form-label">Label (Optional)</label>
-          <input 
-            type="text" 
-            id="label" 
-            name="label" 
-            class="form-input"
-            placeholder="e.g., Movie Name, TV Show S01E01"
-          />
-        </div>
-
-        <div class="form-section">
-          <label for="mode" class="form-label">Download Mode</label>
-          <select id="mode" name="mode" class="form-select">
-            <option value="auto">Auto - Download all files automatically</option>
-            <option value="select">Select - Choose specific files manually</option>
-          </select>
-        </div>
-
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            Create Task
-          </button>
-          <a href="{{ url_for('admin_page') }}" class="btn">
-            View All Tasks
-          </a>
-        </div>
-      </form>
-
-      <div class="info-note">
-        <div class="info-note-title">Smart Task Reuse</div>
-        <p class="info-note-text">
-          If you submit a magnet link or URL that's already been downloaded, the system will automatically 
-          reuse the existing files instead of downloading again, saving bandwidth and time.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="sidebar-section sidebar-main">
-      <h2 class="sidebar-title">
-        System Stats
-        <span class="live-indicator">
-          <span class="live-dot"></span>
-          <span id="live-text">Live</span>
-        </span>
-      </h2>
-
-      <div class="stat-item">
-        <div class="stat-header">
-          <span class="stat-label">Active Downloads</span>
-          <span class="stat-value" id="stat-active">
-            <div class="skeleton" style="width: 40px;"></div>
-          </span>
-        </div>
-        <div class="stat-subtext" id="stat-active-desc">Loading...</div>
-      </div>
-
-      <div class="stat-item">
-        <div class="stat-header">
-          <span class="stat-label">Queued Tasks</span>
-          <span class="stat-value" id="stat-queued">
-            <div class="skeleton" style="width: 40px;"></div>
-          </span>
-        </div>
-      </div>
-
-      <div class="stat-item">
-        <div class="stat-header">
-          <span class="stat-label">Free Storage</span>
-          <span class="stat-value" id="stat-storage">
-            <div class="skeleton" style="width: 60px;"></div>
-          </span>
-        </div>
-        <div class="stat-subtext" id="stat-storage-desc">Loading...</div>
-      </div>
-
-      <div class="stat-item">
-        <div class="stat-header">
-          <span class="stat-label">Total Tasks</span>
-          <span class="stat-value" id="stat-total">
-            <div class="skeleton" style="width: 50px;"></div>
-          </span>
-        </div>
-        <div class="stat-subtext" id="stat-total-desc">Loading...</div>
-      </div>
-
-      <div class="stat-item" id="progress-section-inline" style="display: none; border-top: 2px solid var(--border); margin-top: 20px; padding-top: 20px;">
-        <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px;">Active Downloads</div>
-        <div id="active-downloads-list"></div>
-      </div>
-
-      <div class="stat-item" style="border: none; padding-bottom: 0; margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border);">
-        <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px;">System Status</div>
-        <div class="status-badge" id="system-status">
-          <span class="live-dot"></span>
-          <span>Checking...</span>
-        </div>
-        <div class="stat-subtext" style="margin-top: 12px;" id="update-time">Initializing...</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<style>
-.download-item {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-
-.download-item:last-child {
-  margin-bottom: 0;
-}
-
-.download-filename {
-  font-size: 13px;
-  font-weight: 500;
-  color: #e2e8f0;
-  margin-bottom: 8px;
+.rt-dot.done    { background: var(--accent-2); }
+.rt-dot.running { background: var(--accent); animation: pulse 1.5s infinite; }
+.rt-dot.error   { background: var(--danger); }
+.rt-dot.queued  { background: var(--warn); }
+.rt-dot.other   { background: var(--muted); }
+.rt-name {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.rt-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.recent-empty {
+  padding: 18px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
 
-.download-stats {
+/* ===== System dashboard (right column) ===== */
+.sys-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  position: sticky;
+  top: 72px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.sys-panel-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sys-panel-hdr h3 { font-size: 13px; font-weight: 600; color: var(--text); margin: 0; }
+
+.sys-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sys-status .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+}
+.sys-status.online  { color: var(--accent-2); }
+.sys-status.online .dot  { background: var(--accent-2); animation: pulse 2s infinite; }
+.sys-status.offline { color: var(--danger); }
+.sys-status.offline .dot { background: var(--danger); }
+.sys-status.checking { color: var(--muted); }
+.sys-status.checking .dot { background: var(--muted); }
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.stat-row:last-of-type { border-bottom: none; }
+.stat-lbl { font-size: 13px; color: var(--muted); }
+.stat-val { font-size: 16px; font-weight: 700; color: var(--text); }
+.stat-val.skeleton-val {
+  background: linear-gradient(90deg, var(--bg-secondary), var(--card-hover), var(--bg-secondary));
+  background-size: 200% 100%;
+  animation: skel 1.5s infinite;
+  border-radius: 4px;
+  width: 36px; height: 16px;
+  display: inline-block;
+}
+@keyframes skel {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.storage-row {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.storage-hdr {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  color: #94a3b8;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
-
-.download-progress {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  height: 6px;
+.storage-lbl { font-size: 13px; color: var(--muted); }
+.storage-val { font-size: 12px; font-weight: 600; color: var(--text); }
+.storage-bar {
+  height: 5px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
   overflow: hidden;
+  margin-bottom: 5px;
 }
-
-.download-progress-fill {
+.storage-fill {
   height: 100%;
   background: var(--accent);
-  transition: width 0.3s ease;
-  border-radius: 4px;
+  border-radius: 3px;
+  transition: width .4s ease;
+}
+.storage-fill.warn   { background: var(--warn); }
+.storage-fill.danger { background: var(--danger); }
+.storage-sub { font-size: 11px; color: var(--muted); }
+
+/* Active downloads in sidebar */
+.active-dl {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: none;
+}
+.active-dl-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 9px;
+}
+.dl-item { margin-bottom: 9px; }
+.dl-item:last-child { margin-bottom: 0; }
+.dl-name { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+.dl-stats { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.dl-bar { height: 3px; background: var(--bg-secondary); border-radius: 2px; overflow: hidden; }
+.dl-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
+
+.sys-footer {
+  padding: 9px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+.live-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-2);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.live-pip .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-2); animation: pulse 2s infinite; }
+
+/* Nav breadcrumb */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.breadcrumb a { color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; transition: color .2s; }
+.breadcrumb a:hover { color: var(--text); }
+
+/* ===== Responsive ===== */
+@media (max-width: 1100px) {
+  .container { grid-template-columns: 200px minmax(0, 1fr) 260px; gap: 16px; }
+}
+@media (max-width: 860px) {
+  /* Drop to 2 columns: recent tasks hidden or stacked, form + sys panel */
+  .container { grid-template-columns: minmax(0, 1fr) 260px; }
+  .col-left { grid-column: 1 / -1; }
+  .recent-strip { position: static; }
+}
+@media (max-width: 640px) {
+  .container { grid-template-columns: 1fr; padding: 16px 12px; }
+  .col-left { grid-column: auto; }
+  .sys-panel { position: static; }
+  .card-options { grid-template-columns: 1fr; }
+  .action-row { flex-wrap: wrap; }
+  .btn-create { flex: 1; justify-content: center; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .4; }
 }
 </style>
 
+<div class="container">
+  <div class="top-intro">
+    <!-- Breadcrumb nav -->
+    <div class="breadcrumb">
+      <a href="{{ url_for('admin_page') }}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/></svg>
+        Admin Dashboard
+      </a>
+    </div>
+
+    <div class="page-hdr">
+      <h1>Create Download Task</h1>
+      <p>Paste magnet links, direct URLs, or drop a .torrent file to start downloading.</p>
+    </div>
+  </div>
+
+  <!-- ═══════════ LEFT COLUMN — Recent Tasks ═══════════ -->
+  <div class="col-left">
+    <div class="recent-strip">
+      <div class="recent-hdr">
+        <h3>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Recent Tasks
+        </h3>
+        <a href="{{ url_for('admin_page') }}">All →</a>
+      </div>
+      <div id="recent-tasks-list">
+        <div class="recent-empty">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ CENTER COLUMN — Main Form ═══════════ -->
+  <div class="col-center">
+    <form id="main-form" method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
+
+      <!-- ── Unified input card ── -->
+      <div class="input-card">
+        <textarea
+          id="source"
+          name="source"
+          class="link-textarea"
+          placeholder="magnet:?xt=urn:btih:...&#10;https://example.com/file.zip&#10;&#10;One link per line"
+        ></textarea>
+
+        <div class="or-divider"><span>OR</span></div>
+
+        <div class="drop-zone" id="drop-zone"
+             onclick="document.getElementById('torrent-files').click()"
+             ondragover="handleDragOver(event)"
+             ondragleave="handleDragLeave(event)"
+             ondrop="handleDrop(event)">
+          <span class="dz-icon" id="dz-icon">📁</span>
+          <div class="dz-title" id="dz-title">Drop files here or click to browse</div>
+          <div class="dz-sub">Accepts .torrent files</div>
+          <span class="dz-files-hint" id="dz-hint"></span>
+          <input type="file" id="torrent-files" name="torrent_files" accept=".torrent" multiple />
+        </div>
+
+        <!-- ── Label + Mode inside the card ── -->
+        <div class="card-options">
+          <input type="text" id="label" name="label" placeholder="Label (optional)" />
+          <select id="mode" name="mode">
+            <option value="auto">Auto — download all files</option>
+            <option value="select">Select — choose files manually</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ── Primary action row ── -->
+      <div class="action-row">
+        <button type="submit" class="btn-create" id="submit-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          Create Task
+        </button>
+        <button type="button" class="btn-advanced" id="adv-toggle" onclick="toggleAdvanced()">
+          Advanced <span class="adv-arrow">▼</span>
+        </button>
+      </div>
+
+      <!-- ── Advanced section (hidden by default) ── -->
+      <div class="advanced-section" id="advanced-section">
+        <div class="adv-label">Direct File Upload — Admin only · up to 10 GB</div>
+        <div class="adv-upload-zone" onclick="document.getElementById('direct-upload-file').click()">
+          <div style="font-size:22px; margin-bottom:5px;">⬆️</div>
+          <div style="font-size:13px; font-weight:600; color:var(--text); margin-bottom:2px;" id="upload-file-text">Click to select a file</div>
+          <div style="font-size:11px; color:var(--muted);">File is made immediately available on the proxy</div>
+          <input type="file" id="direct-upload-file" />
+        </div>
+        <small class="adv-file-hint" id="upload-file-hint">
+          <span id="upload-file-name"></span> (<span id="upload-file-size"></span>)
+        </small>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- ═══════════ RIGHT COLUMN — System Dashboard ═══════════ -->
+  <div class="col-right">
+    <div class="sys-panel">
+      <div class="sys-panel-hdr">
+        <h3>System</h3>
+        <div class="sys-status checking" id="sys-status">
+          <div class="dot"></div>
+          <span id="sys-status-text">Checking</span>
+        </div>
+      </div>
+
+      <div class="stat-row">
+        <span class="stat-lbl">Active Downloads</span>
+        <span class="stat-val skeleton-val" id="stat-active"></span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-lbl">Queued Tasks</span>
+        <span class="stat-val skeleton-val" id="stat-queued"></span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-lbl">Completed</span>
+        <span class="stat-val skeleton-val" id="stat-completed"></span>
+      </div>
+
+      <div class="storage-row">
+        <div class="storage-hdr">
+          <span class="storage-lbl">Storage</span>
+          <span class="storage-val" id="stat-storage-val">—</span>
+        </div>
+        <div class="storage-bar">
+          <div class="storage-fill" id="storage-fill" style="width:0%"></div>
+        </div>
+        <div class="storage-sub" id="stat-storage-sub">Loading…</div>
+      </div>
+
+      <!-- Active downloads list (shown when present) -->
+      <div class="active-dl" id="active-dl-section">
+        <div class="active-dl-title">Downloading now</div>
+        <div id="active-dl-list"></div>
+      </div>
+
+      <div class="sys-footer">
+        <span>Updated <span id="update-time">—</span></span>
+        <span class="live-pip"><span class="dot"></span>Live</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 let updateTimer = null;
+let droppedTorrentFiles = []; // holds files from drag-and-drop when input.files is read-only
 
+/* ── Utility helpers ── */
 function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024, sizes = ['B','KB','MB','GB','TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round(bytes / Math.pow(k, i) * 10) / 10 + ' ' + sizes[i];
 }
-
-function formatNum(num) {
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+function formatNum(n) {
+  return (n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+function setVal(id, text) {
+  const el = document.getElementById(id);
+  if (el) { el.classList.remove('skeleton-val'); el.textContent = text; }
+}
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
+/* ── Stats polling ── */
 async function updateStats() {
   try {
     const res = await fetch('/admin/stats');
-    if (!res.ok) throw new Error('Failed to fetch stats');
-    
-    const stats = await res.json();
-    
-    // Active downloads
-    const active = stats.tasks?.downloading || 0;
-    const activeFiles = stats.files?.downloading || 0;
-    document.getElementById('stat-active').textContent = active;
-    document.getElementById('stat-active-desc').textContent = 
-      `${activeFiles} file${activeFiles !== 1 ? 's' : ''} downloading`;
-    
-    // Queue
-    const queued = (stats.tasks?.queued || 0) + (stats.tasks?.resolving || 0);
-    document.getElementById('stat-queued').textContent = queued;
-    
-    // Storage
-    const free = stats.storage?.free_bytes || 0;
-    const reserved = stats.storage?.reserved_bytes || 0;
-    document.getElementById('stat-storage').textContent = formatBytes(free);
-    document.getElementById('stat-storage-desc').textContent = 
-      `${formatBytes(reserved)} reserved`;
-    
-    // Total
-    const total = stats.tasks?.total || 0;
-    const completed = stats.tasks?.completed || 0;
-    document.getElementById('stat-total').textContent = formatNum(total);
-    document.getElementById('stat-total-desc').textContent = 
-      `${formatNum(completed)} completed`;
-    
-    // Active Downloads List
-    const activeDownloads = stats.downloads?.active_files || [];
-    const progressSection = document.getElementById('progress-section-inline');
-    const downloadsList = document.getElementById('active-downloads-list');
-    
-    if (activeDownloads.length > 0) {
-      progressSection.style.display = 'block';
-      
-      // Render active downloads
-      downloadsList.innerHTML = activeDownloads.map(file => `
-        <div class="download-item">
-          <div class="download-filename" title="${file.filename}">${file.filename}</div>
-          <div class="download-stats">
-            <span>${formatBytes(file.downloaded_bytes)} / ${formatBytes(file.size_bytes)}</span>
-            <span>${file.progress_pct}%</span>
-          </div>
-          <div class="download-progress">
-            <div class="download-progress-fill" style="width: ${file.progress_pct}%"></div>
-          </div>
-        </div>
-      `).join('');
-    } else {
-      progressSection.style.display = 'none';
+    if (!res.ok) throw new Error('fetch failed');
+    const s = await res.json();
+
+    const active    = s.tasks?.downloading || 0;
+    const queued    = (s.tasks?.queued || 0) + (s.tasks?.resolving || 0);
+    const completed = s.tasks?.completed || 0;
+    const total     = s.tasks?.total || 0;
+    const free      = s.storage?.free_bytes || 0;
+    const used      = s.storage?.reserved_bytes || 0;
+    const capacity  = free + used;
+    const usedPct   = capacity > 0 ? Math.round(used / capacity * 100) : 0;
+
+    setVal('stat-active',    active);
+    setVal('stat-queued',    queued);
+    setVal('stat-completed', formatNum(completed));
+    setVal('stat-storage-val', formatBytes(free) + ' free');
+
+    const fill = document.getElementById('storage-fill');
+    if (fill) {
+      fill.style.width = usedPct + '%';
+      fill.className = 'storage-fill' + (usedPct > 90 ? ' danger' : usedPct > 70 ? ' warn' : '');
     }
-    
-    // Status
-    const healthy = stats.health?.worker_healthy !== false;
-    const statusEl = document.getElementById('system-status');
-    if (healthy) {
-      statusEl.className = 'status-badge online';
-      statusEl.innerHTML = '<span class="live-dot"></span><span>Online</span>';
+    const sub = document.getElementById('stat-storage-sub');
+    if (sub) sub.textContent = formatBytes(used) + ' used of ' + formatBytes(capacity);
+
+    // Active downloads list
+    const activeDls  = s.downloads?.active_files || [];
+    const dlSection  = document.getElementById('active-dl-section');
+    const dlList     = document.getElementById('active-dl-list');
+    if (activeDls.length > 0) {
+      dlSection.style.display = 'block';
+      dlList.innerHTML = activeDls.map(f => {
+        const pct = Math.max(0, Math.min(100, Number(f.progress_pct) || 0));
+        return `
+        <div class="dl-item">
+          <div class="dl-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</div>
+          <div class="dl-stats">
+            <span>${escapeHtml(formatBytes(f.downloaded_bytes))} / ${escapeHtml(formatBytes(f.size_bytes))}</span>
+            <span>${pct}%</span>
+          </div>
+          <div class="dl-bar"><div class="dl-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('');
     } else {
-      statusEl.className = 'status-badge offline';
-      statusEl.innerHTML = '<span class="live-dot"></span><span>Offline</span>';
+      dlSection.style.display = 'none';
     }
-    
-    // Update time
+
+    // System status
+    const healthy  = s.health?.worker_healthy !== false;
+    const statusEl = document.getElementById('sys-status');
+    const statusTx = document.getElementById('sys-status-text');
+    if (statusEl) {
+      statusEl.className = 'sys-status ' + (healthy ? 'online' : 'offline');
+      if (statusTx) statusTx.textContent = healthy ? 'Online' : 'Offline';
+    }
+
+    // Timestamp
     const now = new Date();
-    document.getElementById('update-time').textContent = 
-      `Updated ${now.toLocaleTimeString()}`;
-    
+    const timeEl = document.getElementById('update-time');
+    if (timeEl) timeEl.textContent = now.toLocaleTimeString();
+
   } catch (err) {
     console.error('Stats update failed:', err);
-    const statusEl = document.getElementById('system-status');
-    statusEl.className = 'status-badge offline';
-    statusEl.innerHTML = '<span class="live-dot"></span><span>Error</span>';
+    const statusEl = document.getElementById('sys-status');
+    const statusTx = document.getElementById('sys-status-text');
+    if (statusEl) { statusEl.className = 'sys-status offline'; }
+    if (statusTx) statusTx.textContent = 'Error';
   }
 }
 
 function startUpdates() {
   updateStats();
   if (updateTimer) clearInterval(updateTimer);
-  updateTimer = setInterval(updateStats, 5000);
+  let recentTasksTick = 0;
+  updateTimer = setInterval(() => {
+    updateStats();
+    // Refresh recent tasks every 6 ticks × 5s = ~30s
+    if (++recentTasksTick >= 6) { recentTasksTick = 0; loadRecentTasks(); }
+  }, 5000);
 }
-
 function stopUpdates() {
-  if (updateTimer) {
-    clearInterval(updateTimer);
-    updateTimer = null;
+  if (updateTimer) { clearInterval(updateTimer); updateTimer = null; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  startUpdates();
+  loadRecentTasks();
+});
+document.addEventListener('visibilitychange', () => {
+  document.hidden ? stopUpdates() : startUpdates();
+});
+
+/* ── Recent tasks ── */
+const RECENT_TASKS_LIMIT = 6;
+
+async function loadRecentTasks() {
+  const container = document.getElementById('recent-tasks-list');
+  try {
+    const res = await fetch('/admin/tasks?limit=' + encodeURIComponent(RECENT_TASKS_LIMIT));
+    if (!res.ok) throw new Error('failed');
+    const data = await res.json();
+    const tasks = data.tasks || data || [];
+    if (!tasks.length) {
+      container.innerHTML = '<div class="recent-empty">No tasks yet</div>';
+      return;
+    }
+    container.innerHTML = tasks.slice(0, RECENT_TASKS_LIMIT).map(t => {
+      const statusClass = t.status === 'completed' ? 'done'
+                        : t.status === 'downloading' ? 'running'
+                        : t.status === 'error' || t.status === 'failed' ? 'error'
+                        : ['queued','resolving','pending'].includes(t.status) ? 'queued'
+                        : 'other';
+      const label = escapeHtml(t.label || t.name || t.id || 'Unnamed task');
+      const size  = escapeHtml(t.total_size ? formatBytes(t.total_size) : t.status);
+      // Only allow safe relative paths for task IDs
+      const rawId = t.id ? String(t.id).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+      const href  = rawId ? `/tasks/${rawId}` : '#';
+      return `<a class="recent-task" href="${escapeHtml(href)}">
+        <div class="rt-dot ${statusClass}"></div>
+        <div class="rt-name" title="${label}">${label}</div>
+        <div class="rt-meta">${size}</div>
+      </a>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div class="recent-empty">Could not load tasks</div>';
   }
 }
 
-document.addEventListener('DOMContentLoaded', startUpdates);
+/* ── Advanced section toggle ── */
+function toggleAdvanced() {
+  const section = document.getElementById('advanced-section');
+  const btn     = document.getElementById('adv-toggle');
+  const open    = section.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
 
-document.addEventListener('visibilitychange', function() {
-  if (document.hidden) {
-    stopUpdates();
-  } else {
-    startUpdates();
-  }
-});
-
-// File upload
-document.getElementById('torrent-files').addEventListener('change', function(e) {
-  const count = e.target.files.length;
-  const hint = document.getElementById('file-hint');
-  const countSpan = document.getElementById('file-count');
-  
-  if (count > 0) {
-    countSpan.textContent = count;
-    hint.style.display = 'block';
-    
-    const uploadText = document.querySelector('.upload-text');
-    if (count === 1) {
-      uploadText.textContent = e.target.files[0].name;
-    } else {
-      uploadText.textContent = `${count} file${count !== 1 ? 's' : ''} selected`;
+/* ── Drag-and-drop handlers ── */
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('drag-over');
+}
+function handleDragLeave(e) {
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('drop-zone');
+  dz.classList.remove('drag-over');
+  const allDropped = Array.from(e.dataTransfer.files);
+  const files = allDropped.filter(f => f.name.toLowerCase().endsWith('.torrent'));
+  if (files.length === 0) {
+    if (allDropped.length > 0) {
+      alert('Only .torrent files are accepted.');
     }
+    return;
+  }
+  // Try assigning via DataTransfer (modern browsers); fall back to storing in droppedTorrentFiles
+  // (Some older browsers make input.files read-only so assignment throws)
+  try {
+    const dt = new DataTransfer();
+    files.forEach(f => dt.items.add(f));
+    const input = document.getElementById('torrent-files');
+    input.files = dt.files;
+    droppedTorrentFiles = []; // input.files assignment worked — no need for fallback store
+  } catch(err) {
+    // Fallback for browsers where input.files is read-only; files stored and appended on submit
+    console.debug('DataTransfer assignment not supported, using fallback:', err);
+    droppedTorrentFiles = files;
+  }
+  updateDropZoneDisplay(files);
+}
+function updateDropZoneDisplay(files) {
+  const icon  = document.getElementById('dz-icon');
+  const title = document.getElementById('dz-title');
+  const hint  = document.getElementById('dz-hint');
+  if (files.length === 1) {
+    icon.textContent  = '✅';
+    title.textContent = files[0].name;
   } else {
-    hint.style.display = 'none';
-    document.querySelector('.upload-text').textContent = 'Click to select .torrent file(s)';
+    icon.textContent  = '✅';
+    title.textContent = files.length + ' torrent files selected';
+  }
+  hint.textContent = 'Click to change selection';
+  hint.style.display = 'block';
+}
+
+/* ── .torrent file input change ── */
+document.getElementById('torrent-files').addEventListener('change', function(e) {
+  droppedTorrentFiles = []; // user picked via dialog — clear any drag-drop store
+  const files = Array.from(e.target.files);
+  if (files.length > 0) updateDropZoneDisplay(files);
+  else {
+    document.getElementById('dz-icon').textContent  = '📁';
+    document.getElementById('dz-title').textContent = 'Drop files here or click to browse';
+    document.getElementById('dz-hint').style.display = 'none';
   }
 });
 
-// Direct file upload
+/* ── Direct file upload (advanced) ── */
 document.getElementById('direct-upload-file').addEventListener('change', function(e) {
   const file = e.target.files[0];
   const hint = document.getElementById('upload-file-hint');
-  const nameSpan = document.getElementById('upload-file-name');
-  const sizeSpan = document.getElementById('upload-file-size');
-  const uploadText = document.getElementById('upload-file-text');
-  
   if (file) {
-    nameSpan.textContent = file.name;
-    sizeSpan.textContent = formatBytes(file.size);
+    document.getElementById('upload-file-name').textContent = file.name;
+    document.getElementById('upload-file-size').textContent = formatBytes(file.size);
+    document.getElementById('upload-file-text').textContent = file.name;
     hint.style.display = 'block';
-    uploadText.textContent = file.name;
   } else {
+    document.getElementById('upload-file-text').textContent = 'Click to select a file';
     hint.style.display = 'none';
-    uploadText.textContent = 'Click to select file to upload';
   }
 });
 
-// Form validation
-document.querySelector('form').addEventListener('submit', function(e) {
-  const files = document.getElementById('torrent-files').files;
-  const source = document.getElementById('source').value.trim();
-  const uploadFile = document.getElementById('direct-upload-file').files[0];
-  
-  // If direct upload file is selected, use separate upload form
+/* ── Form submission ── */
+document.getElementById('main-form').addEventListener('submit', function(e) {
+  const torrentFiles  = document.getElementById('torrent-files').files;
+  const source        = document.getElementById('source').value.trim();
+  const uploadFile    = document.getElementById('direct-upload-file').files[0];
+  const btn           = document.getElementById('submit-btn');
+
+  // Direct file upload via XHR
   if (uploadFile) {
     e.preventDefault();
-    
-    // Create FormData for file upload
-    const formData = new FormData();
-    formData.append('upload_file', uploadFile);
-    
-    const label = document.getElementById('label').value.trim();
-    if (label) {
-      formData.append('upload_label', label);
-    }
-    
-    // Show uploading message
-    const btn = e.target.querySelector('.btn-primary');
-    const originalText = btn.innerHTML;
+    const fd = new FormData();
+    fd.append('upload_file', uploadFile);
+    const lbl = document.getElementById('label').value.trim();
+    if (lbl) fd.append('upload_label', lbl);
+
     btn.disabled = true;
-    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Uploading...';
-    
-    // Submit to upload endpoint
-    fetch('/tasks/upload', {
-      method: 'POST',
-      body: formData
-    })
-    .then(response => {
-      if (!response.ok) {
-        return response.text().then(text => {
-          throw new Error(text || 'Upload failed');
-        });
-      }
-      return response.text();
-    })
-    .then(html => {
-      // Redirect by updating location (response is HTML redirect)
-      window.location.reload();
-    })
-    .catch(error => {
-      btn.disabled = false;
-      btn.innerHTML = originalText;
-      alert('Upload failed: ' + error.message);
-    });
-    
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Uploading…';
+
+    fetch('/tasks/upload', { method: 'POST', body: fd })
+      .then(r => {
+        if (!r.ok) return r.text().then(t => { throw new Error(t || 'Upload failed'); });
+        return r.text();
+      })
+      .then(() => window.location.reload())
+      .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg> Create Task';
+        alert('Upload failed: ' + err.message);
+      });
     return false;
   }
-  
-  if (files.length === 0 && !source) {
+
+  // If files were dropped but input.files assignment failed (older browsers),
+  // build a FormData and submit via fetch instead of the native form
+  if (droppedTorrentFiles.length > 0 && torrentFiles.length === 0) {
     e.preventDefault();
-    alert('Please provide a source:\n• Upload torrent file(s), or\n• Enter magnet link(s)/URL(s), or\n• Upload a file directly (admin only)');
+    const fd = new FormData(this);
+    droppedTorrentFiles.forEach(f => fd.append('torrent_files', f));
+
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Creating…';
+
+    fetch(this.action, { method: 'POST', body: fd })
+      .then(() => { window.location.href = '/'; })
+      .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg> Create Task';
+        alert('Submission failed: ' + err.message);
+      });
+    return false;
+  }
+
+  if (torrentFiles.length === 0 && !source) {
+    e.preventDefault();
+    alert('Please provide a source:\n• Paste a magnet link or URL, or\n• Drop / select a .torrent file');
     return false;
   }
 });
