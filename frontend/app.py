@@ -855,13 +855,13 @@ def debug_config():
 def safe_task_base(task_id: str) -> Path:
     # Validate task_id is a well-formed UUID to prevent path-injection.
     if not _UUID_RE.match(task_id):
-        abort(400, "Invalid task id")
+        abort(400, "Invalid task ID")
     root = Path(app.config["STORAGE_ROOT"]).resolve()
     base = (root / task_id / "files").resolve()
     # Use is_relative_to (Python 3.9+) to avoid the startswith prefix-confusion
     # bug where /srv/storage2/... would pass a plain startswith(/srv/storage) check.
     if not base.is_relative_to(root):
-        abort(400, "Invalid task id")
+        abort(400, "Invalid task ID")
     if not base.exists():
         abort(404, "Task folder not found")
     return base
@@ -952,9 +952,11 @@ def raw_file(task_id, relpath):
     last_mod = _http_time(st.st_mtime)
     mime = _guess_mime(full.name)
     inline = request.args.get("inline", "0") in ("1", "true", "yes")
-    # Use RFC 5987 encoding for the filename to handle special characters safely.
-    safe_name = full.name.replace('"', '\\"')
-    cd = ("inline" if inline else "attachment") + f'; filename="{safe_name}"'
+    # Use RFC 6266 filename* parameter (percent-encoded UTF-8) to safely handle
+    # any filename, including those with quotes, backslashes, or control characters.
+    from urllib.parse import quote as _urlquote
+    encoded_name = _urlquote(full.name, safe="")
+    cd = ("inline" if inline else "attachment") + f"; filename*=UTF-8''{encoded_name}"
 
     # Conditional GET
     inm = request.headers.get("If-None-Match")
