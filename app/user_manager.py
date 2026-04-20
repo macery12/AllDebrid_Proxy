@@ -1,13 +1,15 @@
 """User management utilities for database-backed authentication"""
 from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
-from app.models import User, UserStats
+from app.models import User, UserStats, VALID_ROLES, ROLE_ADMIN, ROLE_MEMBER, ROLE_USER
 from app.db import SessionLocal
 from datetime import datetime
 from typing import Optional
 
-def create_user(username: str, password: str, is_admin: bool = False) -> User:
+def create_user(username: str, password: str, is_admin: bool = False, role: str = ROLE_USER) -> User:
     """Create a new user with hashed password"""
+    if role not in VALID_ROLES:
+        raise ValueError(f"Invalid role '{role}'. Must be one of: {', '.join(VALID_ROLES)}")
     with SessionLocal() as session:
         # Check if user already exists
         existing = session.query(User).filter(User.username == username).first()
@@ -18,7 +20,8 @@ def create_user(username: str, password: str, is_admin: bool = False) -> User:
         user = User(
             username=username,
             password_hash=generate_password_hash(password),
-            is_admin=is_admin
+            is_admin=(role == ROLE_ADMIN),
+            role=role,
         )
         session.add(user)
         session.flush()
@@ -122,7 +125,22 @@ def toggle_admin(user_id: int) -> bool:
     with SessionLocal() as session:
         user = session.get(User, user_id)
         if user:
-            user.is_admin = not user.is_admin
+            new_admin = not user.is_admin
+            user.is_admin = new_admin
+            user.role = ROLE_ADMIN if new_admin else ROLE_USER
             session.commit()
             return user.is_admin
         return False
+
+def set_role(user_id: int, role: str) -> str | None:
+    """Set a user's role and return the new role, or None if user not found."""
+    if role not in VALID_ROLES:
+        raise ValueError(f"Invalid role '{role}'")
+    with SessionLocal() as session:
+        user = session.get(User, user_id)
+        if user:
+            user.role = role
+            user.is_admin = (role == ROLE_ADMIN)
+            session.commit()
+            return user.role
+        return None

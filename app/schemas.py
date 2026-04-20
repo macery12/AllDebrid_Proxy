@@ -17,7 +17,7 @@ class FileItem(BaseModel):
     speedBps: int = 0
     etaSeconds: Optional[int] = None
     progressPct: int = 0
-    localPath: Optional[str] = None
+    # localPath intentionally omitted – never expose server filesystem paths to clients
 
 class StorageInfo(BaseModel):
     freeBytes: int
@@ -47,6 +47,10 @@ class CreateUserRequest(BaseModel):
     username: str
     password: str
     is_admin: bool = False
+    role: Optional[str] = None  # If set, takes precedence over is_admin
 
 class ResetPasswordRequest(BaseModel):
     password: str
+
+class SetRoleRequest(BaseModel):
+    role: str

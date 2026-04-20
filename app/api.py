@@ -7,11 +7,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from app.auth import verify_worker_key, verify_sse_access
 from app.schemas import (
     CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo,
-    VerifyCredentialsRequest, CreateUserRequest, ResetPasswordRequest,
+    VerifyCredentialsRequest, CreateUserRequest, ResetPasswordRequest, SetRoleRequest,
 )
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Task, TaskFile, UserStats, User
+from app.models import Task, TaskFile, UserStats, User, VALID_ROLES, ROLE_ADMIN, ROLE_MEMBER, ROLE_USER
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
 from app.constants import TaskStatus, FileState, EventType, Limits, SourceType
@@ -43,7 +43,7 @@ def task_to_response(task: Task, session) -> TaskResponse:
     fitems = [FileItem(
         fileId=f.id, index=f.index, name=f.name, size=f.size_bytes, state=f.state,
         bytesDownloaded=f.bytes_downloaded, speedBps=f.speed_bps or 0,
-        etaSeconds=f.eta_seconds, progressPct=f.progress_pct or 0, localPath=f.local_path
+        etaSeconds=f.eta_seconds, progressPct=f.progress_pct or 0
     ) for f in files]
 
     # Basic storage info
@@ -917,6 +917,7 @@ def _user_to_dict(u: User, stats: UserStats | None = None) -> dict:
         "id": u.id,
         "username": u.username,
         "is_admin": u.is_admin,
+        "role": u.role,
         "created_at": u.created_at.isoformat() if u.created_at else None,
         "last_login": u.last_login.isoformat() if u.last_login else None,
         "stats": {
@@ -954,7 +955,7 @@ def get_user_by_id(user_id: int):
         u = s.get(User, user_id)
         if not u:
             raise HTTPException(status_code=404, detail="User not found")
-        return {"id": u.id, "username": u.username, "is_admin": u.is_admin}
+        return {"id": u.id, "username": u.username, "is_admin": u.is_admin, "role": u.role}
 
 
 @router.post("/users", dependencies=[Depends(verify_worker_key)])
@@ -962,6 +963,10 @@ def create_user_endpoint(req: CreateUserRequest):
     """Create a new user account."""
     if not req.username or not req.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
+    # Determine role: explicit role field takes precedence, fallback to is_admin
+    role = req.role if req.role else (ROLE_ADMIN if req.is_admin else ROLE_USER)
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role '{role}'. Must be one of: {', '.join(VALID_ROLES)}")
     with SessionLocal() as s:
         existing = s.query(User).filter(User.username == req.username).first()
         if existing:
@@ -969,13 +974,14 @@ def create_user_endpoint(req: CreateUserRequest):
         user = User(
             username=req.username,
             password_hash=generate_password_hash(req.password),
-            is_admin=req.is_admin,
+            is_admin=(role == ROLE_ADMIN),
+            role=role,
         )
         s.add(user)
         s.flush()
         s.add(UserStats(user_id=user.id))
         s.commit()
-        return {"id": user.id, "username": user.username, "is_admin": user.is_admin}
+        return {"id": user.id, "username": user.username, "is_admin": user.is_admin, "role": user.role}
 
 
 @router.delete("/users/{user_id}", dependencies=[Depends(verify_worker_key)])
@@ -991,14 +997,31 @@ def delete_user_endpoint(user_id: int):
 
 @router.post("/users/{user_id}/toggle-admin", dependencies=[Depends(verify_worker_key)])
 def toggle_admin_endpoint(user_id: int):
-    """Toggle the admin flag on a user account."""
+    """Toggle the admin flag on a user account (legacy endpoint; prefer set-role)."""
     with SessionLocal() as s:
         u = s.get(User, user_id)
         if not u:
             raise HTTPException(status_code=404, detail="User not found")
-        u.is_admin = not u.is_admin
+        new_admin = not u.is_admin
+        u.is_admin = new_admin
+        u.role = ROLE_ADMIN if new_admin else ROLE_USER
         s.commit()
-        return {"is_admin": u.is_admin}
+        return {"is_admin": u.is_admin, "role": u.role}
+
+
+@router.post("/users/{user_id}/set-role", dependencies=[Depends(verify_worker_key)])
+def set_role_endpoint(user_id: int, req: SetRoleRequest):
+    """Set the role for a user account (admin, member, or user)."""
+    if req.role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role '{req.role}'. Must be one of: {', '.join(VALID_ROLES)}")
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        u.role = req.role
+        u.is_admin = (req.role == ROLE_ADMIN)
+        s.commit()
+        return {"is_admin": u.is_admin, "role": u.role}
 
 
 @router.post("/users/{user_id}/reset-password", dependencies=[Depends(verify_worker_key)])
@@ -1028,4 +1051,4 @@ def verify_credentials_endpoint(req: VerifyCredentialsRequest):
             raise HTTPException(status_code=401, detail="Invalid username or password")
         u.last_login = datetime.now(timezone.utc)
         s.commit()
-        return {"id": u.id, "username": u.username, "is_admin": u.is_admin}
+        return {"id": u.id, "username": u.username, "is_admin": u.is_admin, "role": u.role}

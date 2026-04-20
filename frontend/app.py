@@ -46,15 +46,21 @@ login_manager.init_app(app)
 # Auth / Users (Database-backed)
 # ------------------------------------------------------------------------------
 class User(UserMixin):
-    def __init__(self, user_id: int, username: str, is_admin: bool = False):
+    def __init__(self, user_id: int, username: str, is_admin: bool = False, role: str = "user"):
         self.id = user_id
         self.username = username
         self.is_admin = is_admin
-    
+        self.role = role
+
     @property
     def is_active(self):
         return True
-    
+
+    @property
+    def is_member(self) -> bool:
+        """True for admin and member roles — can access home/tasks pages."""
+        return self.role in ("admin", "member")
+
     def get_id(self):
         """Return user ID as string for Flask-Login"""
         return str(self.id)
@@ -65,7 +71,7 @@ def load_user(user_id):
         numeric_id = int(user_id)
         data, err = w_request("GET", f"/api/users/{numeric_id}")
         if not err and data:
-            return User(data["id"], data["username"], data["is_admin"])
+            return User(data["id"], data["username"], data["is_admin"], data.get("role", "user"))
     except (ValueError, TypeError):
         pass
     return None
@@ -82,7 +88,18 @@ def admin_required(f):
     @login_required
     def decorated_function(*args, **kwargs):
         if not current_user.is_admin:
-            # Show access denied page for non-admin users
+            return render_template("access_denied.html"), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+def member_required(f):
+    """Decorator to require member or admin access (home page, task management).
+    Users with role 'user' are redirected to the downloads area."""
+    from functools import wraps
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_member:
             return render_template("access_denied.html"), 403
         return f(*args, **kwargs)
     return decorated_function
@@ -140,11 +157,12 @@ class _UserStats:
 
 class _UserData:
     """Thin wrapper over a user dict returned by the API (template-compatible)."""
-    __slots__ = ("id", "username", "is_admin", "created_at", "last_login", "stats")
+    __slots__ = ("id", "username", "is_admin", "role", "created_at", "last_login", "stats")
     def __init__(self, d: dict):
         self.id = d["id"]
         self.username = d["username"]
         self.is_admin = d.get("is_admin", False)
+        self.role = d.get("role", "user")
         self.created_at = _parse_dt(d.get("created_at"))
         self.last_login = _parse_dt(d.get("last_login"))
         self.stats = _UserStats(d["stats"]) if d.get("stats") else None
@@ -251,7 +269,7 @@ def login():
             body, err = w_request("POST", "/api/auth/verify",
                                   json_body={"username": username, "password": password})
             if not err and body:
-                user = User(body["id"], body["username"], body["is_admin"])
+                user = User(body["id"], body["username"], body["is_admin"], body.get("role", "user"))
                 login_user(user)
                 flash("Logged in successfully!", "success")
                 return redirect(url_for("index"))
@@ -279,12 +297,12 @@ def test_task_view():
     return render_template('task.html', task_id=task_id, t=t, refresh=refresh, mode=mode)
 
 @app.get("/")
-@admin_required
+@member_required
 def index():
     return render_template("index.html")
 
 @app.post("/tasks/new")
-@admin_required
+@member_required
 def create_task():
     """Create a new download task with validation - supports multiple sources and torrent files"""
     mode = request.form.get("mode", "auto")
@@ -590,18 +608,18 @@ def create_user_route():
     """Create a new user"""
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "").strip()
-    is_admin = request.form.get("is_admin") == "on"
+    role = request.form.get("role", "user").strip()
 
     if not username or not password:
         flash("Username and password are required", "error")
         return redirect(url_for("admin_users_page"))
 
     _, err = w_request("POST", "/api/users",
-                       json_body={"username": username, "password": password, "is_admin": is_admin})
+                       json_body={"username": username, "password": password, "role": role})
     if err:
         flash(str(err[0]), "error")
     else:
-        flash(f"User '{username}' created successfully", "success")
+        flash(f"User '{username}' created successfully with role '{role}'", "success")
     return redirect(url_for("admin_users_page"))
 
 @app.post("/admin/users/<int:user_id>/delete")
@@ -622,9 +640,9 @@ def delete_user_route(user_id: int):
 @app.post("/admin/users/<int:user_id>/toggle-admin")
 @admin_required
 def toggle_admin_route(user_id: int):
-    """Toggle admin status"""
+    """Toggle admin status (legacy; prefer set-role)"""
     if user_id == current_user.id:
-        flash("You cannot modify your own admin status", "error")
+        flash("You cannot modify your own role", "error")
         return redirect(url_for("admin_users_page"))
 
     body, err = w_request("POST", f"/api/users/{user_id}/toggle-admin")
@@ -633,6 +651,26 @@ def toggle_admin_route(user_id: int):
     else:
         is_admin = body.get("is_admin", False)
         flash(f"User is now {'an admin' if is_admin else 'a regular user'}", "success")
+    return redirect(url_for("admin_users_page"))
+
+@app.post("/admin/users/<int:user_id>/set-role")
+@admin_required
+def set_role_route(user_id: int):
+    """Set a user's role"""
+    if user_id == current_user.id:
+        flash("You cannot modify your own role", "error")
+        return redirect(url_for("admin_users_page"))
+
+    role = request.form.get("role", "").strip()
+    if role not in ("admin", "member", "user"):
+        flash("Invalid role selected", "error")
+        return redirect(url_for("admin_users_page"))
+
+    body, err = w_request("POST", f"/api/users/{user_id}/set-role", json_body={"role": role})
+    if err:
+        flash(f"Failed to update role: {err[0]}", "error")
+    else:
+        flash(f"User role updated to '{role}'", "success")
     return redirect(url_for("admin_users_page"))
 
 @app.post("/admin/users/<int:user_id>/reset-password")
@@ -674,7 +712,7 @@ def get_task(task_id: str):
     return body, None
 
 @app.get("/tasks/<task_id>")
-@admin_required
+@member_required
 def task_view(task_id):
     t, err = get_task(task_id)
     if err:
@@ -693,7 +731,7 @@ def task_view(task_id):
                          sse_token=sse_token)
 
 @app.post("/tasks/<task_id>/select")
-@admin_required
+@member_required
 def task_select(task_id):
     file_ids = request.form.getlist("fileIds")
     if not file_ids:
@@ -707,7 +745,7 @@ def task_select(task_id):
     return redirect(url_for("task_view", task_id=task_id, refresh=request.args.get("refresh", 3)))
 
 @app.post("/tasks/<task_id>/cancel")
-@admin_required
+@member_required
 def task_cancel(task_id):
     _, err = w_request("POST", f"/api/tasks/{task_id}/cancel")
     if err:
@@ -717,7 +755,7 @@ def task_cancel(task_id):
     return redirect(url_for("task_view", task_id=task_id))
 
 @app.post("/tasks/<task_id>/delete")
-@admin_required
+@member_required
 def task_delete(task_id):
     purge = request.form.get("purge_files", "false").lower() == "true"
     _, err = w_request("DELETE", f"/api/tasks/{task_id}", params={"purge_files": purge})
@@ -752,6 +790,7 @@ def safe_task_base(task_id: str) -> Path:
     return base
 
 @app.get("/d/<task_id>/")
+@login_required
 def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
@@ -767,6 +806,7 @@ def list_folder(task_id):
     return render_template("folder.html", task_id=task_id, entries=items)
 
 @app.get("/d/<task_id>/links.txt")
+@login_required
 def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
@@ -794,6 +834,7 @@ def tar_all(task_id):
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
 
 @app.get("/d/<task_id>/raw/<path:relpath>")
+@login_required
 def raw_file(task_id, relpath):
     base = safe_task_base(task_id)
     full = (base / relpath).resolve()
@@ -846,6 +887,7 @@ def raw_file(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/play/<path:relpath>")
+@login_required
 def play_video(task_id, relpath):
     """Video player page"""
     base = safe_task_base(task_id)
@@ -880,6 +922,7 @@ def play_video(task_id, relpath):
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
+@login_required
 def stream_video(task_id, relpath):
     """Stream video with Range request support"""
     base = safe_task_base(task_id)
