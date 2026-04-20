@@ -303,6 +303,7 @@
 
     {% if (mode == 'select') and not is_final %}
     <form method="post" action="{{ url_for('task_select', task_id=task_id, mode=mode) }}" id="select-form">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     {% endif %}
 
       <table class="file-table">
@@ -388,6 +389,7 @@
 
         {% if not is_final %}
         <form method="post" action="{{ url_for('task_cancel', task_id=task_id, mode=mode) }}" style="display: inline;">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <button class="btn warn" type="submit">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
@@ -400,6 +402,7 @@
         {% endif %}
         
         <form method="post" action="{{ url_for('task_delete', task_id=task_id, mode=mode) }}" style="display: inline;">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="purge_files" value="true">
           <button class="btn danger" type="submit">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

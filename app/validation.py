@@ -64,24 +64,28 @@ def validate_file_path(file_path: str, base_dir: str) -> str:
     if not file_path:
         raise ValidationError("File path is required")
     
+    # Check for null bytes before any other processing
+    if '\x00' in file_path:
+        raise ValidationError("Null byte in file path")
+    
     # Check length
     if len(file_path) > Limits.MAX_PATH_LENGTH:
         raise ValidationError("File path is too long")
     
-    # Resolve to absolute path
+    # Use realpath (not abspath) to resolve symlinks before checking containment.
+    # abspath only normalises '..' without following symlinks, which means a
+    # symlink inside base_dir could point outside it and bypass the check.
     try:
-        abs_path = os.path.abspath(os.path.join(base_dir, file_path))
-        abs_base = os.path.abspath(base_dir)
+        abs_path = os.path.realpath(os.path.join(base_dir, file_path))
+        abs_base = os.path.realpath(base_dir)
     except Exception as e:
         raise ValidationError(f"Invalid file path: {e}")
     
-    # Ensure the resolved path is within base_dir (prevent traversal)
-    if not abs_path.startswith(abs_base):
+    # Ensure the resolved path is within base_dir (prevent traversal).
+    # We must append os.sep so that a directory whose name is a *prefix* of
+    # base_dir (e.g. /srv/storage2 vs /srv/storage) cannot pass the check.
+    if abs_path != abs_base and not abs_path.startswith(abs_base + os.sep):
         raise ValidationError("Path traversal detected")
-    
-    # Check for null bytes
-    if '\x00' in file_path:
-        raise ValidationError("Null byte in file path")
     
     return abs_path
 

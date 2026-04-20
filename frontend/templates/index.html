@@ -527,6 +527,7 @@
   <!-- ═══════════ CENTER COLUMN — Main Form ═══════════ -->
   <div class="col-center">
     <form id="main-form" method="post" action="{{ url_for('create_task') }}" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
       <!-- ── Unified input card ── -->
       <div class="input-card">

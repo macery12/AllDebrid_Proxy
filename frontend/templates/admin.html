@@ -351,6 +351,8 @@ async function deleteTask(taskId) {
     // Use frontend proxy endpoint (session-based auth, no worker key needed)
     const formData = new FormData();
     formData.append('purge_files', 'true');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    formData.append('_csrf_token', csrfToken);
     
     const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/delete`, {
       method: 'POST',
