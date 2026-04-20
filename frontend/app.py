@@ -1,8 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response, session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from pathlib import Path
 from dotenv import load_dotenv
-import os, io, tarfile, logging, requests, mimetypes, hashlib
+import os, io, tarfile, logging, requests, mimetypes, hashlib, secrets, re
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
@@ -38,9 +38,70 @@ if not app.config["WORKER_KEY"]:
 elif app.config["WORKER_KEY"] == "change-me":
     log.warning("WORKER_API_KEY is still set to default 'change-me' - please change it")
 
+if app.secret_key == "dev-secret":
+    log.warning("FLASK_SECRET is not set or is still 'dev-secret'. Sessions are insecure in production.")
+
 login_manager = LoginManager()
 login_manager.login_view = "login"
 login_manager.init_app(app)
+
+# UUID pattern (reused from backend constants without importing DB-connected modules)
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+# ------------------------------------------------------------------------------
+# CSRF helpers (lightweight, session-based)
+# ------------------------------------------------------------------------------
+def _csrf_token() -> str:
+    """Return (and lazily create) the CSRF token stored in the user's session."""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+def _validate_csrf():
+    """Validate CSRF token submitted with a state-changing POST request.
+    Aborts with 403 on mismatch to prevent cross-site request forgery."""
+    token = request.form.get("_csrf_token") or request.headers.get("X-CSRFToken")
+    expected = session.get("_csrf_token")
+    if not token or not expected or not secrets.compare_digest(token, expected):
+        log.warning("CSRF validation failed for %s %s", request.method, request.path)
+        abort(403, "Invalid or missing CSRF token")
+
+# Expose the helper in Jinja2 templates so every form can render the hidden field.
+app.jinja_env.globals["csrf_token"] = _csrf_token
+
+# ------------------------------------------------------------------------------
+# Security headers
+# ------------------------------------------------------------------------------
+@app.after_request
+def set_security_headers(response):
+    """Add defensive HTTP headers to every response."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Rate of change is low; avoid caching private pages at all.
+    if response.content_type and "text/html" in response.content_type:
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+# ------------------------------------------------------------------------------
+# Login rate limiter (in-process, per IP)
+# ------------------------------------------------------------------------------
+import time as _time
+_login_attempts: dict = {}   # {ip: [timestamp, ...]}
+_LOGIN_WINDOW = 300          # 5-minute sliding window
+_LOGIN_MAX_ATTEMPTS = 20     # max failed+successful POSTs per window per IP
+
+def _login_rate_check():
+    """Raise 429 if the client IP has exceeded the login rate limit."""
+    ip = request.remote_addr or "unknown"
+    now = _time.time()
+    window_start = now - _LOGIN_WINDOW
+    attempts = [t for t in _login_attempts.get(ip, []) if t > window_start]
+    if len(attempts) >= _LOGIN_MAX_ATTEMPTS:
+        log.warning("Login rate limit exceeded for IP %s", ip)
+        abort(429, "Too many login attempts. Please wait a few minutes and try again.")
+    attempts.append(now)
+    _login_attempts[ip] = attempts
 
 # ------------------------------------------------------------------------------
 # Auth / Users (Database-backed)
@@ -248,6 +309,8 @@ def login():
     is_first_time = (not check_err) and (not check_data.get("has_users", True))
 
     if request.method == "POST":
+        _validate_csrf()
+        _login_rate_check()
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
 
@@ -305,6 +368,7 @@ def index():
 @member_required
 def create_task():
     """Create a new download task with validation - supports multiple sources and torrent files"""
+    _validate_csrf()
     mode = request.form.get("mode", "auto")
     source = request.form.get("source", "").strip()
     label = request.form.get("label", "").strip() or None
@@ -478,6 +542,7 @@ def create_task():
 @admin_required
 def upload_file():
     """Upload a file directly and create a task - admin only"""
+    _validate_csrf()
     # Get uploaded file
     if 'upload_file' not in request.files:
         flash("No file provided", "error")
@@ -606,6 +671,7 @@ def admin_users_page():
 @admin_required
 def create_user_route():
     """Create a new user"""
+    _validate_csrf()
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "").strip()
     role = request.form.get("role", "user").strip()
@@ -626,6 +692,7 @@ def create_user_route():
 @admin_required
 def delete_user_route(user_id: int):
     """Delete a user"""
+    _validate_csrf()
     if user_id == current_user.id:
         flash("You cannot delete your own account", "error")
         return redirect(url_for("admin_users_page"))
@@ -641,6 +708,7 @@ def delete_user_route(user_id: int):
 @admin_required
 def toggle_admin_route(user_id: int):
     """Toggle admin status (legacy; prefer set-role)"""
+    _validate_csrf()
     if user_id == current_user.id:
         flash("You cannot modify your own role", "error")
         return redirect(url_for("admin_users_page"))
@@ -657,6 +725,7 @@ def toggle_admin_route(user_id: int):
 @admin_required
 def set_role_route(user_id: int):
     """Set a user's role"""
+    _validate_csrf()
     if user_id == current_user.id:
         flash("You cannot modify your own role", "error")
         return redirect(url_for("admin_users_page"))
@@ -677,6 +746,7 @@ def set_role_route(user_id: int):
 @admin_required
 def reset_password_route(user_id: int):
     """Reset user password"""
+    _validate_csrf()
     new_password = request.form.get("new_password", "").strip()
 
     if not new_password:
@@ -733,6 +803,7 @@ def task_view(task_id):
 @app.post("/tasks/<task_id>/select")
 @member_required
 def task_select(task_id):
+    _validate_csrf()
     file_ids = request.form.getlist("fileIds")
     if not file_ids:
         flash("Pick at least one file", "error")
@@ -747,6 +818,7 @@ def task_select(task_id):
 @app.post("/tasks/<task_id>/cancel")
 @member_required
 def task_cancel(task_id):
+    _validate_csrf()
     _, err = w_request("POST", f"/api/tasks/{task_id}/cancel")
     if err:
         flash(f"Cancel failed: {err[0]}", "error")
@@ -757,6 +829,7 @@ def task_cancel(task_id):
 @app.post("/tasks/<task_id>/delete")
 @member_required
 def task_delete(task_id):
+    _validate_csrf()
     purge = request.form.get("purge_files", "false").lower() == "true"
     _, err = w_request("DELETE", f"/api/tasks/{task_id}", params={"purge_files": purge})
     if err:
@@ -774,16 +847,20 @@ def debug_config():
     return jsonify({
         "worker_base_url": app.config["WORKER_BASE_URL"],
         "worker_key_present": bool(app.config["WORKER_KEY"]),
-        "storage_root": app.config["STORAGE_ROOT"],
     })
 
 # ------------------------------------------------------------------------------
 # Fileshare
 # ------------------------------------------------------------------------------
 def safe_task_base(task_id: str) -> Path:
+    # Validate task_id is a well-formed UUID to prevent path-injection.
+    if not _UUID_RE.match(task_id):
+        abort(400, "Invalid task id")
     root = Path(app.config["STORAGE_ROOT"]).resolve()
     base = (root / task_id / "files").resolve()
-    if not str(base).startswith(str(root)):
+    # Use is_relative_to (Python 3.9+) to avoid the startswith prefix-confusion
+    # bug where /srv/storage2/... would pass a plain startswith(/srv/storage) check.
+    if not base.is_relative_to(root):
         abort(400, "Invalid task id")
     if not base.exists():
         abort(404, "Task folder not found")
@@ -795,10 +872,13 @@ def list_folder(task_id):
     base = safe_task_base(task_id)
     items = []
     for p in sorted(base.rglob("*")):
+        # Skip symlinks that escape the base directory (traversal via symlink)
+        if p.is_symlink() and not p.resolve().is_relative_to(base):
+            continue
         if p.is_file() and _should_include_file(p):
             rel = p.relative_to(base).as_posix()
             items.append({
-                "rel": rel, 
+                "rel": rel,
                 "size": p.stat().st_size,
                 "is_video": _is_video(p.name),
                 "is_downloading": _is_still_downloading(p)
@@ -811,6 +891,9 @@ def links_txt(task_id):
     base = safe_task_base(task_id)
     out = io.StringIO()
     for p in sorted(base.rglob("*")):
+        # Skip symlinks that escape the base directory
+        if p.is_symlink() and not p.resolve().is_relative_to(base):
+            continue
         if p.is_file() and _should_include_file(p):
             rel = p.relative_to(base).as_posix()
             out.write(f"/d/{task_id}/raw/{rel}\n")
@@ -821,28 +904,44 @@ def links_txt(task_id):
 def tar_all(task_id):
     base = safe_task_base(task_id)
     mem = io.BytesIO()
-    
-    def exclude_aria2(tarinfo):
-        """Filter function to exclude .aria2 files from tar archive"""
+
+    def safe_tar_filter(tarinfo):
+        """Exclude .aria2 control files and any symlinks (which could point
+        outside the base directory and leak filesystem paths/content)."""
         if not _should_include_file(Path(tarinfo.name)):
             return None
+        # Drop symlinks entirely — a symlink's target is not verified to be
+        # within the task directory and could leak arbitrary filesystem data.
+        if tarinfo.issym() or tarinfo.islnk():
+            return None
         return tarinfo
-    
+
     with tarfile.open(fileobj=mem, mode="w:gz") as tar:
-        tar.add(base, arcname=f"{task_id}/files", filter=exclude_aria2)
+        tar.add(base, arcname=f"{task_id}/files", filter=safe_tar_filter)
     mem.seek(0)
     return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
+
+def _safe_resolve_relpath(base: Path, relpath: str) -> Path:
+    """Resolve *relpath* under *base* and verify it stays within *base*.
+
+    Uses Path.is_relative_to() (Python 3.9+) instead of a plain startswith()
+    check to avoid the prefix-confusion bug where a path like
+    /base_extension/evil passes startswith(/base).
+    Aborts with 400 on traversal attempt, 404 if the file doesn't exist.
+    """
+    full = (base / relpath).resolve()
+    if not full.is_relative_to(base):
+        abort(400, "Invalid path")
+    if not full.exists() or not full.is_file():
+        abort(404)
+    return full
 
 @app.get("/d/<task_id>/raw/<path:relpath>")
 @login_required
 def raw_file(task_id, relpath):
     base = safe_task_base(task_id)
-    full = (base / relpath).resolve()
-    if not str(full).startswith(str(base)):
-        abort(400, "Invalid path")
-    if not full.exists() or not full.is_file():
-        abort(404)
-    
+    full = _safe_resolve_relpath(base, relpath)
+
     # Check if file is still being downloaded
     if _is_still_downloading(full):
         abort(409, "File is still being downloaded. Please wait until the download completes.")
@@ -853,7 +952,9 @@ def raw_file(task_id, relpath):
     last_mod = _http_time(st.st_mtime)
     mime = _guess_mime(full.name)
     inline = request.args.get("inline", "0") in ("1", "true", "yes")
-    cd = ("inline" if inline else "attachment") + f'; filename="{full.name}"'
+    # Use RFC 5987 encoding for the filename to handle special characters safely.
+    safe_name = full.name.replace('"', '\\"')
+    cd = ("inline" if inline else "attachment") + f'; filename="{safe_name}"'
 
     # Conditional GET
     inm = request.headers.get("If-None-Match")
@@ -891,24 +992,20 @@ def raw_file(task_id, relpath):
 def play_video(task_id, relpath):
     """Video player page"""
     base = safe_task_base(task_id)
-    full = (base / relpath).resolve()
-    if not str(full).startswith(str(base)):
-        abort(400, "Invalid path")
-    if not full.exists() or not full.is_file():
-        abort(404)
-    
+    full = _safe_resolve_relpath(base, relpath)
+
     # Check if file is still being downloaded
     if _is_still_downloading(full):
         flash("This file is still being downloaded. Please wait until the download completes.", "error")
         return redirect(url_for("list_folder", task_id=task_id))
-    
+
     if not _is_video(full.name):
         flash("This file is not a video", "error")
         return redirect(url_for("list_folder", task_id=task_id))
-    
+
     st = full.stat()
     mime = _guess_mime(full.name)
-    
+
     return render_template(
         "player.html",
         task_id=task_id,
@@ -926,23 +1023,19 @@ def play_video(task_id, relpath):
 def stream_video(task_id, relpath):
     """Stream video with Range request support"""
     base = safe_task_base(task_id)
-    full = (base / relpath).resolve()
-    if not str(full).startswith(str(base)):
-        abort(400, "Invalid path")
-    if not full.exists() or not full.is_file():
-        abort(404)
-    
+    full = _safe_resolve_relpath(base, relpath)
+
     # Check if file is still being downloaded
     if _is_still_downloading(full):
         abort(409, "File is still being downloaded. Please wait until the download completes.")
-    
+
     # Get file metadata
     st = full.stat()
     file_size = st.st_size
     mime = _guess_mime(full.name)
     etag = _etag_for_stat(st)
     last_mod = _http_time(st.st_mtime)
-    
+
     # Handle Range requests for video seeking
     range_header = request.headers.get('Range')
     if not range_header:
@@ -953,36 +1046,36 @@ def stream_video(task_id, relpath):
             conditional=True,
             max_age=3600
         )
-    
+
     # Parse Range header (simple byte range only, ignore multi-range)
     try:
         # Extract byte range - expect format like "bytes=0-1023" or "bytes=1024-"
         if not range_header.startswith('bytes='):
             abort(416)
-        
+
         byte_range = range_header[6:].split(',')[0].strip()  # Take first range only
         parts = byte_range.split('-')
-        
+
         if len(parts) != 2:
             abort(416)
-        
+
         # Parse start and end, handling empty strings
         start = int(parts[0]) if parts[0].strip() else 0
         end = int(parts[1]) if parts[1].strip() else file_size - 1
-        
+
         # Ensure valid range
         if start < 0 or start >= file_size or end >= file_size or start > end:
             abort(416)  # Range Not Satisfiable
-        
+
         length = end - start + 1
-        
+
         # For small ranges (< 5MB), read directly to avoid generator overhead
         # This significantly improves seeking performance
         if length < 5 * 1024 * 1024:
             with open(full, 'rb') as f:
                 f.seek(start)
                 data = f.read(length)
-            
+
             resp = make_response(data)
             resp.status_code = 206
             resp.headers["Content-Type"] = mime
@@ -991,22 +1084,23 @@ def stream_video(task_id, relpath):
             resp.headers["Accept-Ranges"] = "bytes"
             resp.headers["ETag"] = etag
             resp.headers["Last-Modified"] = last_mod
-            resp.headers["Cache-Control"] = "public, max-age=3600"
+            # private: authenticated content must not be stored in shared caches
+            resp.headers["Cache-Control"] = "private, max-age=3600"
             return resp
-        
+
         # For larger ranges, use chunked streaming
         def generate():
             with open(full, 'rb') as f:
                 f.seek(start)
                 remaining = length
-                chunk_size = 256 * 1024  # Increased to 256KB for better throughput
+                chunk_size = 256 * 1024  # 256KB chunks for better throughput
                 while remaining > 0:
                     chunk = f.read(min(chunk_size, remaining))
                     if not chunk:
                         break
                     remaining -= len(chunk)
                     yield chunk
-        
+
         resp = make_response(generate())
         resp.status_code = 206  # Partial Content
         resp.headers["Content-Type"] = mime
@@ -1015,8 +1109,9 @@ def stream_video(task_id, relpath):
         resp.headers["Accept-Ranges"] = "bytes"
         resp.headers["ETag"] = etag
         resp.headers["Last-Modified"] = last_mod
-        resp.headers["Cache-Control"] = "public, max-age=3600"
-        
+        # private: authenticated content must not be stored in shared caches
+        resp.headers["Cache-Control"] = "private, max-age=3600"
+
         return resp
     except (ValueError, IndexError):
         abort(416, "Invalid Range header")
