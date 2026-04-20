@@ -494,7 +494,7 @@
              ondrop="handleDrop(event)">
           <span class="dz-icon" id="dz-icon">📁</span>
           <div class="dz-title" id="dz-title">Drop files here or click to browse</div>
-          <div class="dz-sub">Paste links or drop files (magnet, URL, .torrent)</div>
+          <div class="dz-sub">Drop .torrent files here, or click to browse</div>
           <span class="dz-files-hint" id="dz-hint"></span>
           <input type="file" id="torrent-files" name="torrent_files" accept=".torrent" multiple />
         </div>
@@ -522,7 +522,7 @@
 
       <!-- ── Advanced section (hidden by default) ── -->
       <div class="advanced-section" id="advanced-section">
-        <div class="adv-label">Direct File Upload &mdash; Admin only &middot; up to 10 GB</div>
+        <div class="adv-label">Direct File Upload — Admin only · up to 10 GB</div>
         <div class="adv-upload-zone" onclick="document.getElementById('direct-upload-file').click()">
           <div style="font-size:22px; margin-bottom:5px;">⬆️</div>
           <div style="font-size:13px; font-weight:600; color:var(--text); margin-bottom:2px;" id="upload-file-text">Click to select a file</div>
@@ -602,6 +602,7 @@
 
 <script>
 let updateTimer = null;
+let droppedTorrentFiles = []; // holds files from drag-and-drop when input.files is read-only
 
 /* ── Utility helpers ── */
 function formatBytes(bytes) {
@@ -692,7 +693,12 @@ async function updateStats() {
 function startUpdates() {
   updateStats();
   if (updateTimer) clearInterval(updateTimer);
-  updateTimer = setInterval(updateStats, 5000);
+  let recentTasksTick = 0;
+  updateTimer = setInterval(() => {
+    updateStats();
+    // Refresh recent tasks every 6th tick (~30s)
+    if (++recentTasksTick >= 6) { recentTasksTick = 0; loadRecentTasks(); }
+  }, 5000);
 }
 function stopUpdates() {
   if (updateTimer) { clearInterval(updateTimer); updateTimer = null; }
@@ -758,19 +764,20 @@ function handleDrop(e) {
   e.preventDefault();
   const dz = document.getElementById('drop-zone');
   dz.classList.remove('drag-over');
-  const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.torrent'));
+  const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.torrent'));
   if (files.length === 0) return;
-  // Transfer to the hidden file input via DataTransfer
+  // Try assigning via DataTransfer (modern browsers); fall back to storing in droppedTorrentFiles
   try {
     const dt = new DataTransfer();
     files.forEach(f => dt.items.add(f));
     const input = document.getElementById('torrent-files');
     input.files = dt.files;
-    updateDropZoneDisplay(files);
+    droppedTorrentFiles = []; // input.files assignment worked — no need for fallback store
   } catch(err) {
-    // Fallback: just show count
-    updateDropZoneDisplay(files);
+    // Older browsers: store files so form submission can include them via FormData
+    droppedTorrentFiles = files;
   }
+  updateDropZoneDisplay(files);
 }
 function updateDropZoneDisplay(files) {
   const icon  = document.getElementById('dz-icon');
@@ -789,6 +796,7 @@ function updateDropZoneDisplay(files) {
 
 /* ── .torrent file input change ── */
 document.getElementById('torrent-files').addEventListener('change', function(e) {
+  droppedTorrentFiles = []; // user picked via dialog — clear any drag-drop store
   const files = Array.from(e.target.files);
   if (files.length > 0) updateDropZoneDisplay(files);
   else {
@@ -841,6 +849,26 @@ document.getElementById('main-form').addEventListener('submit', function(e) {
         btn.disabled = false;
         btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg> Create Task';
         alert('Upload failed: ' + err.message);
+      });
+    return false;
+  }
+
+  // If files were dropped but input.files assignment failed (older browsers),
+  // build a FormData and submit via fetch instead of the native form
+  if (droppedTorrentFiles.length > 0 && torrentFiles.length === 0) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    droppedTorrentFiles.forEach(f => fd.append('torrent_files', f));
+
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Creating…';
+
+    fetch(this.action, { method: 'POST', body: fd })
+      .then(r => { window.location.href = r.url || '/'; })
+      .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg> Create Task';
+        alert('Submission failed: ' + err.message);
       });
     return false;
   }
