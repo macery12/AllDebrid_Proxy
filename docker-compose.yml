@@ -43,6 +43,7 @@ services:
     networks:
       - backend
     restart: "no"
+    user: "1000:1000"
     volumes: *storage-vol
 
   api:
@@ -66,6 +67,7 @@ services:
       - backend
       - frontend
     restart: unless-stopped
+    user: "1000:1000"
 
   worker:
     build:
@@ -85,6 +87,7 @@ services:
     networks:
       - backend
     restart: unless-stopped
+    user: "1000:1000"
 
   frontend:
     build:
@@ -101,6 +104,7 @@ services:
     networks:
       - frontend
     restart: unless-stopped
+    user: "1000:1000"
 
   aria2:
     image: p3terx/aria2-pro:latest
