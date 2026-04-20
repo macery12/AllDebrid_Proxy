@@ -108,7 +108,7 @@ No special steps needed - the database migration runs automatically.
 
 2. **Run the migration**:
    ```bash
-   docker-compose exec adproxy_api alembic upgrade head
+   docker-compose exec proxy_api alembic upgrade head
    ```
 
 3. **Restart services**:

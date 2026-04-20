@@ -1,12 +1,17 @@
 import uuid, json, os, time, shutil, redis, asyncio, hashlib
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash, check_password_hash
 from app.auth import verify_worker_key, verify_sse_access
-from app.schemas import CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo
+from app.schemas import (
+    CreateTaskRequest, TaskResponse, FileItem, SelectRequest, StorageInfo,
+    VerifyCredentialsRequest, CreateUserRequest, ResetPasswordRequest,
+)
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Task, TaskFile, UserStats
+from app.models import Task, TaskFile, UserStats, User
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
 from app.ws_manager import ws_manager
 from app.constants import TaskStatus, FileState, EventType, Limits, SourceType
@@ -901,3 +906,126 @@ def get_system_stats():
         }
     }
 
+
+# ---------------------------------------------------------------------------
+# User management endpoints  (all require WORKER_API_KEY authentication)
+# ---------------------------------------------------------------------------
+
+def _user_to_dict(u: User, stats: UserStats | None = None) -> dict:
+    """Serialise a User ORM object to a safe dict (no password_hash)."""
+    return {
+        "id": u.id,
+        "username": u.username,
+        "is_admin": u.is_admin,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "last_login": u.last_login.isoformat() if u.last_login else None,
+        "stats": {
+            "total_magnets_processed": stats.total_magnets_processed,
+            "total_downloads": stats.total_downloads,
+            "total_bytes_downloaded": stats.total_bytes_downloaded,
+        } if stats else None,
+    }
+
+
+@router.get("/users/check", dependencies=[Depends(verify_worker_key)])
+def check_has_users():
+    """Return whether any user accounts exist (used for first-time setup detection)."""
+    with SessionLocal() as s:
+        count = s.query(User).count()
+        return {"has_users": count > 0}
+
+
+@router.get("/users", dependencies=[Depends(verify_worker_key)])
+def list_users():
+    """Return all users with their stats. Never returns password hashes."""
+    with SessionLocal() as s:
+        users = s.query(User).order_by(User.created_at.asc()).all()
+        result = []
+        for u in users:
+            stats = s.query(UserStats).filter(UserStats.user_id == u.id).first()
+            result.append(_user_to_dict(u, stats))
+        return {"users": result}
+
+
+@router.get("/users/{user_id}", dependencies=[Depends(verify_worker_key)])
+def get_user_by_id(user_id: int):
+    """Return a single user by ID (no stats, no password hash)."""
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"id": u.id, "username": u.username, "is_admin": u.is_admin}
+
+
+@router.post("/users", dependencies=[Depends(verify_worker_key)])
+def create_user_endpoint(req: CreateUserRequest):
+    """Create a new user account."""
+    if not req.username or not req.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+    with SessionLocal() as s:
+        existing = s.query(User).filter(User.username == req.username).first()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"User '{req.username}' already exists")
+        user = User(
+            username=req.username,
+            password_hash=generate_password_hash(req.password),
+            is_admin=req.is_admin,
+        )
+        s.add(user)
+        s.flush()
+        s.add(UserStats(user_id=user.id))
+        s.commit()
+        return {"id": user.id, "username": user.username, "is_admin": user.is_admin}
+
+
+@router.delete("/users/{user_id}", dependencies=[Depends(verify_worker_key)])
+def delete_user_endpoint(user_id: int):
+    """Delete a user account."""
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if u:
+            s.delete(u)
+            s.commit()
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/toggle-admin", dependencies=[Depends(verify_worker_key)])
+def toggle_admin_endpoint(user_id: int):
+    """Toggle the admin flag on a user account."""
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        u.is_admin = not u.is_admin
+        s.commit()
+        return {"is_admin": u.is_admin}
+
+
+@router.post("/users/{user_id}/reset-password", dependencies=[Depends(verify_worker_key)])
+def reset_password_endpoint(user_id: int, req: ResetPasswordRequest):
+    """Reset a user's password."""
+    if not req.password:
+        raise HTTPException(status_code=400, detail="Password is required")
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        u.password_hash = generate_password_hash(req.password)
+        s.commit()
+    return {"ok": True}
+
+
+@router.post("/auth/verify", dependencies=[Depends(verify_worker_key)])
+def verify_credentials_endpoint(req: VerifyCredentialsRequest):
+    """
+    Verify username/password credentials.
+    Returns user data on success; 401 on failure.
+    Never returns password hashes.
+    """
+    with SessionLocal() as s:
+        u = s.query(User).filter(User.username == req.username).first()
+        if not u or not check_password_hash(u.password_hash, req.password):
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        u.last_login = datetime.now(timezone.utc)
+        s.commit()
+        return {"id": u.id, "username": u.username, "is_admin": u.is_admin}

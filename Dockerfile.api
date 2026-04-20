@@ -1,4 +1,10 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Create a non-root user/group with UID/GID 1000 to match aria2 (PUID=1000)
+RUN groupadd -g 1000 appuser && useradd -u 1000 -g 1000 -m -s /bin/bash appuser
 
 WORKDIR /app
 COPY requirements.txt .
@@ -8,7 +14,11 @@ COPY app app
 COPY worker worker
 COPY alembic alembic
 COPY alembic.ini .
-COPY .env.example .
+
+# Hand ownership to appuser before dropping privileges
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

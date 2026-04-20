@@ -1,17 +1,16 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from werkzeug.security import check_password_hash, generate_password_hash
 from pathlib import Path
 from dotenv import load_dotenv
 import os, io, tarfile, logging, requests, mimetypes, hashlib
+from datetime import datetime
 
 # ------------------------------------------------------------------------------
 # Bootstrapping / App setup
 # ------------------------------------------------------------------------------
 load_dotenv()
 
-# Import user management utilities
-from app import user_manager
+# Import shared utilities (no database connections)
 from app.constants import Limits
 from app.utils import torrent_to_magnet
 from app.validation import validate_torrent_file_data
@@ -63,14 +62,11 @@ class User(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        # Convert to int, handle both numeric and string IDs
         numeric_id = int(user_id)
-        db_user = user_manager.get_user_by_id(numeric_id)
-        if db_user:
-            return User(db_user.id, db_user.username, db_user.is_admin)
+        data, err = w_request("GET", f"/api/users/{numeric_id}")
+        if not err and data:
+            return User(data["id"], data["username"], data["is_admin"])
     except (ValueError, TypeError):
-        # Invalid user_id format (e.g., old session with username)
-        # Return None to force re-login
         pass
     return None
 
@@ -121,6 +117,37 @@ def percent(a, b):
 
 app.add_template_filter(human_bytes, "hbytes")
 app.add_template_filter(percent, "percent")
+
+# ------------------------------------------------------------------------------
+# Lightweight data classes (used where templates expect ORM-style objects)
+# ------------------------------------------------------------------------------
+def _parse_dt(iso_str):
+    """Parse an ISO-format datetime string from the API; return None on failure."""
+    if not iso_str:
+        return None
+    try:
+        return datetime.fromisoformat(iso_str)
+    except ValueError:
+        return None
+
+class _UserStats:
+    """Thin wrapper over the stats dict returned by the API."""
+    __slots__ = ("total_magnets_processed", "total_downloads", "total_bytes_downloaded")
+    def __init__(self, d: dict):
+        self.total_magnets_processed = d.get("total_magnets_processed", 0)
+        self.total_downloads = d.get("total_downloads", 0)
+        self.total_bytes_downloaded = d.get("total_bytes_downloaded", 0)
+
+class _UserData:
+    """Thin wrapper over a user dict returned by the API (template-compatible)."""
+    __slots__ = ("id", "username", "is_admin", "created_at", "last_login", "stats")
+    def __init__(self, d: dict):
+        self.id = d["id"]
+        self.username = d["username"]
+        self.is_admin = d.get("is_admin", False)
+        self.created_at = _parse_dt(d.get("created_at"))
+        self.last_login = _parse_dt(d.get("last_login"))
+        self.stats = _UserStats(d["stats"]) if d.get("stats") else None
 
 # ------------------------------------------------------------------------------
 # Worker helpers
@@ -199,37 +226,38 @@ def _should_include_file(filepath: Path) -> bool:
 @app.route("/login", methods=["GET", "POST"])
 def login():
     # Check if this is first-time setup (no users exist)
-    is_first_time = not user_manager.has_any_users()
-    
+    check_data, check_err = w_request("GET", "/api/users/check")
+    is_first_time = (not check_err) and (not check_data.get("has_users", True))
+
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
-        
+
         if not username or not password:
             flash("Username and password are required.", "error")
             return render_template("login.html", is_first_time=is_first_time)
-        
+
         if is_first_time:
-            # First-time setup: create admin user
-            try:
-                user_manager.create_user(username, password, is_admin=True)
-                flash(f"Admin account '{username}' created successfully! Please log in.", "success")
-                # Redirect to login page (non-first-time mode)
-                return redirect(url_for("login"))
-            except ValueError as e:
-                flash(str(e), "error")
+            # First-time setup: create the first admin account
+            body, err = w_request("POST", "/api/users",
+                                  json_body={"username": username, "password": password, "is_admin": True})
+            if err:
+                flash(str(err[0]), "error")
                 return render_template("login.html", is_first_time=is_first_time)
+            flash(f"Admin account '{username}' created successfully! Please log in.", "success")
+            return redirect(url_for("login"))
         else:
-            # Normal login
-            db_user = user_manager.verify_user(username, password)
-            if db_user:
-                user = User(db_user.id, db_user.username, db_user.is_admin)
+            # Normal login — verify credentials via the API
+            body, err = w_request("POST", "/api/auth/verify",
+                                  json_body={"username": username, "password": password})
+            if not err and body:
+                user = User(body["id"], body["username"], body["is_admin"])
                 login_user(user)
                 flash("Logged in successfully!", "success")
                 return redirect(url_for("index"))
             else:
                 flash("Invalid username or password.", "error")
-    
+
     return render_template("login.html", is_first_time=is_first_time)
 
 @app.route("/logout")
@@ -548,7 +576,12 @@ def get_stats():
 @admin_required
 def admin_users_page():
     """Admin page for user management"""
-    users = user_manager.get_all_users()
+    data, err = w_request("GET", "/api/users")
+    if err:
+        flash(f"Failed to load users: {err[0]}", "error")
+        users = []
+    else:
+        users = [_UserData(u) for u in data.get("users", [])]
     return render_template("admin_users.html", users=users)
 
 @app.post("/admin/users/create")
@@ -558,17 +591,17 @@ def create_user_route():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "").strip()
     is_admin = request.form.get("is_admin") == "on"
-    
+
     if not username or not password:
         flash("Username and password are required", "error")
         return redirect(url_for("admin_users_page"))
-    
-    try:
-        user_manager.create_user(username, password, is_admin)
+
+    _, err = w_request("POST", "/api/users",
+                       json_body={"username": username, "password": password, "is_admin": is_admin})
+    if err:
+        flash(str(err[0]), "error")
+    else:
         flash(f"User '{username}' created successfully", "success")
-    except ValueError as e:
-        flash(str(e), "error")
-    
     return redirect(url_for("admin_users_page"))
 
 @app.post("/admin/users/<int:user_id>/delete")
@@ -578,9 +611,12 @@ def delete_user_route(user_id: int):
     if user_id == current_user.id:
         flash("You cannot delete your own account", "error")
         return redirect(url_for("admin_users_page"))
-    
-    user_manager.delete_user(user_id)
-    flash("User deleted successfully", "success")
+
+    _, err = w_request("DELETE", f"/api/users/{user_id}")
+    if err:
+        flash(f"Failed to delete user: {err[0]}", "error")
+    else:
+        flash("User deleted successfully", "success")
     return redirect(url_for("admin_users_page"))
 
 @app.post("/admin/users/<int:user_id>/toggle-admin")
@@ -590,9 +626,13 @@ def toggle_admin_route(user_id: int):
     if user_id == current_user.id:
         flash("You cannot modify your own admin status", "error")
         return redirect(url_for("admin_users_page"))
-    
-    is_admin = user_manager.toggle_admin(user_id)
-    flash(f"User is now {'an admin' if is_admin else 'a regular user'}", "success")
+
+    body, err = w_request("POST", f"/api/users/{user_id}/toggle-admin")
+    if err:
+        flash(f"Failed to update user: {err[0]}", "error")
+    else:
+        is_admin = body.get("is_admin", False)
+        flash(f"User is now {'an admin' if is_admin else 'a regular user'}", "success")
     return redirect(url_for("admin_users_page"))
 
 @app.post("/admin/users/<int:user_id>/reset-password")
@@ -600,13 +640,17 @@ def toggle_admin_route(user_id: int):
 def reset_password_route(user_id: int):
     """Reset user password"""
     new_password = request.form.get("new_password", "").strip()
-    
+
     if not new_password:
         flash("New password is required", "error")
         return redirect(url_for("admin_users_page"))
-    
-    user_manager.update_user_password(user_id, new_password)
-    flash("Password reset successfully", "success")
+
+    _, err = w_request("POST", f"/api/users/{user_id}/reset-password",
+                       json_body={"password": new_password})
+    if err:
+        flash(f"Failed to reset password: {err[0]}", "error")
+    else:
+        flash("Password reset successfully", "success")
     return redirect(url_for("admin_users_page"))
 
 @app.errorhandler(404)

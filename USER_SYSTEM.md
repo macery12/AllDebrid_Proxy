@@ -52,7 +52,7 @@ The migration will create three new tables: `user`, `user_stats`, and add `user_
 
 ```bash
 # If using Docker Compose
-docker-compose exec adproxy_api alembic upgrade head
+docker-compose exec proxy_api alembic upgrade head
 
 # Or locally
 alembic upgrade head
