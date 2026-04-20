@@ -67,6 +67,10 @@
   background: rgba(88, 166, 255, 0.2);
   color: var(--accent);
 }
+.badge.member {
+  background: rgba(63, 185, 80, 0.2);
+  color: var(--accent-2);
+}
 .badge.user {
   background: rgba(138, 160, 199, 0.2);
   color: var(--muted);
@@ -221,9 +225,13 @@
         <label for="password">Password</label>
         <input type="password" id="password" name="password" placeholder="Enter password" required>
       </div>
-      <div class="checkbox-group">
-        <input type="checkbox" id="is_admin" name="is_admin">
-        <label for="is_admin">Admin</label>
+      <div class="form-group">
+        <label for="role">Role</label>
+        <select id="role" name="role" style="padding:10px 12px; background:var(--card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px;">
+          <option value="user">User (download-only)</option>
+          <option value="member">Member (home + tasks)</option>
+          <option value="admin">Admin (full access)</option>
+        </select>
       </div>
       <button type="submit" class="btn primary">Create User</button>
     </div>
@@ -252,8 +260,8 @@
           {% endif %}
         </td>
         <td>
-          <span class="badge {{ 'admin' if user.is_admin else 'user' }}">
-            {{ 'Admin' if user.is_admin else 'User' }}
+          <span class="badge {{ user.role }}">
+            {{ user.role | capitalize }}
           </span>
         </td>
         <td>
@@ -288,10 +296,13 @@
             <button class="btn" onclick="showResetPasswordModal({{ user.id }}, '{{ user.username }}')">
               Reset Password
             </button>
-            <form method="POST" action="{{ url_for('toggle_admin_route', user_id=user.id) }}" style="display: inline;">
-              <button type="submit" class="btn">
-                {{ 'Demote' if user.is_admin else 'Promote' }}
-              </button>
+            <form method="POST" action="{{ url_for('set_role_route', user_id=user.id) }}" style="display: inline-flex; align-items: center; gap: 4px;">
+              <select name="role" style="padding:5px 8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; cursor:pointer;">
+                <option value="user" {{ 'selected' if user.role == 'user' else '' }}>User</option>
+                <option value="member" {{ 'selected' if user.role == 'member' else '' }}>Member</option>
+                <option value="admin" {{ 'selected' if user.role == 'admin' else '' }}>Admin</option>
+              </select>
+              <button type="submit" class="btn" style="padding:5px 10px; font-size:12px;">Set Role</button>
             </form>
             <form method="POST" action="{{ url_for('delete_user_route', user_id=user.id) }}" 
                   onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}?')" 
