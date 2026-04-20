@@ -332,13 +332,19 @@
 </head>
 <body>
   <header>
-    <h1><a href="{{ url_for('index') }}">🚀 AllDebrid Proxy</a></h1>
+    <h1><a href="{{ url_for('index') if current_user.is_authenticated and current_user.is_member else url_for('login') }}">🚀 AllDebrid Proxy</a></h1>
     <nav>
-      <a href="{{ url_for('index') }}">Home</a>
-      {% if current_user.is_authenticated and current_user.is_admin %}
-      <a href="{{ url_for('admin_page') }}">Admin</a>
+      {% if current_user.is_authenticated %}
+        {% if current_user.is_member %}
+          <a href="{{ url_for('index') }}">Home</a>
+        {% endif %}
+        {% if current_user.is_admin %}
+          <a href="{{ url_for('admin_page') }}">Admin</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">Login</a>
       {% endif %}
-      <a href="{{ url_for('logout') }}">Logout</a>
     </nav>
   </header>
 

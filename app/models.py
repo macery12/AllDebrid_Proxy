@@ -3,15 +3,27 @@ from sqlalchemy import Column, String, Text, Integer, BigInteger, DateTime, Fore
 
 Base = declarative_base()
 
+# Role constants
+ROLE_ADMIN = "admin"
+ROLE_MEMBER = "member"
+ROLE_USER = "user"
+VALID_ROLES = (ROLE_ADMIN, ROLE_MEMBER, ROLE_USER)
+
 class User(Base):
     __tablename__ = "user"
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
+    role = Column(String(16), nullable=False, server_default=ROLE_USER)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login = Column(DateTime(timezone=True), nullable=True)
-    
+
+    @property
+    def is_member(self) -> bool:
+        """True for admin and member roles (can access home/tasks)."""
+        return self.role in (ROLE_ADMIN, ROLE_MEMBER)
+
     tasks = relationship("Task", back_populates="user", cascade="all, delete-orphan")
     stats = relationship("UserStats", back_populates="user", uselist=False, cascade="all, delete-orphan")
 

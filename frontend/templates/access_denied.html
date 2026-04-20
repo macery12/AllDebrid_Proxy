@@ -166,30 +166,89 @@
       </div>
       
       <h1>🚫 Access Denied</h1>
-      <p>You don't have permission to access this page.</p>
-      
-      <div class="info-box">
-        <h2>ℹ️ Regular User Access</h2>
-        <p><strong>As a regular user, you can access:</strong></p>
-        <p>✅ Download pages (<code>/d/&lt;task_id&gt;/</code>)</p>
-        <p>✅ File downloads and streaming</p>
-        <p><br></p>
-        <p><strong>Admin-only features:</strong></p>
-        <p>❌ Creating new tasks</p>
-        <p>❌ Task management</p>
-        <p>❌ Admin dashboard</p>
-        <p><br></p>
-        <p style="color: var(--muted); font-size: 13px;">Contact your administrator if you need admin access.</p>
-      </div>
-      
-      <a href="{{ url_for('logout') }}" class="btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-          <polyline points="16 17 21 12 16 7"></polyline>
-          <line x1="21" y1="12" x2="9" y2="12"></line>
-        </svg>
-        Logout
-      </a>
+
+      {% if current_user.is_authenticated and current_user.role == 'user' %}
+        {# --- Download-only user --- #}
+        <p>Your account has <strong>download-only</strong> access. You can only open download links that have been shared with you.</p>
+
+        <div class="info-box">
+          <h2>📥 What you can do</h2>
+          <p>✅ Open file download pages shared with you (<code>/d/&lt;task_id&gt;/</code>)</p>
+          <p>✅ Download or stream individual files from those pages</p>
+          <p>✅ Download all files as a <code>.tar.gz</code> archive</p>
+          <p><br></p>
+          <p><strong>Not available on your account:</strong></p>
+          <p>❌ Creating or managing download tasks</p>
+          <p>❌ Viewing the home / task dashboard</p>
+          <p>❌ Admin settings and user management</p>
+          <p><br></p>
+          <p style="color: var(--muted); font-size: 13px;">Ask your administrator to share a download link with you, or to upgrade your role if you need more access.</p>
+        </div>
+
+        <a href="{{ url_for('logout') }}" class="btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          Logout
+        </a>
+
+      {% elif current_user.is_authenticated and current_user.role == 'member' %}
+        {# --- Member trying to reach admin-only area --- #}
+        <p>Your account has <strong>member</strong> access. This page is restricted to administrators only.</p>
+
+        <div class="info-box">
+          <h2>🔑 Member Access</h2>
+          <p>✅ Home page — create and monitor download tasks</p>
+          <p>✅ Task detail pages and file selection</p>
+          <p>✅ File download pages (<code>/d/&lt;task_id&gt;/</code>)</p>
+          <p>✅ File downloads and streaming</p>
+          <p><br></p>
+          <p><strong>Admin-only (not available to you):</strong></p>
+          <p>❌ Admin dashboard</p>
+          <p>❌ User management</p>
+          <p><br></p>
+          <p style="color: var(--muted); font-size: 13px;">Contact your administrator if you need admin access.</p>
+        </div>
+
+        <a href="{{ url_for('index') }}" class="btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          </svg>
+          Go to Home
+        </a>
+        <a href="{{ url_for('logout') }}" class="btn secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          Logout
+        </a>
+
+      {% else %}
+        {# --- Fallback (unauthenticated or unknown role) --- #}
+        <p>You don't have permission to access this page.</p>
+
+        <div class="info-box">
+          <h2>ℹ️ Access Levels</h2>
+          <p><strong>User</strong> — download-only access to links shared with you</p>
+          <p><strong>Member</strong> — home page, task creation, and downloads</p>
+          <p><strong>Admin</strong> — full access including admin dashboard</p>
+          <p><br></p>
+          <p style="color: var(--muted); font-size: 13px;">Contact your administrator to request the appropriate access level.</p>
+        </div>
+
+        <a href="{{ url_for('login') }}" class="btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+            <polyline points="10 17 15 12 10 7"></polyline>
+            <line x1="15" y1="12" x2="3" y2="12"></line>
+          </svg>
+          Back to Login
+        </a>
+      {% endif %}
     </div>
   </div>
 </body>

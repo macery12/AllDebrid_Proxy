@@ -345,9 +345,6 @@
                 {% endif %}
                 <td>
                   <div class="file-name">{{ f.name or f.filename or f.path or f.fileId }}</div>
-                  {% if f.localPath %}
-                    <div class="file-path">{{ f.localPath }}</div>
-                  {% endif %}
                 </td>
                 <td class="file-size-cell" style="text-align: right; color: var(--muted);">
                   {{ size_bytes|hbytes }}
@@ -557,15 +554,6 @@
 
     if (nameDiv) {
       nameDiv.textContent = merged.name || id;
-      if (merged.localPath) {
-        let pathDiv = nameDiv.nextElementSibling;
-        if (!pathDiv || !pathDiv.classList.contains('file-path')) {
-          pathDiv = document.createElement('div');
-          pathDiv.className = 'file-path';
-          nameDiv.parentNode.appendChild(pathDiv);
-        }
-        pathDiv.textContent = merged.localPath;
-      }
     }
 
     // Show download progress if available
