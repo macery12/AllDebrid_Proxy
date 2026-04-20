@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Secrets – never bake into images
+.env
+
+# Python bytecode & caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Tests
+test_*.py
+*.test.py
+
+# Documentation (not needed at runtime)
+*.md
+*.conf
+# alembic.ini is intentionally NOT excluded – it is copied into the api/frontend images
+
+# Editors / IDEs
+.vscode/
+.idea/
+.cursorignore
+.cursorindexingignore
+
+# Misc
+.dockerignore

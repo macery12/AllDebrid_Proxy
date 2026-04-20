@@ -38,3 +38,15 @@ class TaskResponse(BaseModel):
 
 class SelectRequest(BaseModel):
     fileIds: List[str]
+
+class VerifyCredentialsRequest(BaseModel):
+    username: str
+    password: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    is_admin: bool = False
+
+class ResetPasswordRequest(BaseModel):
+    password: str

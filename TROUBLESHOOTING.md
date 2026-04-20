@@ -63,7 +63,7 @@ You should see detailed request logging including:
 #### Step 3: Check Backend Logs
 
 ```bash
-docker-compose logs adproxy_api | grep -C 3 "401"
+docker-compose logs proxy_api | grep -C 3 "401"
 ```
 
 This will show exactly why the backend is rejecting the key.
@@ -79,7 +79,7 @@ docker-compose exec frontend env | grep WORKER
 Should show:
 ```
 WORKER_API_KEY=your_key_here
-WORKER_BASE_URL=http://adproxy_api:8080
+WORKER_BASE_URL=http://api:8080
 ```
 
 ### Common Issues
@@ -103,7 +103,7 @@ curl -u your_username:your_password http://localhost:9732/debug/config
 Should return:
 ```json
 {
-  "worker_base_url": "http://adproxy_api:8080",
+  "worker_base_url": "http://api:8080",
   "worker_key_present": true,
   "storage_root": "/srv/storage"
 }

@@ -88,7 +88,7 @@ If you were previously using `LOGIN_USERS` environment variable:
 
 3. **Run database migration**
    ```bash
-   docker-compose exec adproxy_api alembic upgrade head
+   docker-compose exec proxy_api alembic upgrade head
    ```
 
 4. **Restart services**
@@ -104,7 +104,7 @@ If you're upgrading from a version before link support was added:
 
 1. **Run the new database migration**
    ```bash
-   docker-compose exec adproxy_api alembic upgrade head
+   docker-compose exec proxy_api alembic upgrade head
    ```
    
    This adds the `source_type` field to the task table to support both magnets and links.
@@ -219,9 +219,9 @@ STORAGE_ROOT=/srv/storage
 ### 🐳 Docker Deployment
 
 The application consists of multiple services:
-- `adproxy_frontend`: Web UI (Flask)
-- `adproxy_api`: Backend API (FastAPI)
-- `adproxy_worker`: Download worker
+- `proxy_frontend`: Web UI (Flask)
+- `proxy_api`: Backend API (FastAPI)
+- `proxy_worker`: Download worker
 - `db`: PostgreSQL database (user data + tasks)
 - `redis`: Message queue and caching
 
