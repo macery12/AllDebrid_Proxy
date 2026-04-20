@@ -216,6 +216,7 @@
 <div class="create-user-form">
   <h2>➕ Create New User</h2>
   <form method="POST" action="{{ url_for('create_user_route') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <div class="form-row">
       <div class="form-group">
         <label for="username">Username</label>
@@ -297,6 +298,7 @@
               Reset Password
             </button>
             <form method="POST" action="{{ url_for('set_role_route', user_id=user.id) }}" style="display: inline-flex; align-items: center; gap: 4px;">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <select name="role" style="padding:5px 8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; cursor:pointer;">
                 <option value="user" {{ 'selected' if user.role == 'user' else '' }}>User</option>
                 <option value="member" {{ 'selected' if user.role == 'member' else '' }}>Member</option>
@@ -307,6 +309,7 @@
             <form method="POST" action="{{ url_for('delete_user_route', user_id=user.id) }}" 
                   onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}?')" 
                   style="display: inline;">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn danger">Delete</button>
             </form>
             {% else %}
@@ -328,6 +331,7 @@
       <p class="muted" id="resetUsername"></p>
     </div>
     <form id="resetPasswordForm" method="POST">
+      <input type="hidden" id="csrf_token_field" name="_csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label for="new_password">New Password</label>
         <input type="password" id="new_password" name="new_password" placeholder="Enter new password" required>
