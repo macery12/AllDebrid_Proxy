@@ -494,7 +494,7 @@
              ondrop="handleDrop(event)">
           <span class="dz-icon" id="dz-icon">📁</span>
           <div class="dz-title" id="dz-title">Drop files here or click to browse</div>
-          <div class="dz-sub">Drop .torrent files here, or click to browse</div>
+          <div class="dz-sub">Accepts .torrent files</div>
           <span class="dz-files-hint" id="dz-hint"></span>
           <input type="file" id="torrent-files" name="torrent_files" accept=".torrent" multiple />
         </div>
@@ -696,7 +696,7 @@ function startUpdates() {
   let recentTasksTick = 0;
   updateTimer = setInterval(() => {
     updateStats();
-    // Refresh recent tasks every 6th tick (~30s)
+    // Refresh recent tasks every 6 ticks × 5s = ~30s
     if (++recentTasksTick >= 6) { recentTasksTick = 0; loadRecentTasks(); }
   }, 5000);
 }
@@ -713,10 +713,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ── Recent tasks ── */
+const RECENT_TASKS_LIMIT = 6;
+
 async function loadRecentTasks() {
   const container = document.getElementById('recent-tasks-list');
   try {
-    const res = await fetch('/admin/tasks?limit=6');
+    const res = await fetch('/admin/tasks?limit=' + RECENT_TASKS_LIMIT);
     if (!res.ok) throw new Error('failed');
     const data = await res.json();
     const tasks = data.tasks || data || [];
@@ -724,7 +726,7 @@ async function loadRecentTasks() {
       container.innerHTML = '<div class="recent-empty">No tasks yet</div>';
       return;
     }
-    container.innerHTML = tasks.slice(0, 6).map(t => {
+    container.innerHTML = tasks.slice(0, RECENT_TASKS_LIMIT).map(t => {
       const statusClass = t.status === 'completed' ? 'done'
                         : t.status === 'downloading' ? 'running'
                         : t.status === 'error' || t.status === 'failed' ? 'error'
@@ -764,8 +766,14 @@ function handleDrop(e) {
   e.preventDefault();
   const dz = document.getElementById('drop-zone');
   dz.classList.remove('drag-over');
-  const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.torrent'));
-  if (files.length === 0) return;
+  const allDropped = Array.from(e.dataTransfer.files);
+  const files = allDropped.filter(f => f.name.toLowerCase().endsWith('.torrent'));
+  if (files.length === 0) {
+    if (allDropped.length > 0) {
+      alert('Only .torrent files are accepted. Please drop a valid .torrent file.');
+    }
+    return;
+  }
   // Try assigning via DataTransfer (modern browsers); fall back to storing in droppedTorrentFiles
   try {
     const dt = new DataTransfer();
@@ -864,7 +872,7 @@ document.getElementById('main-form').addEventListener('submit', function(e) {
     btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Creating…';
 
     fetch(this.action, { method: 'POST', body: fd })
-      .then(r => { window.location.href = r.url || '/'; })
+      .then(() => { window.location.href = '/'; })
       .catch(err => {
         btn.disabled = false;
         btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg> Create Task';
