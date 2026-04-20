@@ -1,9 +1,7 @@
-Flask==3.0.3
-Flask-Login==0.6.3
+# Frontend-only dependencies not already covered by the root requirements.txt.
+# Jinja2 and Werkzeug are pinned here because they are transitive Flask deps
+# whose versions matter for template rendering and streaming behaviour.
 Jinja2==3.1.2
 Werkzeug==3.0.4
-requests==2.32.3
-python-dotenv==1.0.1
-SQLAlchemy==2.0.35
-psycopg2-binary==2.9.9
-pydantic-settings==2.5.2
+# WSGI server for production – replaces the inline `pip install gunicorn` in Dockerfile.frontend
+gunicorn==23.0.0

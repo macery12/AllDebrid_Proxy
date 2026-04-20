@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 # Copy requirements first for layer cache
 COPY requirements.txt ./requirements.txt
 COPY frontend/requirements.txt ./frontend_requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt -r frontend_requirements.txt && pip install --no-cache-dir gunicorn==23.0.0
+RUN pip install --no-cache-dir -r requirements.txt -r frontend_requirements.txt
 
 # Copy app module (needed for user_manager, models, etc.)
 COPY app ./app
