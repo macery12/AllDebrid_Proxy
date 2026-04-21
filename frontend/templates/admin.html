@@ -411,6 +411,7 @@ table.task-table td:nth-child(6) { width: 120px; white-space: nowrap; }
 </div>
 
 <script>
+const ID_DISPLAY_LEN = 8;
 let allTasks = [];
 
 async function loadTasks() {
@@ -474,11 +475,11 @@ function renderTasks(tasks) {
   }
 
   const rows = tasks.map(task => {
-    const shortId = escapeHtml(task.taskId.substring(0, 8));
+    const shortId = escapeHtml(task.taskId.substring(0, ID_DISPLAY_LEN));
     const label   = task.label ? `<div class="cell-label" title="${escapeHtml(task.label)}">${escapeHtml(task.label)}</div>` : '';
     const source  = `<div class="cell-source" title="${escapeHtml(task.source)}">${escapeHtml(task.source)}</div>`;
     const hash    = task.infohash
-      ? `<code class="kbd" title="${escapeHtml(task.infohash)}">${task.infohash.substring(0,10)}…</code>`
+      ? `<code class="kbd" title="${escapeHtml(task.infohash)}">${task.infohash.substring(0, ID_DISPLAY_LEN)}…</code>`
       : '<span class="muted small">—</span>';
 
     return `
@@ -547,7 +548,7 @@ function filterTasks() {
 }
 
 async function deleteTask(taskId) {
-  if (!confirm(`Delete task ${taskId.substring(0, 8)}… and purge all files?`)) return;
+  if (!confirm(`Delete task ${taskId.substring(0, ID_DISPLAY_LEN)}… and purge all files?`)) return;
   try {
     const formData = new FormData();
     formData.append('purge_files', 'true');
