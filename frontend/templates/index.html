@@ -768,7 +768,7 @@ const RECENT_TASKS_LIMIT = 6;
 async function loadRecentTasks() {
   const container = document.getElementById('recent-tasks-list');
   try {
-    const res = await fetch('/admin/tasks?limit=' + encodeURIComponent(RECENT_TASKS_LIMIT));
+    const res = await fetch('/tasks/recent?limit=' + encodeURIComponent(RECENT_TASKS_LIMIT));
     if (!res.ok) throw new Error('failed');
     const data = await res.json();
     const tasks = data.tasks || data || [];
@@ -782,10 +782,12 @@ async function loadRecentTasks() {
                         : t.status === 'error' || t.status === 'failed' ? 'error'
                         : ['queued','resolving','pending'].includes(t.status) ? 'queued'
                         : 'other';
-      const label = escapeHtml(t.label || t.name || t.id || 'Unnamed task');
+      // taskId is the canonical field; id is also included for compatibility
+      const taskId = t.taskId || t.id || '';
+      const label = escapeHtml(t.label || t.name || taskId || 'Unnamed task');
       const size  = escapeHtml(t.total_size ? formatBytes(t.total_size) : t.status);
       // Only allow safe relative paths for task IDs
-      const rawId = t.id ? String(t.id).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+      const rawId = taskId ? String(taskId).replace(/[^a-zA-Z0-9_-]/g, '') : '';
       const href  = rawId ? `/tasks/${rawId}` : '#';
       return `<a class="recent-task" href="${escapeHtml(href)}">
         <div class="rt-dot ${statusClass}"></div>
