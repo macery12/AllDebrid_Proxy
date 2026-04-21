@@ -643,6 +643,32 @@ def admin_tasks():
         return jsonify({"error": err[0]}), err[1]
     return jsonify(body)
 
+@app.get("/tasks/recent")
+@member_required
+def recent_tasks():
+    """
+    Return recent tasks for the current user.
+
+    Admins see all tasks; members see only their own tasks.
+    This endpoint is intentionally member-accessible (not admin-only)
+    so that the recent-tasks widget on the home page works for all
+    member-tier users.
+    """
+    limit = request.args.get("limit", 10, type=int)
+    # Clamp to a sensible maximum to avoid over-fetching
+    limit = max(1, min(limit, 50))
+
+    params = {"limit": limit, "offset": 0}
+    if not current_user.is_admin:
+        # Members only see their own tasks
+        params["user_id"] = current_user.id
+
+    body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        log.warning("recent_tasks backend error (status=%s)", err[1])
+        return jsonify({"error": "Failed to load tasks"}), err[1]
+    return jsonify(body)
+
 @app.get("/admin/stats")
 @admin_required
 def get_stats():
