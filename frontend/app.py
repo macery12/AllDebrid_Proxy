@@ -665,7 +665,8 @@ def recent_tasks():
 
     body, err = w_request("GET", "/api/tasks", params=params)
     if err:
-        return jsonify({"error": err[0]}), err[1]
+        log.warning("recent_tasks backend error (status=%s)", err[1])
+        return jsonify({"error": "Failed to load tasks"}), err[1]
     return jsonify(body)
 
 @app.get("/admin/stats")

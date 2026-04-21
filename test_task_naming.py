@@ -165,6 +165,8 @@ class TaskNamingTests(unittest.TestCase):
         )
         self.assertNotIn("/srv", name)
         self.assertNotIn("storage", name)
+        # The basename component should still be present
+        self.assertIn("movie", name)
 
     def test_windows_absolute_path_not_returned_as_is(self):
         """A Windows absolute path label must not leak the directory structure."""
@@ -174,6 +176,8 @@ class TaskNamingTests(unittest.TestCase):
         )
         self.assertNotIn("C:", name)
         self.assertNotIn("Users", name)
+        # The basename component should still be present
+        self.assertIn("movie", name)
 
     def test_path_in_filename_not_leaked(self):
         """Filenames with directory components must expose only the basename."""
@@ -183,6 +187,8 @@ class TaskNamingTests(unittest.TestCase):
         )
         self.assertNotIn("/srv", name)
         self.assertNotIn("storage", name)
+        # The episode filename should be present
+        self.assertIn("Episode", name)
 
     def test_torrent_name_with_path_separator(self):
         """Torrent names that include slashes must be sanitised."""

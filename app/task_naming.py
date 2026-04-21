@@ -35,13 +35,6 @@ _MULTI_SEP = re.compile(r"[\s._\-]{2,}")
 # Detect absolute paths (Windows drive letters or Unix root)
 _ABS_PATH_PREFIX = re.compile(r"^[A-Za-z]:[/\\]|^/")
 
-# Media-quality / edition tags to preserve during normalisation
-# (kept for reference – they survive because they match \w or brackets)
-_QUALITY_TAGS = re.compile(
-    r"\b(1080p|720p|2160p|4K|HDR|SDR|BluRay|WEB[-.]?DL|WEBRip|HDTV|x264|x265|HEVC|AAC|AC3|DTS|"
-    r"S\d{2}E\d{2}|S\d{2}|E\d{2}|[Ss]eason\s*\d+|[Ee]pisode\s*\d+)\b"
-)
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
