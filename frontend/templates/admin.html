@@ -3,186 +3,390 @@
 {% block content %}
 
 <style>
-.admin-header {
+/* ── Page header ── */
+.page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+  align-items: flex-start;
+  margin-bottom: 28px;
   flex-wrap: wrap;
   gap: 16px;
 }
-.admin-header h1 {
-  font-size: 28px;
+.page-header-left h1 {
+  font-size: 26px;
   font-weight: 700;
   color: var(--text);
+  margin-bottom: 4px;
 }
-.stats {
+.page-header-left p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.page-header-right {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Stat cards ── */
+.stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
   margin-bottom: 24px;
 }
 .stat-card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  text-align: center;
+  border-radius: 14px;
+  padding: 20px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.stat-card .value {
-  font-size: 32px;
+.stat-card:hover {
+  border-color: var(--border-light);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.stat-icon.blue   { background: rgba(88,166,255,0.15); color: #58a6ff; }
+.stat-icon.yellow { background: rgba(210,153,34,0.15);  color: #d29922; }
+.stat-icon.green  { background: rgba(63,185,80,0.15);   color: #3fb950; }
+.stat-icon.red    { background: rgba(248,81,73,0.15);   color: #f85149; }
+.stat-body .value {
+  font-size: 28px;
   font-weight: 700;
-  color: var(--accent);
+  line-height: 1;
   margin-bottom: 4px;
 }
-.stat-card .label {
-  font-size: 14px;
+.stat-body .label {
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
+  font-weight: 500;
 }
-.filters {
+
+/* ── Toolbar ── */
+.toolbar {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 20px;
-  padding: 16px;
+  padding: 14px 16px;
   background: var(--bg-secondary);
-  border-radius: 12px;
   border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 0;
 }
-.filters label {
-  margin: 0;
-  font-size: 14px;
-  color: var(--muted);
-}
-.filters select,
-.filters input {
-  padding: 8px 12px;
+.toolbar-search {
+  position: relative;
   flex: 1;
-  min-width: 150px;
+  min-width: 200px;
 }
-table.admin-table {
+.toolbar-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.toolbar-search input {
+  padding: 9px 12px 9px 34px;
+  width: 100%;
+}
+.toolbar select {
+  padding: 9px 12px;
+  min-width: 140px;
+  flex-shrink: 0;
+}
+.toolbar .btn {
+  flex-shrink: 0;
+}
+
+/* ── Task table ── */
+.table-wrap {
+  border-radius: 0 0 12px 12px;
+  overflow-x: auto;
+}
+table.task-table {
   width: 100%;
   border-collapse: collapse;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--card);
-  border: 1px solid var(--border);
+  min-width: 640px;
 }
-table.admin-table thead th {
+table.task-table thead th {
   background: var(--bg-secondary);
-  padding: 14px 12px;
+  padding: 12px 14px;
   text-align: left;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
-table.admin-table tbody td {
-  padding: 14px 12px;
+table.task-table tbody td {
+  padding: 13px 14px;
   border-bottom: 1px solid var(--border);
-  vertical-align: top;
+  vertical-align: middle;
+  font-size: 14px;
 }
-table.admin-table tbody tr:last-child td {
+table.task-table tbody tr:last-child td {
   border-bottom: none;
 }
-table.admin-table tbody tr:hover {
+table.task-table tbody tr:hover {
   background: var(--card-hover);
 }
-.task-source {
-  max-width: 300px;
+
+/* Column sizing */
+table.task-table th:nth-child(1),
+table.task-table td:nth-child(1) { width: 90px; }
+table.task-table th:nth-child(3),
+table.task-table td:nth-child(3) { width: 110px; }
+table.task-table th:nth-child(4),
+table.task-table td:nth-child(4) { width: 80px; }
+table.task-table th:nth-child(5),
+table.task-table td:nth-child(5) { width: 90px; }
+table.task-table th:nth-child(6),
+table.task-table td:nth-child(6) { width: 120px; white-space: nowrap; }
+
+/* Label + source cell */
+.cell-label {
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 3px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 260px;
+}
+.cell-source {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted);
   white-space: nowrap;
-  font-family: monospace;
-  font-size: 12px;
-  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
 }
-.task-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.task-actions .btn {
-  padding: 6px 10px;
-  font-size: 12px;
-}
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--muted);
-}
-.empty-state svg {
-  width: 64px;
-  height: 64px;
-  margin-bottom: 16px;
-  opacity: 0.5;
-}
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: var(--muted);
-}
-.task-id {
-  font-family: monospace;
+
+/* Task ID link */
+.task-id-link {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px;
   color: var(--accent);
+  background: rgba(88,166,255,0.1);
+  border: 1px solid rgba(88,166,255,0.2);
+  border-radius: 6px;
+  padding: 3px 7px;
+  white-space: nowrap;
 }
-.task-label {
-  font-weight: 500;
-  margin-bottom: 4px;
+.task-id-link:hover { color: var(--accent-hover); }
+
+/* Action icon buttons */
+.row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  position: relative;
+}
+.icon-btn:hover {
+  border-color: var(--border-light);
+  color: var(--text);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.icon-btn.danger:hover {
+  background: rgba(248,81,73,0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+/* Tooltip */
+.icon-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+.icon-btn:hover::after { opacity: 1; }
+
+/* Card top border accent */
+.card-tasks {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+}
+.card-tasks .toolbar {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+
+/* Empty / loading states */
+.state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+.state-box svg {
+  opacity: 0.4;
+}
+.state-box p { font-size: 15px; }
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; }
+  .page-header-right { width: 100%; }
+  .page-header-right .btn { flex: 1; justify-content: center; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .toolbar-search { min-width: 100%; order: -1; }
+  .cell-label, .cell-source { max-width: 160px; }
 }
 </style>
 
-<div class="admin-header">
-  <h1>📊 Admin Dashboard</h1>
-  <div style="display: flex; gap: 12px;">
+<!-- Page header -->
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>Admin Dashboard</h1>
+    <p>Manage tasks, monitor activity, and control the system.</p>
+  </div>
+  <div class="page-header-right">
     <a class="btn" href="{{ url_for('admin_users_page') }}">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-        <circle cx="9" cy="7" r="4"></circle>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
       Manage Users
     </a>
     <a class="btn primary" href="{{ url_for('index') }}">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 5v14M5 12h14"></path>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 5v14M5 12h14"/>
       </svg>
-      Create New Task
+      New Task
     </a>
   </div>
 </div>
 
-<div class="stats" id="stats">
+<!-- Stat cards -->
+<div class="stats-grid" id="stats">
   <div class="stat-card">
-    <div class="value" data-stat="total">-</div>
-    <div class="label">Total Tasks</div>
+    <div class="stat-icon blue">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/>
+        <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="15" x2="11" y2="15"/>
+      </svg>
+    </div>
+    <div class="stat-body">
+      <div class="value" data-stat="total">—</div>
+      <div class="label">Total Tasks</div>
+    </div>
   </div>
   <div class="stat-card">
-    <div class="value" data-stat="queued">-</div>
-    <div class="label">Queued</div>
+    <div class="stat-icon yellow">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    </div>
+    <div class="stat-body">
+      <div class="value" data-stat="queued">—</div>
+      <div class="label">Queued</div>
+    </div>
   </div>
   <div class="stat-card">
-    <div class="value" data-stat="downloading">-</div>
-    <div class="label">Downloading</div>
+    <div class="stat-icon blue">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
+      </svg>
+    </div>
+    <div class="stat-body">
+      <div class="value" data-stat="downloading">—</div>
+      <div class="label">Downloading</div>
+    </div>
   </div>
   <div class="stat-card">
-    <div class="value" data-stat="completed">-</div>
-    <div class="label">Completed</div>
+    <div class="stat-icon green">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <div class="stat-body">
+      <div class="value" data-stat="completed">—</div>
+      <div class="label">Completed</div>
+    </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="filters">
-    <label for="statusFilter">Status:</label>
+<!-- Tasks card -->
+<div class="card-tasks">
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input type="text" id="searchInput" placeholder="Search by label, source or infohash…">
+    </div>
     <select id="statusFilter">
-      <option value="">All</option>
+      <option value="">All Statuses</option>
       <option value="queued">Queued</option>
       <option value="downloading">Downloading</option>
       <option value="ready">Ready</option>
@@ -191,21 +395,18 @@ table.admin-table tbody tr:hover {
       <option value="failed">Failed</option>
       <option value="canceled">Canceled</option>
     </select>
-    
-    <label for="searchInput">Search:</label>
-    <input type="text" id="searchInput" placeholder="Search by label or infohash...">
-    
-    <button class="btn" onclick="loadTasks()">
+    <button class="btn" id="refreshBtn" onclick="loadTasks()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="23 4 23 10 17 10"></polyline>
-        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
       </svg>
       Refresh
     </button>
   </div>
 
+  <!-- Table area -->
   <div id="tasksContainer">
-    <div class="loading">Loading tasks...</div>
+    <div class="state-box"><div class="spinner"></div><p>Loading tasks…</p></div>
   </div>
 </div>
 
@@ -214,156 +415,145 @@ let allTasks = [];
 
 async function loadTasks() {
   const container = document.getElementById('tasksContainer');
-  container.innerHTML = '<div class="loading">Loading tasks...</div>';
-  
+  container.innerHTML = '<div class="state-box"><div class="spinner"></div><p>Loading tasks…</p></div>';
+
+  const btn = document.getElementById('refreshBtn');
+  if (btn) btn.disabled = true;
+
   try {
-    // Use session-based auth endpoint (no worker key needed)
     const response = await fetch('/admin/tasks');
-    
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || errorData.detail || 'Failed to fetch tasks');
     }
-    
     const data = await response.json();
     allTasks = data.tasks || [];
-    
     updateStats(allTasks);
     renderTasks(allTasks);
   } catch (error) {
     console.error('Error loading tasks:', error);
     container.innerHTML = `
-      <div class="empty-state">
-        <p style="color: var(--danger);">Failed to load tasks: ${escapeHtml(error.message)}</p>
-        <button class="btn" onclick="loadTasks()">Retry</button>
-      </div>
-    `;
+      <div class="state-box">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <p style="color:var(--danger)">${escapeHtml(error.message)}</p>
+        <button class="btn" onclick="loadTasks()">Try again</button>
+      </div>`;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
 function updateStats(tasks) {
-  const stats = {
-    total: tasks.length,
-    queued: tasks.filter(t => t.status === 'queued').length,
+  const counts = {
+    total:       tasks.length,
+    queued:      tasks.filter(t => t.status === 'queued').length,
     downloading: tasks.filter(t => t.status === 'downloading').length,
-    completed: tasks.filter(t => ['ready', 'done', 'completed'].includes(t.status)).length
+    completed:   tasks.filter(t => ['ready','done','completed'].includes(t.status)).length,
   };
-  
-  document.querySelector('[data-stat="total"]').textContent = stats.total;
-  document.querySelector('[data-stat="queued"]').textContent = stats.queued;
-  document.querySelector('[data-stat="downloading"]').textContent = stats.downloading;
-  document.querySelector('[data-stat="completed"]').textContent = stats.completed;
+  for (const [key, val] of Object.entries(counts)) {
+    const el = document.querySelector(`[data-stat="${key}"]`);
+    if (el) el.textContent = val;
+  }
 }
 
 function renderTasks(tasks) {
   const container = document.getElementById('tasksContainer');
-  
+
   if (tasks.length === 0) {
     container.innerHTML = `
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <div class="state-box">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
         <p>No tasks found</p>
-      </div>
-    `;
+      </div>`;
     return;
   }
-  
-  const html = `
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>Task ID</th>
-          <th>Label / Source</th>
-          <th>Infohash</th>
-          <th>Status</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${tasks.map(task => `
+
+  const rows = tasks.map(task => {
+    const shortId = escapeHtml(task.taskId.substring(0, 8));
+    const label   = task.label ? `<div class="cell-label" title="${escapeHtml(task.label)}">${escapeHtml(task.label)}</div>` : '';
+    const source  = `<div class="cell-source" title="${escapeHtml(task.source)}">${escapeHtml(task.source)}</div>`;
+    const hash    = task.infohash
+      ? `<code class="kbd" title="${escapeHtml(task.infohash)}">${task.infohash.substring(0,10)}…</code>`
+      : '<span class="muted small">—</span>';
+
+    return `
+      <tr>
+        <td>
+          <a href="/tasks/${escapeHtml(task.taskId)}" class="task-id-link">${shortId}…</a>
+        </td>
+        <td>${label}${source}</td>
+        <td>${hash}</td>
+        <td><span class="pill ${getStatusClass(task.status)}">${escapeHtml(task.status)}</span></td>
+        <td class="small muted" style="white-space:nowrap">${formatDate(task.created_at)}</td>
+        <td>
+          <div class="row-actions">
+            <a href="/tasks/${escapeHtml(task.taskId)}" class="icon-btn" data-tip="View task" aria-label="View task">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </a>
+            <a href="/d/${escapeHtml(task.taskId)}/" class="icon-btn" data-tip="Browse files" aria-label="Browse files">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </a>
+            <button class="icon-btn danger" data-tip="Delete task" aria-label="Delete task" onclick="deleteTask('${escapeHtml(task.taskId)}')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+            </button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table class="task-table">
+        <thead>
           <tr>
-            <td>
-              <a href="/tasks/${task.taskId}" class="task-id">
-                ${task.taskId.substring(0, 8)}...
-              </a>
-            </td>
-            <td>
-              ${task.label ? `<div class="task-label">${escapeHtml(task.label)}</div>` : ''}
-              <div class="task-source" title="${escapeHtml(task.source)}">
-                ${escapeHtml(task.source)}
-              </div>
-            </td>
-            <td>
-              <code class="kbd">${task.infohash || 'N/A'}</code>
-            </td>
-            <td>
-              <span class="pill ${getStatusClass(task.status)}">${task.status}</span>
-            </td>
-            <td class="small muted">
-              ${formatDate(task.created_at)}
-            </td>
-            <td>
-              <div class="task-actions">
-                <a href="/tasks/${task.taskId}" class="btn">View</a>
-                <a href="/d/${task.taskId}/" class="btn">Files</a>
-                <button class="btn danger" onclick="deleteTask('${task.taskId}')">Delete</button>
-              </div>
-            </td>
+            <th>ID</th>
+            <th>Label / Source</th>
+            <th>Infohash</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-  
-  container.innerHTML = html;
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 function filterTasks() {
-  const statusFilter = document.getElementById('statusFilter').value;
-  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-  
-  let filtered = allTasks;
-  
-  if (statusFilter) {
-    filtered = filtered.filter(t => t.status === statusFilter);
-  }
-  
-  if (searchTerm) {
-    filtered = filtered.filter(t => 
-      (t.label && t.label.toLowerCase().includes(searchTerm)) ||
-      (t.infohash && t.infohash.toLowerCase().includes(searchTerm)) ||
-      (t.source && t.source.toLowerCase().includes(searchTerm))
-    );
-  }
-  
-  renderTasks(filtered);
+  const status = document.getElementById('statusFilter').value;
+  const term   = document.getElementById('searchInput').value.toLowerCase();
+  let list = allTasks;
+  if (status) list = list.filter(t => t.status === status);
+  if (term)   list = list.filter(t =>
+    (t.label    && t.label.toLowerCase().includes(term)) ||
+    (t.infohash && t.infohash.toLowerCase().includes(term)) ||
+    (t.source   && t.source.toLowerCase().includes(term))
+  );
+  renderTasks(list);
 }
 
 async function deleteTask(taskId) {
-  if (!confirm(`Are you sure you want to delete task ${taskId.substring(0, 8)}... and purge all files?`)) {
-    return;
-  }
-  
+  if (!confirm(`Delete task ${taskId.substring(0, 8)}… and purge all files?`)) return;
   try {
-    // Use frontend proxy endpoint (session-based auth, no worker key needed)
     const formData = new FormData();
     formData.append('purge_files', 'true');
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-    formData.append('_csrf_token', csrfToken);
-    
-    const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/delete`, {
-      method: 'POST',
-      body: formData
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to delete task');
-    }
-    
-    // Frontend redirects on success, but if we're still here, reload tasks
+    formData.append('_csrf_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+    const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/delete`, { method: 'POST', body: formData });
+    if (!response.ok) throw new Error('Failed to delete task');
     loadTasks();
   } catch (error) {
     console.error('Error deleting task:', error);
@@ -380,28 +570,22 @@ function getStatusClass(status) {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return 'N/A';
-  const date = new Date(dateStr);
-  return date.toLocaleString();
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
 function escapeHtml(text) {
   const div = document.createElement('div');
-  div.textContent = text;
+  div.textContent = String(text);
   return div.innerHTML;
 }
 
-// Event listeners
 document.getElementById('statusFilter').addEventListener('change', filterTasks);
 document.getElementById('searchInput').addEventListener('input', filterTasks);
 
-// Load tasks on page load
 loadTasks();
-
-// Auto-refresh every 5 seconds for live updates
-setInterval(() => {
-  loadTasks();
-}, 5000);
 </script>
 
 {% endblock %}
