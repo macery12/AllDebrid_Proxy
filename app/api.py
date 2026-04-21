@@ -13,6 +13,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.models import Task, TaskFile, UserStats, User, VALID_ROLES, ROLE_ADMIN, ROLE_MEMBER, ROLE_USER
 from app.utils import parse_infohash, ensure_task_dirs, write_metadata, append_log, disk_free_bytes
+from app.task_naming import generate_task_name
 from app.ws_manager import ws_manager
 from app.constants import TaskStatus, FileState, EventType, Limits, SourceType
 from app.validation import validate_magnet_link, validate_task_id, validate_label, validate_positive_int
@@ -123,6 +124,15 @@ def create_task(req: CreateTaskRequest):
         # Create new task
         task_id = str(uuid.uuid4())
         base, _ = ensure_task_dirs(settings.STORAGE_ROOT, task_id)
+
+        # Auto-generate a label when the caller did not supply one
+        if not req.label:
+            req.label = generate_task_name(
+                validated_source,
+                source_type=source_type,
+                task_id=task_id,
+            )
+
         t = Task(
             id=task_id, mode=req.mode, source=validated_source, source_type=source_type,
             infohash=identifier, provider="alldebrid", status=TaskStatus.QUEUED, 
@@ -510,14 +520,15 @@ def delete_task(task_id: str, purge_files: bool = False):
     return {"ok": True}
 
 @router.get("/tasks", dependencies=[Depends(verify_worker_key)])
-def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
+def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0, user_id: int | None = None):
     """
-    List all tasks with optional status filter for admin view.
+    List all tasks with optional status/user filter for admin view.
     
     Args:
         status: Optional status filter
         limit: Maximum number of tasks to return
         offset: Offset for pagination
+        user_id: Optional user ID filter (returns only tasks owned by this user)
         
     Returns:
         List of tasks with total count
@@ -533,6 +544,8 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
             offset = validate_positive_int(offset, "offset")
         if status and status not in TaskStatus.ALL_STATUSES:
             raise ValidationError(f"Invalid status: {status}")
+        if user_id:
+            validate_positive_int(user_id, "user_id")
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
@@ -540,12 +553,22 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
         query = select(Task).order_by(Task.created_at.desc())
         if status:
             query = query.where(Task.status == status)
+        if user_id:
+            query = query.where(Task.user_id == user_id)
         query = query.limit(limit).offset(offset)
         tasks = s.execute(query).scalars().all()
+
+        count_query = select(func.count(Task.id))
+        if status:
+            count_query = count_query.where(Task.status == status)
+        if user_id:
+            count_query = count_query.where(Task.user_id == user_id)
+
         return {
             "tasks": [
                 {
                     "taskId": t.id,
+                    "id": t.id,
                     "label": t.label,
                     "mode": t.mode,
                     "source": t.source,
@@ -556,7 +579,7 @@ def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0):
                 }
                 for t in tasks
             ],
-            "total": s.execute(select(func.count(Task.id))).scalar()
+            "total": s.execute(count_query).scalar()
         }
 
 @router.get("/tasks/{task_id}/events")
