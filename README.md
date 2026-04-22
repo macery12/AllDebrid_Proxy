@@ -46,37 +46,29 @@ A shared bind-mount (`STORAGE_PATH` → `/srv/storage`) is used by every contain
 
 ## Features
 
-### 📥 Multi-Source Downloads
-- **Magnet links** — paste any `magnet:?` URI
-- **Direct HTTP/HTTPS links** — AllDebrid unlocks and caches the file
-- **Torrent file upload** — `.torrent` files are parsed in-memory, converted to magnets, and never written to disk
-- **Admin file upload** — upload any file (up to 10 GB) directly and share it via a task link
-- **Smart deduplication** — identical infohashes/link hashes reuse the existing task automatically
+### 📥 Downloads
+- **Magnet links & torrents** — paste a magnet link or upload a `.torrent` file to start a download
+- **Premium file hosts** — debrid unlocks and caches files from 30+ supported hosts including Mega, Rapidgator, 1fichier, Google Drive, and more
+- **Direct links** — paste any supported URL and let AllDebrid handle the rest
+- **No duplicates** — submitting the same link reuses the existing task automatically
 
-### 📺 Streaming & Serving
-- In-browser video player with seekable range-request support
-- Download individual files or an entire task as a `.tar.gz` archive
-- Static files served directly by Flask/Gunicorn without re-proxying through the API
+### 📺 Streaming & Files
+- Stream browser-native formats (`.mp4`, `.webm`, `.mp3`, etc.) directly — no transcoding required (more format support coming soon)
+- Download individual files or grab everything as a `.tar.gz` archive
 
-### 📊 Real-Time Dashboard
-- Live task and file statistics (updated every 3 seconds via SSE)
-- Active download progress with speed and ETA
-- Storage free/reserved/low-space indicators
-- Worker health status
+### 📊 Dashboard
+- Live download progress with speed and ETA
+- Storage usage at a glance
+- Task and file stats updated in real time
 
-### 🔐 User System
-- Database-backed authentication (PostgreSQL, bcrypt hashes)
-- Three roles: **admin**, **member**, **user** (see [User Roles](#user-roles--access-control))
-- First-run wizard creates the initial admin account automatically
-- Per-user statistics: tasks created, files downloaded, bytes downloaded
+### 🔐 Accounts & Roles
+- Three access levels: **admin**, **member**, and **user** (see [User Roles](#user-roles--access-control))
+- First-run wizard to create the initial admin account
+- Per-user download history and stats
 
-### 🛡️ Security Hardening
-- Session-based CSRF protection on every state-changing POST route
-- Login rate limiting (IP-keyed, configurable attempt window)
-- Path-traversal and symlink-escape protection on all file-serving routes
-- Defensive HTTP response headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cache-Control: no-store` on HTML pages)
-- No secrets or internal paths ever exposed to the browser
-
+### 🛡️ Security
+- CSRF protection, login rate limiting, and safe file serving out of the box
+- No sensitive paths or credentials ever exposed to the browser
 ---
 
 ## Quick Start
@@ -113,14 +105,13 @@ The `migrations` service runs Alembic automatically before the API starts, so th
 
 ### 3. First-time setup
 
-Navigate to **http://localhost:9732/login** — because no users exist yet, you will be redirected to a one-time admin account creation wizard. After creating your account you can log in normally.
+Navigate to **http://localhost:9732/login** — since no users exist yet, you'll be redirected to a one-time admin account creation wizard. Once your account is created, it is recommended to proceed to the next step to set up SSL before accessing the service remotely.
 
 ### 4. Add downloads
 
-- Paste a magnet link or HTTP/HTTPS URL in the input box and click **Add**.
-- Drag-and-drop one or more `.torrent` files onto the upload area.
-- Click the task row to see live per-file progress and a streaming player for video files.
-
+- Paste a magnet link or URL into the input box and click **Create Task**.
+- You'll be redirected to the task page where download progress is shown in real time.
+- Once the download completes, click **Open Files** to browse your proxied files.
 ---
 
 ## Configuration
@@ -284,12 +275,6 @@ Once HTTPS is enabled, the following are encrypted end-to-end between the browse
 | File downloads | Content cannot be read or tampered with in transit |
 | Video streams | Seekable range requests are encrypted |
 | API responses | Task lists, user data, and stats are private |
-
-### Local-only / LAN use
-
-If you are running the proxy **solely on your local machine** (accessing via `localhost` or a private LAN IP with no external access), plain HTTP is acceptable. As soon as the service is exposed to the internet or shared with others over a network you do not fully control, HTTPS is required.
-
----
 
 ## API Reference
 
