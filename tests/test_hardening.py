@@ -10,8 +10,6 @@ import os
 import pathlib
 import shutil
 import tempfile
-import threading
-import time
 import types
 import unittest
 from datetime import datetime, timezone, timedelta
@@ -41,24 +39,6 @@ def load_frontend_module():
 
 class CORSDefaultDenyTests(unittest.TestCase):
     """Verify that CORS is deny-all when CORS_ORIGINS is not set."""
-
-    def _build_app_with_cors(self, cors_env: str):
-        """Re-import app/main.py with a specific CORS_ORIGINS env value."""
-        import importlib
-        import sys
-
-        # Patch environment before import
-        with patch.dict(os.environ, {"CORS_ORIGINS": cors_env}, clear=False):
-            # Force re-execution of main.py module logic by loading fresh
-            main_path = REPO_ROOT / "app" / "main.py"
-            spec = importlib.util.spec_from_file_location("app_main_test", main_path)
-            mod = importlib.util.module_from_spec(spec)
-            # Provide stubs so import doesn't fail in test environment
-            try:
-                spec.loader.exec_module(mod)
-            except Exception:
-                pass
-            return mod
 
     def test_cors_origins_empty_string_produces_empty_list(self):
         """Empty CORS_ORIGINS env var must yield an empty allowed-origins list."""

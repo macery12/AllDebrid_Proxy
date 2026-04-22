@@ -604,6 +604,7 @@ def _retention_cleanup_loop():
                     .where(Task.updated_at < cutoff)
                 ).scalars().all()
 
+                tasks_to_delete = []
                 for task in expired:
                     task_dir = os.path.join(settings.STORAGE_ROOT, task.id)
                     try:
@@ -611,24 +612,27 @@ def _retention_cleanup_loop():
                             shutil.rmtree(task_dir, ignore_errors=True)
                     except Exception as e:
                         _log(task.id, LogLevel.ERROR, "retention_cleanup_fs_error", err=str(e))
+                    # Queue the DB delete regardless of filesystem outcome; the
+                    # filesystem entry is already gone or never existed.
+                    tasks_to_delete.append(task)
 
-                    try:
-                        s.delete(task)
-                    except Exception as e:
-                        _log(task.id, LogLevel.ERROR, "retention_cleanup_db_error", err=str(e))
-
-                if expired:
+                if tasks_to_delete:
+                    for task in tasks_to_delete:
+                        try:
+                            s.delete(task)
+                        except Exception as e:
+                            _log(task.id, LogLevel.ERROR, "retention_cleanup_db_error", err=str(e))
                     try:
                         s.commit()
                     except Exception as e:
                         s.rollback()
                         _log("", LogLevel.ERROR, "retention_cleanup_commit_error", err=str(e))
                     else:
-                        for task in expired:
+                        for task in tasks_to_delete:
                             _log(task.id, LogLevel.INFO, "retention_cleanup_purged",
                                  status=task.status, updated_at=str(task.updated_at))
                         _log("", LogLevel.INFO, "retention_cleanup_cycle_done",
-                             purged=len(expired), retention_days=settings.RETENTION_DAYS)
+                             purged=len(tasks_to_delete), retention_days=settings.RETENTION_DAYS)
         except Exception as e:
             _log("", LogLevel.ERROR, "retention_cleanup_loop_error",
                  err=str(e), tb=traceback.format_exc())
@@ -636,13 +640,15 @@ def _retention_cleanup_loop():
         time.sleep(CLEANUP_INTERVAL_SEC)
 
 _cleanup_started = False
+_cleanup_lock = threading.Lock()
 
 def _start_cleanup_once():
     """Start the retention cleanup thread if not already started."""
     global _cleanup_started
-    if _cleanup_started:
-        return
-    _cleanup_started = True
+    with _cleanup_lock:
+        if _cleanup_started:
+            return
+        _cleanup_started = True
     threading.Thread(target=_retention_cleanup_loop, daemon=True).start()
     _log("", LogLevel.INFO, "retention_cleanup_thread_started")
 

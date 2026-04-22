@@ -830,7 +830,6 @@ def task_view(task_id):
 @member_required
 def task_data(task_id):
     """JSON endpoint for polling task state (SSE fallback)."""
-    from flask import jsonify
     t, err = get_task(task_id)
     if err:
         msg, code = err
