@@ -233,7 +233,18 @@ sudo apt update
 sudo apt install -y nginx certbot python3-certbot-nginx
 ```
 
-### Step 3 — Install the config file
+### Step 3 — Obtain a TLS certificate
+
+```bash
+sudo certbot --nginx -d debrid.example.com
+```
+
+Certbot will:
+1. Verify domain ownership via HTTP challenge
+2. Issue a free Let's Encrypt certificate
+3. Set up a cron job / systemd timer to auto-renew the certificate before it expires
+
+### Step 4 — Install the config file
 
 Copy the sample config, replacing `<domain>` with your actual domain name (e.g. `debrid.example.com`):
 
@@ -249,20 +260,6 @@ sudo ln -s /etc/nginx/sites-available/debrid.conf \
 sudo nginx -t
 sudo systemctl reload nginx
 ```
-
-> **Note:** The config file is intentionally kept as `debrid.conf` in both `sites-available` and `sites-enabled`.
-
-### Step 4 — Obtain a TLS certificate
-
-```bash
-sudo certbot --nginx -d debrid.example.com
-```
-
-Certbot will:
-1. Verify domain ownership via HTTP challenge
-2. Issue a free Let's Encrypt certificate
-3. Automatically update `/etc/nginx/sites-available/debrid.conf` with the correct `ssl_certificate` paths
-4. Set up a cron job / systemd timer to auto-renew the certificate before it expires
 
 ### Step 5 — Verify
 
