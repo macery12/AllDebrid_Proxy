@@ -13,7 +13,7 @@ A self-hosted proxy that integrates with [AllDebrid](https://alldebrid.com) to d
 - [User Roles & Access Control](#user-roles--access-control)
 - [Download Sources](#download-sources)
 - [Admin Panel](#admin-panel)
-- [Nginx Reverse Proxy (Optional)](#nginx-reverse-proxy-optional)
+- [HTTPS Setup (Strongly Recommended)](#https-setup-strongly-recommended)
 - [API Reference](#api-reference)
 - [Development & Testing](#development--testing)
 - [Upgrading](#upgrading)
@@ -51,7 +51,6 @@ A shared bind-mount (`STORAGE_PATH` → `/srv/storage`) is used by every contain
 - **Direct HTTP/HTTPS links** — AllDebrid unlocks and caches the file
 - **Torrent file upload** — `.torrent` files are parsed in-memory, converted to magnets, and never written to disk
 - **Admin file upload** — upload any file (up to 10 GB) directly and share it via a task link
-- **Batch submission** — submit multiple sources at once (mix of magnets, links, and torrent files)
 - **Smart deduplication** — identical infohashes/link hashes reuse the existing task automatically
 
 ### 📺 Streaming & Serving
@@ -211,23 +210,87 @@ Access the admin panel at `/admin` (admin role required).
 
 ---
 
-## Nginx Reverse Proxy (Optional)
+## HTTPS Setup (Strongly Recommended)
 
-A sample Nginx configuration is provided at `nginx/debrid.conf`. It handles:
+> ⚠️ **Running the proxy over plain HTTP means that login credentials, session cookies, and every file you download are transmitted in the clear.** Anyone on the same network — or any hop between your server and the browser — can read or modify them. **Always use HTTPS when the service is reachable from outside your local machine.**
 
-- HTTP → HTTPS redirect
-- SSL termination (Certbot/Let's Encrypt)
-- Reverse proxy to the API (`/api/` → `:9731`) with SSE-safe settings (buffering disabled, 1-hour read timeout)
-- Reverse proxy to the frontend (`/` → `:9732`) with range-request passthrough for video seeking
+The included `nginx/debrid.conf` is a production-ready Nginx configuration that handles:
 
-To use it, replace `<domain>` with your actual domain name:
+- Automatic HTTP → HTTPS redirect (port 80 → 443)
+- TLS 1.2 / 1.3 termination via a free Let's Encrypt certificate (Certbot)
+- Reverse proxy to the API (`:9731`) with SSE-safe settings (buffering off, 1-hour read timeout)
+- Reverse proxy to the frontend (`:9732`) with range-request passthrough for video seeking
+- Support for uploads up to 10 GB (`client_max_body_size 10G`)
+
+### Step 1 — Point a domain at your server
+
+Create an **A record** (and optionally `AAAA` for IPv6) for your domain or subdomain pointing to your server's public IP. DNS changes can take a few minutes to propagate.
+
+### Step 2 — Install Nginx and Certbot
 
 ```bash
-sed -i 's/<domain>/yourdomain.com/g' nginx/debrid.conf
-sudo cp nginx/debrid.conf /etc/nginx/sites-available/debrid
-sudo ln -s /etc/nginx/sites-available/debrid /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx
 ```
+
+### Step 3 — Install the config file
+
+Copy the sample config, replacing `<domain>` with your actual domain name (e.g. `debrid.example.com`):
+
+```bash
+DOMAIN=debrid.example.com
+
+sed "s/<domain>/$DOMAIN/g" nginx/debrid.conf \
+  | sudo tee /etc/nginx/sites-available/debrid.conf > /dev/null
+
+sudo ln -s /etc/nginx/sites-available/debrid.conf \
+           /etc/nginx/sites-enabled/debrid.conf
+
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+> **Note:** The config file is intentionally kept as `debrid.conf` in both `sites-available` and `sites-enabled`.
+
+### Step 4 — Obtain a TLS certificate
+
+```bash
+sudo certbot --nginx -d debrid.example.com
+```
+
+Certbot will:
+1. Verify domain ownership via HTTP challenge
+2. Issue a free Let's Encrypt certificate
+3. Automatically update `/etc/nginx/sites-available/debrid.conf` with the correct `ssl_certificate` paths
+4. Set up a cron job / systemd timer to auto-renew the certificate before it expires
+
+### Step 5 — Verify
+
+Open `https://debrid.example.com` in your browser. You should see a valid padlock icon (TLS certificate issued to your domain). HTTP requests will be redirected to HTTPS automatically.
+
+### Keeping certificates up to date
+
+Certbot installs an auto-renewal timer. You can test it at any time:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+### What is protected by HTTPS?
+
+Once HTTPS is enabled, the following are encrypted end-to-end between the browser and Nginx:
+
+| What | Why it matters |
+|---|---|
+| Login credentials | Password never sent in the clear |
+| Session cookie | Cannot be hijacked by a passive observer |
+| File downloads | Content cannot be read or tampered with in transit |
+| Video streams | Seekable range requests are encrypted |
+| API responses | Task lists, user data, and stats are private |
+
+### Local-only / LAN use
+
+If you are running the proxy **solely on your local machine** (accessing via `localhost` or a private LAN IP with no external access), plain HTTP is acceptable. As soon as the service is exposed to the internet or shared with others over a network you do not fully control, HTTPS is required.
 
 ---
 
