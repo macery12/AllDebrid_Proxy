@@ -1,284 +1,399 @@
-# AllDebrid_Proxy
-a poorly chatgpt'ed together alldebrid proxy to proxy alldebrid files and be able to send them to friends for faster download
+# AllDebrid Proxy
+
+A self-hosted proxy that integrates with [AllDebrid](https://alldebrid.com) to download torrents and direct links at full speed, then re-serve the files to anyone you share the task link with — including in-browser video streaming.
+
+---
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [User Roles & Access Control](#user-roles--access-control)
+- [Download Sources](#download-sources)
+- [Admin Panel](#admin-panel)
+- [HTTPS Setup (Strongly Recommended)](#https-setup-strongly-recommended)
+- [API Reference](#api-reference)
+- [Development & Testing](#development--testing)
+- [Upgrading](#upgrading)
+
+---
+
+## Architecture
+
+The application is composed of six Docker services that communicate over isolated networks:
+
+| Service | Container | Image | Purpose |
+|---|---|---|---|
+| `api` | `proxy_api` | Custom (FastAPI) | REST API, task management, SSE |
+| `frontend` | `proxy_frontend` | Custom (Flask + Gunicorn) | Web UI, file serving, streaming |
+| `worker` | `proxy_worker` | Custom (Python) | AllDebrid polling + aria2 dispatch |
+| `db` | `proxy_db` | `postgres:15` | Users, tasks, files (persistent) |
+| `redis` | `proxy_redis` | `redis:alpine` | Task queue, pub/sub, caching |
+| `aria2` | `proxy_aria2` | `p3terx/aria2-pro` | Multi-connection file downloader |
+
+```
+Browser ──► [Frontend :9732] ──► [API :9731] ──► [Worker]
+                                    │                │
+                                  [DB]           [Aria2 :16800]
+                                  [Redis] ◄──────────┘
+```
+
+A shared bind-mount (`STORAGE_PATH` → `/srv/storage`) is used by every container so that downloaded files are immediately accessible to the frontend for serving.
+
+---
 
 ## Features
 
-### 📊 Real-Time Stats Dashboard
-- **Live System Monitoring**: Real-time statistics updated every 3 seconds
-- **Active Downloads**: Monitor currently downloading files and tasks
-- **Queue Status**: See queued tasks waiting to start
-- **Storage Metrics**: Track available disk space and reserved storage
-- **Download Progress**: Visual progress bars showing overall download status
-- **Worker Health**: System status indicators with automatic health checks
-- **Performance Metrics**: Comprehensive stats about tasks, files, and system resources
-- **Security First**: No sensitive information (API keys, tokens) exposed to frontend
+### 📥 Downloads
+- **Magnet links & torrents** — paste a magnet link or upload a `.torrent` file to start a download
+- **Premium file hosts** — debrid unlocks and caches files from 30+ supported hosts including Mega, Rapidgator, 1fichier, Google Drive, and more
+- **Direct links** — paste any supported URL and let AllDebrid handle the rest
+- **No duplicates** — submitting the same link reuses the existing task automatically
 
-### 📥 Multi-Source Download Support
-- **Torrent File Upload**: Upload .torrent files directly - they're converted to magnet links and immediately discarded (not stored)
-- **Magnet Links**: Full support for BitTorrent magnet links via AllDebrid
-- **Direct Links**: Support for HTTP/HTTPS direct download links via AllDebrid
-- **Direct File Upload** (Admin Only): Upload your own files directly to create shareable download links
-- **Multi-Source Submission**: Submit multiple sources at once (torrent files, magnets, or links)
-- **Smart Task Reuse**: Automatically reuses existing downloads to save bandwidth
-- **Error Handling**: Proper error messages for unsupported or failed links
+### 📺 Streaming & Files
+- Stream browser-native formats (`.mp4`, `.webm`, `.mp3`, etc.) directly — no transcoding required (more format support coming soon)
+- Download individual files or grab everything as a `.tar.gz` archive
 
-### 📤 Direct File Upload (Admin Only)
+### 📊 Dashboard
+- Live download progress with speed and ETA
+- Storage usage at a glance
+- Task and file stats updated in real time
 
-Upload your own files directly and create shareable download links without using AllDebrid:
+### 🔐 Accounts & Roles
+- Three access levels: **admin**, **member**, and **user** (see [User Roles](#user-roles--access-control))
+- First-run wizard to create the initial admin account
+- Per-user download history and stats
 
-**How It Works:**
-1. **Upload**: Select any file (up to 10GB) from the main page
-2. **Process**: File is uploaded and saved to storage immediately
-3. **Share**: Get a shareable link that works exactly like AllDebrid downloads
-4. **Download**: Users can download or stream the file using the same interface
+### 🛡️ Security
+- CSRF protection, login rate limiting, and safe file serving out of the box
+- No sensitive paths or credentials ever exposed to the browser
+---
 
-**Security Features:**
-- ✅ Admin-only access (regular users cannot upload)
-- ✅ File size limit (10GB max per file)
-- ✅ Filename sanitization (removes dangerous characters)
-- ✅ Secure storage (same directory structure as AllDebrid downloads)
-- ✅ User tracking (uploads are tracked per admin user)
+## Quick Start
 
-**Usage:**
-- Access the main page and scroll to "Upload Your Own File" section
-- Click to select a file or drag and drop
-- Optionally add a label for easier identification
-- File is processed immediately and shows as a completed task
-- Share the task download link with anyone who has access
+### Prerequisites
+- Docker and Docker Compose v2
+- An [AllDebrid](https://alldebrid.com) account and API key
 
-**Technical Details:**
-- Files are stored in the same `/srv/storage` directory structure
-- Tasks use `source_type: "upload"` to distinguish from AllDebrid downloads
-- Files can be downloaded, streamed (for videos), or packaged as `.tar.gz`
-- Compatible with existing download/streaming infrastructure
-
-### 🔐 User System
-- **Database-backed authentication** - Users are stored in PostgreSQL instead of environment variables
-- **Role-based access control**:
-  - **Admin users**: Full access to all pages including admin dashboard, user management, and download pages
-  - **Regular users**: Access to create tasks and download files
-- **First-time setup**: Automatic admin account creation on first startup
-- **User statistics**: Track magnets processed, downloads, and total bytes downloaded per user
-
-### 🚀 Getting Started
-
-#### First-Time Setup
-
-On first startup, when no users exist in the database:
-1. Start the application with `docker-compose up`
-2. Navigate to the login page at `http://localhost:9732/login`
-3. You will be prompted to create the first admin account
-4. Enter a username and password to create your admin account
-5. After creation, you can log in and manage additional users from the **Admin > Users** page
-
-#### Existing Installation Migration
-
-If you were previously using `LOGIN_USERS` environment variable:
-
-1. **Backup your data** (optional but recommended)
-   ```bash
-   docker-compose exec db pg_dump -U alldebrid alldebrid > backup.sql
-   ```
-
-2. **Remove LOGIN_USERS from .env**
-   ```bash
-   # Edit .env and remove this line:
-   # LOGIN_USERS=TestUser:password;
-   ```
-
-3. **Run database migration**
-   ```bash
-   docker-compose exec proxy_api alembic upgrade head
-   ```
-
-4. **Restart services**
-   ```bash
-   docker-compose restart
-   ```
-
-5. **Create your admin account** via the first-time setup flow
-
-#### Updating to Link Support Version
-
-If you're upgrading from a version before link support was added:
-
-1. **Run the new database migration**
-   ```bash
-   docker-compose exec proxy_api alembic upgrade head
-   ```
-   
-   This adds the `source_type` field to the task table to support both magnets and links.
-
-2. **Restart services**
-   ```bash
-   docker-compose restart
-   ```
-
-All existing magnet-based tasks will continue to work normally with the new version.
-
-### 👥 User Management (Admin Only)
-
-Admins can manage users at `/admin/users`:
-
-- **Create new users** (admin or regular)
-- **View user statistics** (magnets processed, downloads, bytes downloaded)
-- **Reset user passwords**
-- **Promote/demote users** to/from admin role
-- **Delete users** (except yourself)
-
-### 📊 User Statistics
-
-Each user has statistics tracked automatically:
-- **Total magnets processed**: Incremented when a new task is created
-- **Total downloads**: Incremented when a file download completes
-- **Total bytes downloaded**: Sum of all downloaded file sizes
-
-Statistics are viewable in the Admin > Users page.
-
-### 📂 Torrent File Upload
-
-Upload `.torrent` files directly through the web interface for seamless conversion to magnet links:
-
-**How It Works:**
-1. **Upload**: Select one or more `.torrent` files (up to 10MB each)
-2. **Extract**: System automatically extracts info hash and tracker URLs
-3. **Convert**: Generates a proper magnet link with all trackers
-4. **Discard**: Torrent file is immediately deleted from memory (not stored anywhere)
-5. **Process**: The magnet link is used to create a download task via AllDebrid
-
-**Security Features:**
-- ✅ Torrent files are **never stored** on disk or in database
-- ✅ Files are processed entirely in memory
-- ✅ Strict file size limit (10MB max per file)
-- ✅ File type validation (must be `.torrent` extension)
-- ✅ Bencode format validation
-- ✅ Automatic cleanup after conversion
-
-**Usage:**
-- Upload multiple torrent files at once
-- Combine with manual magnet/URL input in the same submission
-- Same smart deduplication and task reuse as other sources
-
-**Technical Details:**
-- Uses `bencodepy` library for torrent parsing
-- Extracts SHA-1 info hash and all tracker tiers
-- Preserves display name in magnet link
-- Compatible with single and multi-tracker torrents
-
-### 🔒 Security & Access Control
-
-**All users must be logged in** to access any part of the website.
-
-**Admin Users can:**
-- ✅ Access all admin pages (`/admin`, `/admin/users`, `/admin/tasks`)
-- ✅ Create and manage tasks (main page `/` with magnet submission)
-- ✅ Upload files directly for sharing (up to 10GB per file)
-- ✅ View all tasks in the system
-- ✅ Manage user accounts
-- ✅ Access download pages (`/d/`)
-
-**Regular Users can:**
-- ✅ Access download pages **only** (`/d/<task_id>/`)
-- ✅ Download and stream files
-- ❌ Cannot create new tasks
-- ❌ Cannot access admin dashboard
-- ❌ Cannot access the main page
-
-**Authentication Required:**
-- Download routes (`/d/<task_id>/`) require login (accessible to both admins and users)
-- All other routes require admin privileges
-
-Regular users trying to access admin-only pages will see an "Access Denied" page explaining their permissions.
-
-### 🛠️ Technical Details
-
-For detailed information about the user system implementation, database schema, and API changes, see [USER_SYSTEM.md](USER_SYSTEM.md).
-
-### 📝 Configuration
-
-Key environment variables (see `.env.example`):
+### 1. Clone & configure
 
 ```bash
-# Core
-WORKER_API_KEY=change-me          # API key for backend communication
-FLASK_SECRET=change-me             # Flask session secret
-
-# Database (users stored here)
-DATABASE_URL=postgresql+psycopg2://alldebrid:alldebrid@db:5432/alldebrid
-
-# AllDebrid
-ALLDEBRID_API_KEY=change-me
-ALLDEBRID_AGENT=Generic-PC
-
-# Storage
-STORAGE_ROOT=/srv/storage
+git clone https://github.com/macery12/AllDebrid_Proxy.git
+cd AllDebrid_Proxy
+cp .env.example .env
 ```
 
-**Note**: The `LOGIN_USERS` environment variable is no longer used. All user management is now done through the web interface.
+Open `.env` and set **at minimum** the three secrets:
 
-### 🐳 Docker Deployment
+```dotenv
+WORKER_API_KEY=<random string, min 8 chars>
+FLASK_SECRET=<random string>
+ALLDEBRID_API_KEY=<your AllDebrid API key>
+```
 
-The application consists of multiple services:
-- `proxy_frontend`: Web UI (Flask)
-- `proxy_api`: Backend API (FastAPI)
-- `proxy_worker`: Download worker
-- `db`: PostgreSQL database (user data + tasks)
-- `redis`: Message queue and caching
+> **Tip:** `python -c "import secrets; print(secrets.token_hex(32))"` generates a secure random value.
 
-All services are configured via `docker-compose.yml`.
+### 2. Start
 
-### 📡 API Endpoints
+```bash
+docker compose up -d
+```
 
-#### Statistics Endpoint
+The `migrations` service runs Alembic automatically before the API starts, so the database schema is always up to date.
 
-**GET `/api/stats`** - Get comprehensive system statistics
+### 3. First-time setup
 
-Returns real-time statistics about the system including:
-- **Tasks**: Total, queued, downloading, completed, failed, canceled
-- **Files**: Total, downloading, completed, failed
-- **Downloads**: Active downloads, progress, bytes downloaded/total
-- **Storage**: Free space, reserved space, low space threshold
-- **Users**: Aggregate user statistics
-- **Queue**: Redis queue length
-- **Health**: Worker health status
+Navigate to **http://localhost:9732/login** — since no users exist yet, you'll be redirected to a one-time admin account creation wizard. Once your account is created, it is recommended to proceed to the next step to set up SSL before accessing the service remotely.
 
-**Authentication**: Requires valid worker API key via `X-Worker-Key` header (backend) or admin session (frontend proxy at `/api/stats`)
+### 4. Add downloads
 
-**Example Response**:
+- Paste a magnet link or URL into the input box and click **Create Task**.
+- You'll be redirected to the task page where download progress is shown in real time.
+- Once the download completes, click **Open Files** to browse your proxied files.
+---
+
+## Configuration
+
+All configuration is driven by environment variables defined in `.env` (or passed directly to Docker Compose).
+
+| Variable | Default | Description |
+|---|---|---|
+| `WORKER_API_KEY` | `change-me` | Shared secret between the frontend and the API. **Must be changed.** |
+| `FLASK_SECRET` | `change-me` | Flask session signing key. **Must be changed.** |
+| `ALLDEBRID_API_KEY` | _(empty)_ | Your AllDebrid API key. |
+| `ALLDEBRID_AGENT` | `Generic-PC` | User-agent string reported to AllDebrid. |
+| `STORAGE_PATH` | `/srv/storage` | Host path bind-mounted as `/srv/storage` in all containers. |
+| `STORAGE_ROOT` | `/srv/storage` | In-container path used by the API and worker. Should match the mount target. |
+| `LOW_SPACE_FLOOR_GB` | `10` | Warning threshold for available disk space (GB). |
+| `ARIA2_RPC_URL` | `http://aria2:16800/jsonrpc` | Aria2 JSON-RPC endpoint. |
+| `ARIA2_RPC_SECRET` | `change-me` | Aria2 RPC authentication secret. |
+| `ARIA2_SPLITS` | `4` | Parallel connections per file download. |
+| `PER_TASK_MAX_ACTIVE` | `2` | Max simultaneous active downloads per task. |
+| `DATABASE_URL` | _(postgres default)_ | SQLAlchemy connection string. |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis connection string. |
+| `API_PORT` | `9731` | Host port exposed for the FastAPI service. |
+| `FRONTEND_PORT` | `9732` | Host port exposed for the Flask frontend. |
+| `ARIA2_RPC_PORT` | `16800` | Host port exposed for the aria2 RPC interface. |
+| `RETENTION_DAYS` | `7` | Days before completed tasks are auto-purged. |
+| `PARTIAL_MAX_AGE_HOURS` | `24` | Hours before incomplete/stalled downloads are cleaned up. |
+
+---
+
+## User Roles & Access Control
+
+Every request to the application requires a valid session. There are three roles:
+
+| Role | Home/tasks page | Admin dashboard | User management | Download pages |
+|---|:---:|:---:|:---:|:---:|
+| **admin** | ✅ | ✅ | ✅ | ✅ |
+| **member** | ✅ | ❌ | ❌ | ✅ |
+| **user** | ❌ | ❌ | ❌ | ✅ |
+
+- **Admin** — full access. Can create tasks, upload files, manage users, and view the admin dashboard.
+- **Member** — can create tasks and download files, but cannot access admin pages.
+- **User** — download-only. Useful for sharing specific task links with friends without giving them the ability to create new downloads.
+
+Users attempting to access pages above their permission level see an "Access Denied" page.
+
+---
+
+## Download Sources
+
+### Magnet Links
+Paste any `magnet:?xt=urn:btih:…` URI. AllDebrid fetches and caches the torrent, then the worker downloads each file via aria2.
+
+### Direct Links (HTTP/HTTPS)
+Paste a direct URL. AllDebrid unlocks it (removing rate limits and captchas from supported hosters), then aria2 downloads it at full speed.
+
+### Torrent File Upload
+- Drag-and-drop or select one or more `.torrent` files (max 10 MB each).
+- The backend parses the file **entirely in memory** using `bencodepy`, extracts the SHA-1 infohash and all tracker tiers, builds a magnet URI, and discards the original bytes — the `.torrent` file is never written to disk or stored in the database.
+
+### Admin File Upload
+- Available only to **admin** users from the main page.
+- Upload any file up to **10 GB**.
+- The file is saved to `/srv/storage/<task-id>/files/<filename>` and immediately available as a completed task.
+- A shareable download link is created that works exactly like any other task link.
+
+---
+
+## Admin Panel
+
+Access the admin panel at `/admin` (admin role required).
+
+### Dashboard (`/admin`)
+- System-wide task counts by status
+- Active download progress
+- Storage utilization
+
+### Task List (`/admin/tasks`)
+- View all tasks across all users
+- Cancel or delete tasks
+
+### User Management (`/admin/users`)
+- Create new users and assign roles (admin / member / user)
+- Reset passwords
+- Promote or demote users
+- Delete users (you cannot delete your own account)
+- View per-user statistics (tasks created, files downloaded, bytes downloaded)
+
+---
+
+## HTTPS Setup (Strongly Recommended)
+
+> ⚠️ **Running the proxy over plain HTTP means that login credentials, session cookies, and every file you download are transmitted in the clear.** Anyone on the same network — or any hop between your server and the browser — can read or modify them. **Always use HTTPS when the service is reachable from outside your local machine.**
+
+The included `nginx/debrid.conf` is a production-ready Nginx configuration that handles:
+
+- Automatic HTTP → HTTPS redirect (port 80 → 443)
+- TLS 1.2 / 1.3 termination via a free Let's Encrypt certificate (Certbot)
+- Reverse proxy to the API (`:9731`) with SSE-safe settings (buffering off, 1-hour read timeout)
+- Reverse proxy to the frontend (`:9732`) with range-request passthrough for video seeking
+- Support for uploads up to 10 GB (`client_max_body_size 10G`)
+
+### Step 1 — Point a domain at your server
+
+Create an **A record** (and optionally `AAAA` for IPv6) for your domain or subdomain pointing to your server's public IP. DNS changes can take a few minutes to propagate.
+
+### Step 2 — Install Nginx and Certbot
+
+```bash
+sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx
+```
+
+### Step 3 — Obtain a TLS certificate
+
+```bash
+sudo certbot --nginx -d debrid.example.com
+```
+
+Certbot will:
+1. Verify domain ownership via HTTP challenge
+2. Issue a free Let's Encrypt certificate
+3. Set up a cron job / systemd timer to auto-renew the certificate before it expires
+
+### Step 4 — Install the config file
+
+Copy the sample config, replacing `<domain>` with your actual domain name (e.g. `debrid.example.com`):
+
+```bash
+DOMAIN=debrid.example.com
+
+sed "s/<domain>/$DOMAIN/g" nginx/debrid.conf \
+  | sudo tee /etc/nginx/sites-available/debrid.conf > /dev/null
+
+sudo ln -s /etc/nginx/sites-available/debrid.conf \
+           /etc/nginx/sites-enabled/debrid.conf
+
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### Step 5 — Verify
+
+Open `https://debrid.example.com` in your browser. You should see a valid padlock icon (TLS certificate issued to your domain). HTTP requests will be redirected to HTTPS automatically.
+
+### Keeping certificates up to date
+
+Certbot installs an auto-renewal timer. You can test it at any time:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+### What is protected by HTTPS?
+
+Once HTTPS is enabled, the following are encrypted end-to-end between the browser and Nginx:
+
+| What | Why it matters |
+|---|---|
+| Login credentials | Password never sent in the clear |
+| Session cookie | Cannot be hijacked by a passive observer |
+| File downloads | Content cannot be read or tampered with in transit |
+| Video streams | Seekable range requests are encrypted |
+| API responses | Task lists, user data, and stats are private |
+
+## API Reference
+
+All API endpoints are prefixed with `/api` and require the `X-Worker-Key` header set to the value of `WORKER_API_KEY` (or a valid admin session cookie when called through the frontend proxy).
+
+### Tasks
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/tasks` | Create a new download task (magnet or link) |
+| `GET` | `/api/tasks/{task_id}` | Get task details and file list |
+| `GET` | `/api/tasks/{task_id}/events` | SSE stream of real-time task events |
+| `POST` | `/api/tasks/{task_id}/select` | Select specific files to download (select mode) |
+| `POST` | `/api/tasks/{task_id}/cancel` | Cancel a running task |
+| `DELETE` | `/api/tasks/{task_id}` | Delete a task and its files |
+| `POST` | `/api/tasks/upload` | Upload a file directly as a new task (admin only) |
+
+### Statistics
+
+**`GET /api/stats`** — Returns real-time system statistics.
+
 ```json
 {
   "timestamp": 1234567890.0,
-  "tasks": {
-    "total": 100,
-    "queued": 5,
-    "downloading": 3,
-    "active": 3,
-    "completed": 85,
-    "failed": 2
-  },
-  "files": {
-    "total": 500,
-    "downloading": 8,
-    "completed": 480
-  },
-  "downloads": {
-    "active_count": 8,
-    "total_bytes": 10737418240,
-    "downloaded_bytes": 5368709120,
-    "progress_pct": 50
-  },
-  "storage": {
-    "free_bytes": 107374182400,
-    "reserved_bytes": 5368709120
-  }
+  "tasks": { "total": 100, "queued": 5, "downloading": 3, "completed": 85, "failed": 2 },
+  "files": { "total": 500, "downloading": 8, "completed": 480 },
+  "downloads": { "active_count": 8, "total_bytes": 10737418240, "downloaded_bytes": 5368709120, "progress_pct": 50 },
+  "storage": { "free_bytes": 107374182400, "reserved_bytes": 5368709120 }
 }
 ```
 
-**Security Note**: This endpoint does not expose any sensitive information such as API keys, tokens, file paths, or user credentials.
+No sensitive information (API keys, tokens, file paths, credentials) is ever included in API responses.
 
-### 📚 Additional Documentation
+### Users & Auth
 
-- [USER_SYSTEM.md](USER_SYSTEM.md) - Detailed user system documentation and migration guide
-- [.env.example](.env.example) - Environment configuration template
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/auth/verify` | Verify username/password credentials |
+| `GET` | `/api/users/check` | Check whether any users exist (first-run detection) |
+| `GET` | `/api/users` | List all users |
+| `POST` | `/api/users` | Create a new user |
+| `POST` | `/api/users/{user_id}/reset-password` | Reset a user's password |
+| `POST` | `/api/users/{user_id}/role` | Set a user's role |
+| `DELETE` | `/api/users/{user_id}` | Delete a user |
 
+### Health
 
+**`GET /health`** — Returns `{"ok": true}` when the API and storage mount are healthy.
+
+---
+
+## Development & Testing
+
+### Running tests
+
+```bash
+pip install -r requirements.txt -r frontend/requirements.txt
+python -m pytest tests/ -v
+```
+
+The test suite covers:
+- Path-traversal and symlink-escape protection (`validate_file_path`, `safe_task_base`)
+- CSRF token validation on all state-changing POST routes
+- Security response headers
+- Login rate limiting
+- Task naming logic
+
+### Project layout
+
+```
+.
+├── app/                  # FastAPI backend
+│   ├── main.py           # App factory, middleware, exception handlers
+│   ├── api.py            # API router (tasks, users, stats, SSE)
+│   ├── models.py         # SQLAlchemy ORM models
+│   ├── schemas.py        # Pydantic request/response schemas
+│   ├── config.py         # Pydantic settings (loaded from .env)
+│   ├── auth.py           # API key & SSE token verification
+│   ├── validation.py     # Input validation, path-traversal checks
+│   ├── constants.py      # Enums and limits
+│   ├── task_naming.py    # Auto-generated task labels
+│   ├── rate_limiter.py   # Simple in-memory rate limiter
+│   ├── ws_manager.py     # WebSocket / Redis pub-sub manager
+│   └── providers/
+│       └── alldebrid.py  # AllDebrid API client
+├── worker/               # Background download worker
+│   ├── worker.py         # Main polling loop
+│   ├── downloader.py     # Aria2 download dispatch & progress tracking
+│   ├── scheduler.py      # Queue management and task scheduling
+│   └── aria2rpc.py       # Aria2 JSON-RPC client
+├── frontend/             # Flask web UI
+│   ├── app.py            # Routes, auth, file serving, streaming
+│   └── templates/        # Jinja2 HTML templates
+├── alembic/              # Database migrations
+├── nginx/debrid.conf     # Sample Nginx reverse-proxy config
+├── docker-compose.yml
+├── Dockerfile.api
+├── Dockerfile.frontend
+├── Dockerfile.worker
+├── requirements.txt      # Shared Python dependencies
+└── .env.example          # Configuration template
+```
+
+---
+
+## Upgrading
+
+Database migrations are applied automatically by the `migrations` service on every `docker compose up`. To apply them manually:
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+After pulling a new version:
+
+```bash
+git pull
+docker compose build
+docker compose up -d
+```
+
+All existing data (tasks, users, downloaded files) is preserved in the `db_data` Docker volume and the `STORAGE_PATH` bind-mount.
