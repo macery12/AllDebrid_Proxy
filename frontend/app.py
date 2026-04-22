@@ -833,7 +833,9 @@ def task_data(task_id):
     from flask import jsonify
     t, err = get_task(task_id)
     if err:
-        return jsonify({"error": err[0]}), err[1]
+        msg, code = err
+        log.warning(f"task_data fetch failed for {task_id}: {msg}")
+        return jsonify({"error": "Failed to load task"}), code
     return jsonify(t or {})
 
 @app.post("/tasks/<task_id>/select")

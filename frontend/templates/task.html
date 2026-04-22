@@ -685,7 +685,7 @@
         handleSnapshot(d);
       }
     } catch (err) {
-      console.error('Polling fallback error:', err);
+      console.error(`Failed to poll task data for ${taskId}:`, err);
     }
   }
 

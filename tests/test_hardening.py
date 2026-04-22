@@ -239,6 +239,9 @@ class TaskDataEndpointTests(unittest.TestCase):
                 resp = self.client.get("/tasks/task-poll-1/data")
 
         self.assertEqual(resp.status_code, 404)
+        data = resp.get_json()
+        # Error message must not include raw stack trace
+        self.assertNotIn("Traceback", data.get("error", ""))
 
 
 # ---------------------------------------------------------------------------

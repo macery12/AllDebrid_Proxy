@@ -1,5 +1,5 @@
 
-import os, time, uuid, threading, logging, traceback, urllib.error, json
+import os, time, uuid, threading, logging, traceback, urllib.error, json, shutil
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from app.config import settings
@@ -608,23 +608,27 @@ def _retention_cleanup_loop():
                     task_dir = os.path.join(settings.STORAGE_ROOT, task.id)
                     try:
                         if os.path.isdir(task_dir):
-                            import shutil as _shutil
-                            _shutil.rmtree(task_dir, ignore_errors=True)
+                            shutil.rmtree(task_dir, ignore_errors=True)
                     except Exception as e:
                         _log(task.id, LogLevel.ERROR, "retention_cleanup_fs_error", err=str(e))
 
                     try:
                         s.delete(task)
-                        s.commit()
-                        _log(task.id, LogLevel.INFO, "retention_cleanup_purged",
-                             status=task.status, updated_at=str(task.updated_at))
                     except Exception as e:
-                        s.rollback()
                         _log(task.id, LogLevel.ERROR, "retention_cleanup_db_error", err=str(e))
 
                 if expired:
-                    _log("", LogLevel.INFO, "retention_cleanup_cycle_done",
-                         purged=len(expired), retention_days=settings.RETENTION_DAYS)
+                    try:
+                        s.commit()
+                    except Exception as e:
+                        s.rollback()
+                        _log("", LogLevel.ERROR, "retention_cleanup_commit_error", err=str(e))
+                    else:
+                        for task in expired:
+                            _log(task.id, LogLevel.INFO, "retention_cleanup_purged",
+                                 status=task.status, updated_at=str(task.updated_at))
+                        _log("", LogLevel.INFO, "retention_cleanup_cycle_done",
+                             purged=len(expired), retention_days=settings.RETENTION_DAYS)
         except Exception as e:
             _log("", LogLevel.ERROR, "retention_cleanup_loop_error",
                  err=str(e), tb=traceback.format_exc())
