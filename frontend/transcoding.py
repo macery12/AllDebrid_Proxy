@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -37,6 +38,13 @@ TRANSCODE_ROOT: Path = Path(os.environ.get("STORAGE_ROOT", "/srv/storage")) / "t
 MAX_CONCURRENT_TRANSCODES: int = max(1, int(os.environ.get("MAX_CONCURRENT_TRANSCODES", "2")))
 TRANSCODE_TTL_SECONDS: int = max(300, int(os.environ.get("TRANSCODE_TTL_HOURS", "4")) * 3600)
 CPU_LOAD_LIMIT: float = max(0.1, float(os.environ.get("TRANSCODE_MAX_LOAD", "3.0")))
+
+# Maximum threads ffmpeg may use (0 = let ffmpeg decide automatically).
+FFMPEG_THREADS: int = max(0, int(os.environ.get("FFMPEG_THREADS", "0")))
+
+# Heartbeat: if no heartbeat is received within this many seconds the ffmpeg
+# process is killed automatically (guards against browser navigating away).
+HEARTBEAT_TIMEOUT: int = max(15, int(os.environ.get("HEARTBEAT_TIMEOUT", "45")))
 
 # Number of completed .ts segments before the player may start.
 # Each segment is 6 s → 2 segments = 12 s of pre-buffered content.
@@ -161,6 +169,87 @@ def job_id_for(task_id: str, relpath: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Heartbeat & cancellation
+# ---------------------------------------------------------------------------
+
+def touch_heartbeat(job_id: str) -> bool:
+    """
+    Refresh the heartbeat timestamp for *job_id*.
+    Returns True if the job exists, False otherwise.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return False
+        job["last_heartbeat"] = time.time()
+        return True
+
+
+def cancel_job(job_id: str) -> bool:
+    """
+    Terminate the ffmpeg process for *job_id* and mark the job as
+    ``cancelled``.  Returns True if the job was active, False if it was
+    already finished or not found.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return False
+        if job["status"] not in ("queued", "transcoding"):
+            return False
+        pid = job.get("pid")
+        job["status"] = "cancelled"
+        job["finished_at"] = time.time()
+        job.pop("pid", None)
+
+    if pid:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+        log.info("Cancelled job %s (pid %s)", job_id, pid)
+    else:
+        log.info("Cancelled queued job %s (not yet started)", job_id)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat watchdog — kills jobs whose clients have disconnected
+# ---------------------------------------------------------------------------
+
+def _kill_stale_jobs() -> None:
+    """Cancel any active job whose heartbeat has expired."""
+    now = time.time()
+    stale = []
+    with _jobs_lock:
+        for jid, job in _jobs.items():
+            if job["status"] in ("queued", "transcoding"):
+                last_hb = job.get("last_heartbeat")
+                if last_hb is not None and now - last_hb > HEARTBEAT_TIMEOUT:
+                    stale.append(jid)
+    for jid in stale:
+        log.info("Heartbeat timeout — cancelling job %s", jid)
+        cancel_job(jid)
+
+
+def _watchdog_loop() -> None:
+    """Background daemon thread — periodically reap stale transcode jobs."""
+    while True:
+        time.sleep(15)
+        try:
+            _kill_stale_jobs()
+        except Exception:
+            log.exception("Watchdog error")
+
+
+# Start the watchdog daemon thread once at module load.
+_watchdog_thread = threading.Thread(
+    target=_watchdog_loop, daemon=True, name="transcode-watchdog"
+)
+_watchdog_thread.start()
+
+
+# ---------------------------------------------------------------------------
 # Transcoding thread
 # ---------------------------------------------------------------------------
 
@@ -215,6 +304,11 @@ def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
             FFMPEG_BIN,
             "-hide_banner", "-loglevel", "warning", "-stats",
             "-i", str(source),
+        ]
+        # Optional thread cap — prevents ffmpeg from monopolising all CPU cores.
+        if FFMPEG_THREADS > 0:
+            cmd += ["-threads", str(FFMPEG_THREADS)]
+        cmd += [
             # Video stream
             "-c:v", "libx264",
             "-profile:v", "baseline",
@@ -248,6 +342,17 @@ def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
 
             stderr_tail: list = []
             for line in proc.stderr:
+                # Bail out early if the job was cancelled while transcoding.
+                with _jobs_lock:
+                    current_status = _jobs.get(job_id, {}).get("status")
+                if current_status == "cancelled":
+                    try:
+                        proc.terminate()
+                    except OSError:
+                        pass
+                    proc.wait()
+                    return
+
                 stderr_tail.append(line.rstrip())
                 if len(stderr_tail) > 20:
                     stderr_tail.pop(0)
@@ -267,6 +372,9 @@ def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
             proc.wait()
 
             with _jobs_lock:
+                # Don't overwrite a `cancelled` status set by cancel_job().
+                if _jobs.get(job_id, {}).get("status") == "cancelled":
+                    return
                 if proc.returncode == 0:
                     _jobs[job_id]["status"] = "done"
                     # Ensure playable is set even for very short files that
@@ -283,8 +391,9 @@ def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
         except Exception as exc:
             log.exception("Transcode thread failed for job %s", job_id)
             with _jobs_lock:
-                _jobs[job_id]["status"] = "error"
-                _jobs[job_id]["error"] = str(exc)
+                if _jobs.get(job_id, {}).get("status") != "cancelled":
+                    _jobs[job_id]["status"] = "error"
+                    _jobs[job_id]["error"] = str(exc)
                 _jobs[job_id]["finished_at"] = time.time()
                 _jobs[job_id].pop("pid", None)
 
@@ -343,6 +452,9 @@ def start_transcode(task_id: str, relpath: str, source: Path) -> Dict[str, Any]:
         "playlist": None,
         "error": None,
         "pid": None,
+        # Heartbeat: updated by the client every ~15 s while on the player page.
+        # The watchdog kills jobs with stale heartbeats (browser navigated away).
+        "last_heartbeat": time.time(),
     }
 
     with _jobs_lock:
@@ -370,7 +482,7 @@ def cleanup_old_jobs() -> int:
 
     with _jobs_lock:
         for jid, job in _jobs.items():
-            if job["status"] in ("done", "error"):
+            if job["status"] in ("done", "error", "cancelled"):
                 finished = job.get("finished_at") or 0
                 if now - finished > TRANSCODE_TTL_SECONDS:
                     to_remove.append(jid)
