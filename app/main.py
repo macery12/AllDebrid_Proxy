@@ -22,10 +22,15 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Add CORS middleware - configure allowed origins in production
+# Add CORS middleware - deny all cross-origin requests by default.
+# Set CORS_ORIGINS to a comma-separated list of allowed origins to opt in.
+# Example: CORS_ORIGINS=https://app.example.com,https://other.example.com
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -94,6 +99,10 @@ async def startup():
     logger.info("Starting application...")
     loop = asyncio.get_event_loop()
     loop.create_task(ws_manager.start_pubsub_loop())
+    if _cors_origins:
+        logger.info(f"CORS enabled for origins: {_cors_origins}")
+    else:
+        logger.info("CORS: deny-all (set CORS_ORIGINS to allow cross-origin requests)")
     logger.info("Application started successfully")
 
 @app.on_event("shutdown")

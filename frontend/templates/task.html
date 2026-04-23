@@ -676,6 +676,19 @@
     window.location.reload();
   }
 
+  async function pollTaskData() {
+    try {
+      const res = await fetch(`/tasks/${encodeURIComponent(taskId)}/data`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+      if (d && !d.error) {
+        handleSnapshot(d);
+      }
+    } catch (err) {
+      console.error(`Failed to poll task data for ${taskId}:`, err);
+    }
+  }
+
   function restartAutoRefreshTimer() {
     if (refreshTimer) {
       clearInterval(refreshTimer);
@@ -697,7 +710,7 @@
     }
 
     const sec = Number(refreshIntervalSelect?.value || 5);
-    refreshTimer = setInterval(reloadPage, Math.max(MIN_REFRESH_INTERVAL_SEC, sec) * 1000);
+    refreshTimer = setInterval(pollTaskData, Math.max(MIN_REFRESH_INTERVAL_SEC, sec) * 1000);
   }
 
   if (es) {
@@ -747,7 +760,13 @@
     refreshIntervalSelect.addEventListener('change', restartAutoRefreshTimer);
   }
   if (refreshNowBtn) {
-    refreshNowBtn.addEventListener('click', reloadPage);
+    refreshNowBtn.addEventListener('click', () => {
+      if (fallbackPollingActive) {
+        pollTaskData();
+      } else {
+        reloadPage();
+      }
+    });
   }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
