@@ -4,10 +4,10 @@ from app.validation import validate_infohash
 from app.constants import Patterns
 
 try:
-    import bencodepy
-    HAS_BENCODEPY = True
+    import torf as _torf
+    HAS_TORF = True
 except ImportError:
-    HAS_BENCODEPY = False
+    HAS_TORF = False
 
 def parse_infohash(magnet: str) -> Optional[str]:
     """
@@ -171,73 +171,16 @@ def torrent_to_magnet(torrent_data: bytes) -> str:
     Raises:
         ValueError: If torrent data is invalid or cannot be parsed
     """
-    if not HAS_BENCODEPY:
-        raise ValueError("bencodepy library is required to parse torrent files")
+    if not HAS_TORF:
+        raise ValueError("torf library is required to parse torrent files")
     
+    import io as _io
     try:
-        # Decode the torrent file
-        torrent_dict = bencodepy.decode(torrent_data)
+        torrent = _torf.Torrent.read_stream(_io.BytesIO(torrent_data), validate=False)
     except Exception as e:
         raise ValueError(f"Failed to decode torrent file: {e}")
     
-    # Extract info dictionary
-    if b'info' not in torrent_dict:
-        raise ValueError("Invalid torrent file: missing 'info' dictionary")
+    if not torrent.infohash:
+        raise ValueError("Invalid torrent file: could not compute infohash")
     
-    info_dict = torrent_dict[b'info']
-    
-    # Calculate info hash (SHA-1 of bencoded info dict)
-    try:
-        info_encoded = bencodepy.encode(info_dict)
-        info_hash = hashlib.sha1(info_encoded).hexdigest()
-    except Exception as e:
-        raise ValueError(f"Failed to calculate info hash: {e}")
-    
-    # Build magnet link starting with info hash
-    magnet = f"magnet:?xt=urn:btih:{info_hash}"
-    
-    # Extract trackers
-    trackers = []
-    
-    # Single tracker from 'announce'
-    if b'announce' in torrent_dict:
-        try:
-            tracker = torrent_dict[b'announce'].decode('utf-8', errors='ignore')
-            if tracker:
-                trackers.append(tracker)
-        except Exception:
-            pass
-    
-    # Multiple trackers from 'announce-list'
-    if b'announce-list' in torrent_dict:
-        try:
-            announce_list = torrent_dict[b'announce-list']
-            for tier in announce_list:
-                if isinstance(tier, list):
-                    for tracker_bytes in tier:
-                        try:
-                            tracker = tracker_bytes.decode('utf-8', errors='ignore')
-                            if tracker and tracker not in trackers:
-                                trackers.append(tracker)
-                        except Exception:
-                            pass
-        except Exception:
-            pass
-    
-    # Add trackers to magnet link
-    for tracker in trackers:
-        # URL-encode tracker for magnet link
-        from urllib.parse import quote
-        magnet += f"&tr={quote(tracker, safe='')}"
-    
-    # Extract name if available
-    if b'name' in info_dict:
-        try:
-            name = info_dict[b'name'].decode('utf-8', errors='ignore')
-            if name:
-                from urllib.parse import quote
-                magnet += f"&dn={quote(name, safe='')}"
-        except Exception:
-            pass
-    
-    return magnet
+    return str(torrent.magnet())
