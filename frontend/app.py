@@ -15,6 +15,9 @@ from app.constants import Limits
 from app.utils import torrent_to_magnet
 from app.validation import validate_torrent_file_data
 
+# Transcoding pipeline (ffmpeg-based HLS for browser-incompatible formats)
+import frontend.transcoding as _transcoding
+
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
 MAX_LABEL_LENGTH = 500     # Maximum length for task label
@@ -285,10 +288,8 @@ def _accel_path(task_id: str, relpath: str) -> str:
     return f"{app.config['NGINX_ACCEL_PREFIX']}/{task_id}/files/{relpath}"
 
 def _is_video(filename: str) -> bool:
-    """Check if a file is a video based on extension"""
-    video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ogv'}
-    ext = Path(filename).suffix.lower()
-    return ext in video_exts
+    """Check if a file is a video or audio media file (including transcodable formats)."""
+    return _transcoding.is_media_file(filename)
 
 def _is_still_downloading(filepath: Path) -> bool:
     """Check if a file is still being downloaded by aria2c"""
@@ -1078,7 +1079,7 @@ def raw_file(task_id, relpath):
 @app.get("/d/<task_id>/play/<path:relpath>")
 @login_required
 def play_video(task_id, relpath):
-    """Video player page"""
+    """Smart media player page — supports direct play and ffmpeg transcoding."""
     base = safe_task_base(task_id)
     full = _safe_resolve_relpath(base, relpath)
 
@@ -1088,11 +1089,17 @@ def play_video(task_id, relpath):
         return redirect(url_for("list_folder", task_id=task_id))
 
     if not _is_video(full.name):
-        flash("This file is not a video", "error")
+        flash("This file is not a supported media type", "error")
         return redirect(url_for("list_folder", task_id=task_id))
 
     st = full.stat()
     mime = _guess_mime(full.name)
+
+    # Determine browser compatibility and ffmpeg availability
+    needs_transcode = not _transcoding.is_browser_compatible(full.name)
+    has_ffmpeg = _transcoding.ffmpeg_available()
+    job_id = _transcoding.job_id_for(task_id, relpath)
+    existing_job = _transcoding.get_job(job_id)
 
     return render_template(
         "player.html",
@@ -1103,7 +1110,11 @@ def play_video(task_id, relpath):
         mime_type=mime,
         video_url=url_for("stream_video", task_id=task_id, relpath=relpath),
         download_url=url_for("raw_file", task_id=task_id, relpath=relpath),
-        back_url=url_for("list_folder", task_id=task_id)
+        back_url=url_for("list_folder", task_id=task_id),
+        needs_transcode=needs_transcode,
+        has_ffmpeg=has_ffmpeg,
+        job_id=job_id,
+        existing_job=existing_job,
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
@@ -1203,6 +1214,103 @@ def stream_video(task_id, relpath):
         return resp
     except (ValueError, IndexError):
         abort(416, "Invalid Range header")
+
+# ------------------------------------------------------------------------------
+# Transcoding routes (ffmpeg-based HLS for browser-incompatible formats)
+# ------------------------------------------------------------------------------
+
+@app.get("/api/player/status")
+@login_required
+def player_status():
+    """Return ffmpeg availability, current load, and active job counts."""
+    return jsonify({
+        "ffmpeg_available": _transcoding.ffmpeg_available(),
+        "active_jobs": _transcoding.active_job_count(),
+        "max_jobs": _transcoding.MAX_CONCURRENT_TRANSCODES,
+        "system_load": round(_transcoding.get_system_load(), 2),
+        "load_limit": _transcoding.CPU_LOAD_LIMIT,
+        "overloaded": _transcoding.is_overloaded(),
+    })
+
+
+@app.post("/d/<task_id>/transcode/<path:relpath>")
+@login_required
+def start_transcode(task_id, relpath):
+    """Start (or return the existing) transcode job for a media file."""
+    base = safe_task_base(task_id)
+    full = _safe_resolve_relpath(base, relpath)
+
+    if _is_still_downloading(full):
+        return jsonify({"error": "File is still being downloaded"}), 409
+
+    if not _transcoding.is_media_file(full.name):
+        return jsonify({"error": "Not a supported media file"}), 400
+
+    try:
+        job = _transcoding.start_transcode(task_id, relpath, full)
+    except RuntimeError as exc:
+        # exc.args[0] is a controlled message we set in start_transcode
+        return jsonify({"error": exc.args[0] if exc.args else "Transcode unavailable"}), 503
+
+    return jsonify(job), 202
+
+
+@app.get("/d/<task_id>/transcode/job/<job_id>")
+@login_required
+def transcode_job_status(task_id, job_id):
+    """Poll the status of a transcode job."""
+    job = _transcoding.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    # Sanity-check that this job belongs to the requesting task
+    if job.get("task_id") != task_id:
+        abort(403)
+
+    # Build HLS URL if done
+    if job["status"] == "done":
+        job["hls_url"] = url_for(
+            "serve_hls",
+            job_id=job_id,
+            filename="index.m3u8",
+            _external=False,
+        )
+
+    return jsonify(job)
+
+
+@app.get("/hls/<job_id>/<path:filename>")
+@login_required
+def serve_hls(job_id, filename):
+    """Serve HLS playlist or segment files for a completed transcode."""
+    job = _transcoding.get_job(job_id)
+    if not job:
+        abort(404)
+
+    if job["status"] != "done":
+        abort(404, "Transcode not yet complete")
+
+    out_dir = Path(job["output_dir"])
+    # Restrict to the job's own output directory
+    try:
+        target = (out_dir / filename).resolve()
+        target.relative_to(out_dir.resolve())  # raises ValueError if escaping
+    except (ValueError, OSError):
+        abort(403)
+
+    if not target.exists():
+        abort(404)
+
+    # Choose the right MIME type
+    if filename.endswith(".m3u8"):
+        mime = "application/vnd.apple.mpegurl"
+    elif filename.endswith(".ts"):
+        mime = "video/MP2T"
+    else:
+        mime = "application/octet-stream"
+
+    return send_file(target, mimetype=mime, max_age=3600)
+
 
 # ------------------------------------------------------------------------------
 # Dev server entrypoint

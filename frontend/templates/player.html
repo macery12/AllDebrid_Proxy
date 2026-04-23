@@ -65,6 +65,68 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* Transcode UI */
+.transcode-panel {
+  margin-top: 16px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.transcode-panel.warning {
+  border-color: var(--warn);
+  background: rgba(255, 165, 0, 0.06);
+}
+.transcode-panel.error-panel {
+  border-color: var(--danger);
+  background: rgba(220, 53, 69, 0.06);
+}
+.transcode-panel.success {
+  border-color: var(--accent-2);
+  background: rgba(40, 167, 69, 0.06);
+}
+.transcode-panel h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.transcode-panel p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.transcode-progress-bar-wrap {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  margin: 12px 0 8px;
+  overflow: hidden;
+}
+.transcode-progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+  min-width: 4px;
+}
+.transcode-progress-bar.indeterminate {
+  width: 30% !important;
+  animation: indeterminate-slide 1.4s infinite linear;
+}
+@keyframes indeterminate-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.transcode-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 </style>
 
 <div class="player-container">
@@ -100,10 +162,86 @@
         controls 
         preload="metadata"
         playsinline
+        {% if not needs_transcode or (existing_job and existing_job.status == 'done') %}style="display:block"{% else %}style="display:none"{% endif %}
       >
-        <source src="{{ video_url }}" type="{{ mime_type }}">
+        {% if existing_job and existing_job.status == 'done' %}
+        <source id="videoSource" src="/hls/{{ job_id }}/index.m3u8" type="application/vnd.apple.mpegurl">
+        {% else %}
+        <source id="videoSource" src="{{ video_url }}" type="{{ mime_type }}">
+        {% endif %}
         Your browser does not support the video tag.
       </video>
+    </div>
+
+    <!-- Transcode panel: shown when format may need transcoding -->
+    <div id="transcodePanel" class="transcode-panel"
+         {% if not needs_transcode %}style="display:none"{% endif %}>
+
+      <!-- State: format warning (direct play might work) -->
+      <div id="tpWarning" {% if not needs_transcode %}style="display:none"{% endif %}>
+        <h3>⚠️ Format may not play in browser</h3>
+        <p>
+          <strong>{{ mime_type or filename }}</strong> is not natively supported by most browsers.
+          Direct playback is being attempted — if it fails you can transcode the file to a
+          browser-friendly format using ffmpeg.
+        </p>
+        <div class="transcode-actions">
+          {% if has_ffmpeg %}
+          <button id="btnTranscode" class="btn good" onclick="startTranscode()">
+            🎬 Transcode for browser playback
+          </button>
+          {% else %}
+          <span class="muted small">ffmpeg is not available on this server. Download the file to play it locally.</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- State: transcoding queued / in progress -->
+      <div id="tpProgress" style="display:none">
+        <h3>⏳ <span id="tpProgressTitle">Transcoding…</span></h3>
+        <p id="tpProgressMsg">Preparing ffmpeg…</p>
+        <div class="transcode-progress-bar-wrap">
+          <div id="tpBar" class="transcode-progress-bar indeterminate" style="width:0%"></div>
+        </div>
+        <p class="small muted" id="tpProgressTime">Elapsed: 0s</p>
+      </div>
+
+      <!-- State: transcode done -->
+      <div id="tpDone" class="success" style="display:none">
+        <h3 style="color:var(--accent-2)">✅ Transcode complete</h3>
+        <p>The video has been converted and is ready to play.</p>
+      </div>
+
+      <!-- State: transcode error -->
+      <div id="tpError" class="error-panel" style="display:none">
+        <h3 style="color:var(--danger)">❌ Transcode failed</h3>
+        <p id="tpErrorMsg">An error occurred during transcoding.</p>
+        <div class="transcode-actions">
+          <button class="btn" onclick="retryTranscode()">Retry</button>
+          <a class="btn" href="{{ download_url }}" download>Download and play locally</a>
+        </div>
+      </div>
+
+      <!-- State: server busy -->
+      <div id="tpBusy" style="display:none">
+        <h3>🔄 Server busy</h3>
+        <p id="tpBusyMsg">The server is currently transcoding other files. Please try again shortly.</p>
+        <div class="transcode-actions">
+          <button class="btn" onclick="startTranscode()">Try again</button>
+        </div>
+      </div>
+
+      <!-- State: no ffmpeg + format error (shown when video fails AND ffmpeg is unavailable) -->
+      <div id="tpNoFfmpeg" style="display:none">
+        <h3 style="color:var(--danger)">❌ Format not supported</h3>
+        <p>
+          Your browser cannot play this format and ffmpeg is not available on this server to convert it.
+          Please download the file and play it with a local media player (e.g. VLC).
+        </p>
+        <div class="transcode-actions">
+          <a class="btn" href="{{ download_url }}" download>Download file</a>
+        </div>
+      </div>
     </div>
 
     <div class="video-info">
@@ -120,8 +258,10 @@
         <div class="info-value">{{ mime_type }}</div>
       </div>
       <div class="info-item">
-        <div class="info-label">Status</div>
-        <div class="info-value" id="playerStatus">Ready</div>
+        <div class="info-label">Playback</div>
+        <div class="info-value" id="playerStatus">
+          {% if needs_transcode %}Checking compatibility…{% else %}Ready{% endif %}
+        </div>
       </div>
     </div>
   </div>
@@ -129,132 +269,302 @@
 
 <script>
 (function() {
-  const video = document.getElementById('videoPlayer');
-  const statusEl = document.getElementById('playerStatus');
-  
-  // Store playback position in localStorage
-  const storageKey = 'video-position-' + {{ task_id|tojson }} + '-' + {{ relpath|tojson }};
-  
-  // Track if we're currently seeking to debounce rapid seeks
-  let seekTimeout;
-  let lastSeekTime = 0;
-  
-  function updateStatus(text, color = null) {
-    if (statusEl) {
-      statusEl.textContent = text;
-      if (color) {
-        statusEl.style.color = color;
-      } else {
-        statusEl.style.color = '';
-      }
-    }
+  // ---------------------------------------------------------------------------
+  // Config passed from server
+  // ---------------------------------------------------------------------------
+  const TASK_ID       = {{ task_id|tojson }};
+  const RELPATH       = {{ relpath|tojson }};
+  const JOB_ID        = {{ job_id|tojson }};
+  const NEEDS_TRANSCODE = {{ needs_transcode|tojson }};
+  const HAS_FFMPEG    = {{ has_ffmpeg|tojson }};
+  const EXISTING_JOB  = {{ (existing_job or {})|tojson }};
+
+  const TRANSCODE_URL     = `/d/${TASK_ID}/transcode/${RELPATH}`;
+  const JOB_STATUS_URL    = `/d/${TASK_ID}/transcode/job/${JOB_ID}`;
+
+  // ---------------------------------------------------------------------------
+  // Element handles
+  // ---------------------------------------------------------------------------
+  const video     = document.getElementById('videoPlayer');
+  const srcEl     = document.getElementById('videoSource');
+  const statusEl  = document.getElementById('playerStatus');
+
+  const panel     = document.getElementById('transcodePanel');
+  const tpWarning = document.getElementById('tpWarning');
+  const tpProgress= document.getElementById('tpProgress');
+  const tpDone    = document.getElementById('tpDone');
+  const tpError   = document.getElementById('tpError');
+  const tpBusy    = document.getElementById('tpBusy');
+  const tpNoFfmpeg= document.getElementById('tpNoFfmpeg');
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+  function updateStatus(text, color) {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.style.color = color || '';
   }
-  
-  // Restore last position after metadata is loaded
+
+  function showPanel(which) {
+    [tpWarning, tpProgress, tpDone, tpError, tpBusy, tpNoFfmpeg].forEach(el => {
+      if (el) el.style.display = (el === which) ? '' : 'none';
+    });
+    if (panel) panel.style.display = which ? '' : 'none';
+  }
+
+  function showVideo(src, type) {
+    srcEl.src = src;
+    if (type) srcEl.type = type;
+    video.style.display = 'block';
+    video.load();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Playback position persistence
+  // ---------------------------------------------------------------------------
+  const storageKey = 'video-position-' + TASK_ID + '-' + RELPATH;
+  let saveInterval;
+
   video.addEventListener('loadedmetadata', function() {
-    const savedTime = localStorage.getItem(storageKey);
-    if (savedTime && !isNaN(savedTime)) {
-      const time = parseFloat(savedTime);
-      if (time > 0 && time < video.duration) {
-        video.currentTime = time;
-        updateStatus('Resumed from ' + formatTime(time));
+    const saved = localStorage.getItem(storageKey);
+    if (saved && !isNaN(saved)) {
+      const t = parseFloat(saved);
+      if (t > 0 && t < video.duration) {
+        video.currentTime = t;
+        updateStatus('Resumed from ' + formatTime(t));
+        return;
       }
     }
     updateStatus('Ready');
   });
-  
-  // Save position every 10 seconds while playing
-  let saveInterval;
+
   video.addEventListener('play', function() {
     updateStatus('Playing', 'var(--accent-2)');
-    saveInterval = setInterval(function() {
-      localStorage.setItem(storageKey, video.currentTime.toString());
-    }, 10000);
+    saveInterval = setInterval(() => localStorage.setItem(storageKey, video.currentTime), 10000);
   });
-  
+
   video.addEventListener('pause', function() {
     clearInterval(saveInterval);
-    localStorage.setItem(storageKey, video.currentTime.toString());
+    localStorage.setItem(storageKey, video.currentTime);
     updateStatus('Paused', 'var(--warn)');
   });
-  
-  // Handle seeking events to save position immediately
+
   video.addEventListener('seeked', function() {
-    localStorage.setItem(storageKey, video.currentTime.toString());
+    localStorage.setItem(storageKey, video.currentTime);
     updateStatus('Seeked to ' + formatTime(video.currentTime));
   });
-  
-  // Detect rapid seeking
+
+  let lastSeekTime = 0;
   video.addEventListener('seeking', function() {
     const now = Date.now();
-    if (now - lastSeekTime < 500) {
-      clearTimeout(seekTimeout);
-      seekTimeout = setTimeout(function() {
-        if (video.readyState < 3) {
-          console.log('Buffering after rapid seek, current time:', video.currentTime);
-        }
-      }, 1000);
-    }
     lastSeekTime = now;
-    updateStatus('Seeking...', 'var(--muted)');
+    updateStatus('Seeking…', 'var(--muted)');
   });
-  
-  // Handle waiting (buffering) events with visual feedback
+
   let bufferingTimeout;
   video.addEventListener('waiting', function() {
-    console.log('Video buffering...');
     video.style.opacity = '0.7';
-    updateStatus('Buffering...', 'var(--warn)');
+    updateStatus('Buffering…', 'var(--warn)');
     clearTimeout(bufferingTimeout);
-    bufferingTimeout = setTimeout(function() {
-      if (video.readyState < 3) {
-        console.warn('Extended buffering detected. Try refreshing the page.');
-        updateStatus('Buffering (slow connection)', 'var(--danger)');
-      }
+    bufferingTimeout = setTimeout(() => {
+      if (video.readyState < 3) updateStatus('Buffering (slow connection)', 'var(--danger)');
     }, 10000);
   });
-  
+
   video.addEventListener('canplay', function() {
     clearTimeout(bufferingTimeout);
     video.style.opacity = '1';
-    if (!video.paused) {
-      updateStatus('Playing', 'var(--accent-2)');
-    }
+    if (!video.paused) updateStatus('Playing', 'var(--accent-2)');
   });
-  
-  // Clear saved position when video ends
+
   video.addEventListener('ended', function() {
     localStorage.removeItem(storageKey);
     updateStatus('Ended');
   });
-  
-  // Handle errors with more details
-  video.addEventListener('error', function(e) {
-    console.error('Video error:', e);
-    let msg = 'Error loading video';
-    if (video.error) {
-      switch(video.error.code) {
-        case 1: msg = 'Video loading aborted'; break;
-        case 2: msg = 'Network error while loading video'; break;
-        case 3: msg = 'Video decoding failed'; break;
-        case 4: msg = 'Video format not supported'; break;
-        default: msg = 'Error loading video: ' + video.error.message;
+
+  // ---------------------------------------------------------------------------
+  // Video error handler — the core of the smart player logic
+  // ---------------------------------------------------------------------------
+  video.addEventListener('error', function() {
+    clearTimeout(bufferingTimeout);
+    video.style.opacity = '1';
+
+    const code = video.error ? video.error.code : 0;
+    if (code === 4 || code === 3) {
+      // Format or decode error — offer transcoding
+      if (HAS_FFMPEG) {
+        updateStatus('Format not supported — transcode available', 'var(--warn)');
+        showPanel(tpWarning);
+        // Auto-start transcode for incompatible formats to reduce friction
+        if (NEEDS_TRANSCODE) {
+          startTranscode();
+        }
+      } else {
+        updateStatus('Format not supported — no transcoder available', 'var(--danger)');
+        showPanel(tpNoFfmpeg);
+      }
+    } else {
+      let msg = 'Error loading video';
+      if (video.error) {
+        switch (code) {
+          case 1: msg = 'Video loading aborted'; break;
+          case 2: msg = 'Network error while loading video'; break;
+          default: msg = 'Error loading video (' + (video.error.message || 'unknown') + ')';
+        }
+      }
+      updateStatus(msg, 'var(--danger)');
+      // Still offer the transcode fallback if we have ffmpeg
+      if (HAS_FFMPEG && NEEDS_TRANSCODE) {
+        showPanel(tpWarning);
       }
     }
-    console.error(msg);
-    updateStatus(msg, 'var(--danger)');
-    alert(msg);
   });
-  
+
+  // ---------------------------------------------------------------------------
+  // Transcode flow
+  // ---------------------------------------------------------------------------
+  let pollTimer = null;
+  let transcodeStartWallTime = null;
+
+  function handleTranscodeError(message) {
+    const isBusy = message.toLowerCase().includes('busy') ||
+                   message.toLowerCase().includes('load');
+    if (isBusy) {
+      document.getElementById('tpBusyMsg').textContent = message;
+      showPanel(tpBusy);
+      updateStatus('Server busy', 'var(--warn)');
+    } else {
+      document.getElementById('tpErrorMsg').textContent = message;
+      showPanel(tpError);
+      updateStatus('Transcode failed', 'var(--danger)');
+    }
+  }
+
+  function updateProgressUI(job) {
+    const barEl   = document.getElementById('tpBar');
+    const msgEl   = document.getElementById('tpProgressMsg');
+    const timeEl  = document.getElementById('tpProgressTime');
+    const titleEl = document.getElementById('tpProgressTitle');
+
+    const wallElapsed = transcodeStartWallTime
+      ? Math.round((Date.now() - transcodeStartWallTime) / 1000) : 0;
+    if (timeEl) timeEl.textContent = `Elapsed: ${wallElapsed}s`;
+
+    if (job.status === 'queued') {
+      if (titleEl) titleEl.textContent = 'Waiting in queue…';
+      if (msgEl)   msgEl.textContent   = 'Waiting for a free transcode slot…';
+      if (barEl)   { barEl.classList.add('indeterminate'); barEl.style.width = '0%'; }
+    } else if (job.status === 'transcoding') {
+      if (titleEl) titleEl.textContent = 'Transcoding…';
+      const secs = job.transcoded_seconds || 0;
+      if (msgEl)   msgEl.textContent   = `Transcoded: ${formatTime(secs)}`;
+      if (barEl) {
+        barEl.classList.remove('indeterminate');
+        barEl.style.width = Math.min(95, Math.max(5, secs > 0 ? 50 : 10)) + '%';
+      }
+    }
+  }
+
+  function pollJob(job) {
+    clearTimeout(pollTimer);
+
+    if (job.status === 'done') {
+      const barEl = document.getElementById('tpBar');
+      if (barEl) { barEl.classList.remove('indeterminate'); barEl.style.width = '100%'; }
+      showPanel(tpDone);
+      updateStatus('Transcode complete — playing', 'var(--accent-2)');
+      showVideo(job.hls_url || `/hls/${JOB_ID}/index.m3u8`, 'application/vnd.apple.mpegurl');
+      return;
+    }
+
+    if (job.status === 'error') {
+      document.getElementById('tpErrorMsg').textContent = job.error || 'Unknown error';
+      showPanel(tpError);
+      updateStatus('Transcode failed', 'var(--danger)');
+      return;
+    }
+
+    // Still in progress — update the UI then re-poll
+    updateProgressUI(job);
+    pollTimer = setTimeout(fetchAndPoll, 2000);
+  }
+
+  function fetchAndPoll() {
+    fetch(JOB_STATUS_URL, { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(pollJob)
+      .catch(() => { pollTimer = setTimeout(fetchAndPoll, 3000); });
+  }
+
+  window.startTranscode = function() {
+    showPanel(tpProgress);
+    updateStatus('Transcoding…', 'var(--accent)');
+    transcodeStartWallTime = Date.now();
+
+    fetch(TRANSCODE_URL, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '' },
+      credentials: 'same-origin',
+    })
+    .then(r => r.json())
+    .then(job => {
+      if (job.error) { handleTranscodeError(job.error); return; }
+      pollJob(job);
+    })
+    .catch(err => {
+      document.getElementById('tpErrorMsg').textContent = 'Network error: ' + err.message;
+      showPanel(tpError);
+      updateStatus('Transcode error', 'var(--danger)');
+    });
+  };
+
+  window.retryTranscode = function() {
+    showPanel(tpWarning);
+    updateStatus('Ready to transcode');
+  };
+
+  // ---------------------------------------------------------------------------
+  // On load: if a completed job already exists, switch to HLS immediately
+  // ---------------------------------------------------------------------------
+  if (EXISTING_JOB && EXISTING_JOB.status === 'done') {
+    // player.html already set video src to HLS in the template
+    showPanel(tpDone);
+    updateStatus('Playing (transcoded)', 'var(--accent-2)');
+  } else if (EXISTING_JOB && (EXISTING_JOB.status === 'queued' || EXISTING_JOB.status === 'transcoding')) {
+    showPanel(tpProgress);
+    updateStatus('Transcoding in progress…', 'var(--accent)');
+    transcodeStartWallTime = Date.now();
+    // Resume polling
+    fetch(JOB_STATUS_URL, { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(pollJob)
+      .catch(() => showPanel(tpWarning));
+  } else if (NEEDS_TRANSCODE && !HAS_FFMPEG) {
+    showPanel(tpNoFfmpeg);
+    updateStatus('Format not supported — no transcoder available', 'var(--danger)');
+  } else if (NEEDS_TRANSCODE && HAS_FFMPEG) {
+    // Show warning; let user click or let the video error handler auto-trigger
+    showPanel(tpWarning);
+    updateStatus('Checking direct playback…', 'var(--muted)');
+    // Attempt direct play anyway — some "incompatible" containers (e.g. MKV + H.264)
+    // actually play fine in Chrome/Firefox; only transcode if the browser errors.
+    video.style.display = 'block';
+  } else {
+    // Native format — hide the panel entirely
+    if (panel) panel.style.display = 'none';
+  }
+
+  // ---------------------------------------------------------------------------
   // Format time helper
+  // ---------------------------------------------------------------------------
   function formatTime(seconds) {
+    seconds = seconds || 0;
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
-    if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return `${m}:${String(s).padStart(2,'0')}`;
   }
 })();
 </script>
