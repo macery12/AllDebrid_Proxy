@@ -10,6 +10,9 @@ Design principles:
   don't restart a transcode that is already running or done.
 - Concurrency is bounded by MAX_CONCURRENT_TRANSCODES to limit CPU usage.
 - A /proc/loadavg check adds a second safety gate on busy servers.
+- HLS segments are written progressively by ffmpeg — the player can start
+  as soon as MIN_SEGMENTS_TO_PLAY segments are ready, without waiting for
+  the full transcode to complete (live/progressive streaming).
 - Completed jobs and their HLS output are purged after TRANSCODE_TTL_HOURS.
 """
 
@@ -34,6 +37,10 @@ TRANSCODE_ROOT: Path = Path(os.environ.get("STORAGE_ROOT", "/srv/storage")) / "t
 MAX_CONCURRENT_TRANSCODES: int = max(1, int(os.environ.get("MAX_CONCURRENT_TRANSCODES", "2")))
 TRANSCODE_TTL_SECONDS: int = max(300, int(os.environ.get("TRANSCODE_TTL_HOURS", "4")) * 3600)
 CPU_LOAD_LIMIT: float = max(0.1, float(os.environ.get("TRANSCODE_MAX_LOAD", "3.0")))
+
+# Number of completed .ts segments before the player may start.
+# Each segment is 6 s → 2 segments = 12 s of pre-buffered content.
+MIN_SEGMENTS_TO_PLAY: int = 2
 
 # ---------------------------------------------------------------------------
 # Media extension sets
@@ -166,23 +173,44 @@ def _parse_time_progress(line: str) -> Optional[float]:
     return None
 
 
+def _count_segments(output_dir: Path) -> int:
+    """Count completed .ts segment files in *output_dir*."""
+    try:
+        return sum(1 for _ in output_dir.glob("seg*.ts"))
+    except OSError:
+        return 0
+
+
 def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
     """
     Background thread that runs ffmpeg and updates the shared job dict.
     Acquires the semaphore to enforce MAX_CONCURRENT_TRANSCODES.
+
+    Segments are written progressively by ffmpeg.  The job is marked
+    ``playable`` as soon as MIN_SEGMENTS_TO_PLAY segments exist on disk,
+    so the browser player can start without waiting for the full transcode.
     """
     with _semaphore:
         with _jobs_lock:
             if job_id not in _jobs:
                 return  # job was removed before we started
+            playlist = output_dir / "index.m3u8"
             _jobs[job_id]["status"] = "transcoding"
             _jobs[job_id]["started_at"] = time.time()
+            # Expose the playlist path immediately so serve_hls can find it
+            # before transcoding completes.
+            _jobs[job_id]["playlist"] = str(playlist)
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        playlist = output_dir / "index.m3u8"
 
         # Transcode to HLS with H.264/AAC for maximum browser compatibility.
-        # -preset veryfast balances speed vs file size; -crf 23 is visually lossless.
+        # Key flags:
+        #   -hls_list_size 0          keep ALL segments in the playlist
+        #   -hls_flags append_list    append new segments as they are written
+        #                             (no delete_segments — we keep all for seeking)
+        # Without #EXT-X-ENDLIST the HLS parser treats the playlist as a live
+        # stream, re-fetching it periodically. ffmpeg only writes that tag when
+        # muxing is complete, so the browser automatically switches to VOD mode.
         cmd = [
             FFMPEG_BIN,
             "-hide_banner", "-loglevel", "warning", "-stats",
@@ -198,11 +226,11 @@ def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
             "-c:a", "aac",
             "-b:a", "128k",
             "-ac", "2",
-            # HLS muxer settings
+            # HLS muxer — keep all segments, append-only playlist
             "-f", "hls",
             "-hls_time", "6",
             "-hls_list_size", "0",
-            "-hls_flags", "delete_segments+append_list",
+            "-hls_flags", "append_list",
             "-hls_segment_filename", str(output_dir / "seg%05d.ts"),
             str(playlist),
         ]
@@ -223,17 +251,29 @@ def _run_transcode(job_id: str, source: Path, output_dir: Path) -> None:
                 stderr_tail.append(line.rstrip())
                 if len(stderr_tail) > 20:
                     stderr_tail.pop(0)
+
                 secs = _parse_time_progress(line)
                 if secs is not None:
+                    seg_count = _count_segments(output_dir)
                     with _jobs_lock:
                         _jobs[job_id]["transcoded_seconds"] = secs
+                        _jobs[job_id]["segments_ready"] = seg_count
+                        if not _jobs[job_id].get("playable", False) and seg_count >= MIN_SEGMENTS_TO_PLAY:
+                            _jobs[job_id]["playable"] = True
+                            log.info(
+                                "Job %s is now playable (%d segments ready)", job_id, seg_count
+                            )
 
             proc.wait()
 
             with _jobs_lock:
                 if proc.returncode == 0:
                     _jobs[job_id]["status"] = "done"
-                    _jobs[job_id]["playlist"] = str(playlist)
+                    # Ensure playable is set even for very short files that
+                    # finish before the stderr loop emits a progress line.
+                    _jobs[job_id]["playable"] = True
+                    seg_count = _count_segments(output_dir)
+                    _jobs[job_id]["segments_ready"] = seg_count
                 else:
                     _jobs[job_id]["status"] = "error"
                     _jobs[job_id]["error"] = "\n".join(stderr_tail)
@@ -297,6 +337,8 @@ def start_transcode(task_id: str, relpath: str, source: Path) -> Dict[str, Any]:
         "started_at": None,
         "finished_at": None,
         "transcoded_seconds": 0.0,
+        "segments_ready": 0,
+        "playable": False,
         "output_dir": str(output_dir),
         "playlist": None,
         "error": None,

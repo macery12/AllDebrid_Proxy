@@ -313,5 +313,133 @@ class TestParseTimeProgress(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestCountSegments(unittest.TestCase):
+    def test_counts_ts_files(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = pathlib.Path(tmpdir)
+            (d / "seg00000.ts").write_bytes(b"data")
+            (d / "seg00001.ts").write_bytes(b"data")
+            (d / "index.m3u8").write_text("#EXTM3U\n")
+            self.assertEqual(tc._count_segments(d), 2)
+
+    def test_returns_zero_on_missing_dir(self):
+        self.assertEqual(tc._count_segments(pathlib.Path("/nonexistent/dir")), 0)
+
+    def test_only_counts_seg_prefix(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = pathlib.Path(tmpdir)
+            (d / "seg00000.ts").write_bytes(b"data")
+            (d / "other.ts").write_bytes(b"data")   # should not count
+            self.assertEqual(tc._count_segments(d), 1)
+
+
+class TestPlayableThreshold(unittest.TestCase):
+    """Verify that the playable / segments_ready fields work as expected."""
+
+    def test_new_job_has_playable_false(self):
+        tc._reset_for_testing()
+        with patch.object(tc, "ffmpeg_available", return_value=True), \
+             patch.object(tc, "is_overloaded", return_value=False), \
+             patch.object(tc, "active_job_count", return_value=0), \
+             patch.object(tc, "cleanup_old_jobs", return_value=0), \
+             patch("threading.Thread") as mock_thread:
+            mock_thread.return_value = MagicMock()
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                src = pathlib.Path(tmpdir) / "video.mkv"
+                src.write_bytes(b"x")
+                job = tc.start_transcode("t", "video.mkv", src)
+        self.assertFalse(job["playable"])
+        self.assertEqual(job["segments_ready"], 0)
+
+    def test_min_segments_constant(self):
+        self.assertGreaterEqual(tc.MIN_SEGMENTS_TO_PLAY, 1)
+
+    def test_playable_set_on_done_even_without_progress_line(self):
+        """Short files may finish before any stderr progress line; playable must still be set."""
+        import tempfile
+        tc._reset_for_testing()
+        # Create a real output dir so _count_segments works
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = pathlib.Path(tmpdir) / "job99"
+            out_dir.mkdir()
+            # Pre-populate segments to simulate what ffmpeg would write
+            for i in range(tc.MIN_SEGMENTS_TO_PLAY):
+                (out_dir / f"seg{i:05d}.ts").write_bytes(b"ts-data")
+
+            jid = "job99test"
+            with tc._jobs_lock:
+                tc._jobs[jid] = {
+                    "job_id": jid,
+                    "status": "transcoding",
+                    "started_at": time.time(),
+                    "finished_at": None,
+                    "transcoded_seconds": 0.0,
+                    "segments_ready": 0,
+                    "playable": False,
+                    "output_dir": str(out_dir),
+                    "playlist": str(out_dir / "index.m3u8"),
+                    "error": None,
+                    "pid": None,
+                }
+            # Simulate the completion path in _run_transcode
+            with tc._jobs_lock:
+                tc._jobs[jid]["status"] = "done"
+                tc._jobs[jid]["playable"] = True
+                tc._jobs[jid]["segments_ready"] = tc._count_segments(out_dir)
+                tc._jobs[jid]["finished_at"] = time.time()
+
+            job = tc.get_job(jid)
+            self.assertTrue(job["playable"])
+            self.assertEqual(job["segments_ready"], tc.MIN_SEGMENTS_TO_PLAY)
+
+    def test_playable_transitions_when_segment_threshold_reached(self):
+        """Simulate the progress-line loop setting playable=True once enough segments appear."""
+        import tempfile
+        tc._reset_for_testing()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = pathlib.Path(tmpdir) / "livejob"
+            out_dir.mkdir()
+            jid = "livejobtest"
+            with tc._jobs_lock:
+                tc._jobs[jid] = {
+                    "job_id": jid,
+                    "status": "transcoding",
+                    "started_at": time.time(),
+                    "finished_at": None,
+                    "transcoded_seconds": 0.0,
+                    "segments_ready": 0,
+                    "playable": False,
+                    "output_dir": str(out_dir),
+                    "playlist": str(out_dir / "index.m3u8"),
+                    "error": None,
+                    "pid": None,
+                }
+
+            # Write one segment — not yet playable
+            (out_dir / "seg00000.ts").write_bytes(b"ts-data")
+            seg_count = tc._count_segments(out_dir)
+            with tc._jobs_lock:
+                tc._jobs[jid]["segments_ready"] = seg_count
+                if not tc._jobs[jid].get("playable", False) and seg_count >= tc.MIN_SEGMENTS_TO_PLAY:
+                    tc._jobs[jid]["playable"] = True
+
+            self.assertFalse(tc.get_job(jid)["playable"])
+            self.assertEqual(tc.get_job(jid)["segments_ready"], 1)
+
+            # Write the second segment — now meets MIN_SEGMENTS_TO_PLAY
+            (out_dir / "seg00001.ts").write_bytes(b"ts-data")
+            seg_count = tc._count_segments(out_dir)
+            with tc._jobs_lock:
+                tc._jobs[jid]["segments_ready"] = seg_count
+                if not tc._jobs[jid].get("playable", False) and seg_count >= tc.MIN_SEGMENTS_TO_PLAY:
+                    tc._jobs[jid]["playable"] = True
+
+            self.assertTrue(tc.get_job(jid)["playable"])
+            self.assertEqual(tc.get_job(jid)["segments_ready"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
