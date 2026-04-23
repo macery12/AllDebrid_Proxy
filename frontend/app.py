@@ -15,6 +15,9 @@ from app.constants import Limits
 from app.utils import torrent_to_magnet
 from app.validation import validate_torrent_file_data
 
+# Transcoding pipeline (ffmpeg-based HLS for browser-incompatible formats)
+import frontend.transcoding as _transcoding
+
 # Constants
 MAX_SOURCE_LENGTH = 10000  # Maximum length for magnet/URL source
 MAX_LABEL_LENGTH = 500     # Maximum length for task label
@@ -285,10 +288,8 @@ def _accel_path(task_id: str, relpath: str) -> str:
     return f"{app.config['NGINX_ACCEL_PREFIX']}/{task_id}/files/{relpath}"
 
 def _is_video(filename: str) -> bool:
-    """Check if a file is a video based on extension"""
-    video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ogv'}
-    ext = Path(filename).suffix.lower()
-    return ext in video_exts
+    """Check if a file is a video or audio media file (including transcodable formats)."""
+    return _transcoding.is_media_file(filename)
 
 def _is_still_downloading(filepath: Path) -> bool:
     """Check if a file is still being downloaded by aria2c"""
@@ -1078,7 +1079,7 @@ def raw_file(task_id, relpath):
 @app.get("/d/<task_id>/play/<path:relpath>")
 @login_required
 def play_video(task_id, relpath):
-    """Video player page"""
+    """Smart media player page — supports direct play and ffmpeg transcoding."""
     base = safe_task_base(task_id)
     full = _safe_resolve_relpath(base, relpath)
 
@@ -1088,11 +1089,17 @@ def play_video(task_id, relpath):
         return redirect(url_for("list_folder", task_id=task_id))
 
     if not _is_video(full.name):
-        flash("This file is not a video", "error")
+        flash("This file is not a supported media type", "error")
         return redirect(url_for("list_folder", task_id=task_id))
 
     st = full.stat()
     mime = _guess_mime(full.name)
+
+    # Determine browser compatibility and ffmpeg availability
+    needs_transcode = not _transcoding.is_browser_compatible(full.name)
+    has_ffmpeg = _transcoding.ffmpeg_available()
+    job_id = _transcoding.job_id_for(task_id, relpath)
+    existing_job = _transcoding.get_job(job_id)
 
     return render_template(
         "player.html",
@@ -1103,7 +1110,12 @@ def play_video(task_id, relpath):
         mime_type=mime,
         video_url=url_for("stream_video", task_id=task_id, relpath=relpath),
         download_url=url_for("raw_file", task_id=task_id, relpath=relpath),
-        back_url=url_for("list_folder", task_id=task_id)
+        back_url=url_for("list_folder", task_id=task_id),
+        needs_transcode=needs_transcode,
+        has_ffmpeg=has_ffmpeg,
+        job_id=job_id,
+        existing_job=existing_job,
+        min_segments_to_play=_transcoding.MIN_SEGMENTS_TO_PLAY,
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
@@ -1203,6 +1215,158 @@ def stream_video(task_id, relpath):
         return resp
     except (ValueError, IndexError):
         abort(416, "Invalid Range header")
+
+# ------------------------------------------------------------------------------
+# Transcoding routes (ffmpeg-based HLS for browser-incompatible formats)
+# ------------------------------------------------------------------------------
+
+@app.get("/api/player/status")
+@login_required
+def player_status():
+    """Return ffmpeg availability, current load, and active job counts."""
+    return jsonify({
+        "ffmpeg_available": _transcoding.ffmpeg_available(),
+        "active_jobs": _transcoding.active_job_count(),
+        "max_jobs": _transcoding.MAX_CONCURRENT_TRANSCODES,
+        "system_load": round(_transcoding.get_system_load(), 2),
+        "load_limit": _transcoding.CPU_LOAD_LIMIT,
+        "overloaded": _transcoding.is_overloaded(),
+    })
+
+
+@app.post("/d/<task_id>/transcode/<path:relpath>")
+@login_required
+def start_transcode(task_id, relpath):
+    """Start (or return the existing) transcode job for a media file."""
+    base = safe_task_base(task_id)
+    full = _safe_resolve_relpath(base, relpath)
+
+    if _is_still_downloading(full):
+        return jsonify({"error": "File is still being downloaded"}), 409
+
+    if not _transcoding.is_media_file(full.name):
+        return jsonify({"error": "Not a supported media file"}), 400
+
+    try:
+        job = _transcoding.start_transcode(task_id, relpath, full)
+    except RuntimeError as exc:
+        # exc.args[0] is a controlled message we set in start_transcode
+        return jsonify({"error": exc.args[0] if exc.args else str(exc)}), 503
+
+    return jsonify(job), 202
+
+
+@app.get("/d/<task_id>/transcode/job/<job_id>")
+@login_required
+def transcode_job_status(task_id, job_id):
+    """Poll the status of a transcode job."""
+    job = _transcoding.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    # Sanity-check that this job belongs to the requesting task
+    if job.get("task_id") != task_id:
+        abort(403)
+
+    # Expose the HLS URL as soon as enough segments are ready to start playing,
+    # not just when the full transcode is complete.
+    if job.get("playable"):
+        job["hls_url"] = url_for(
+            "serve_hls",
+            job_id=job_id,
+            filename="index.m3u8",
+            _external=False,
+        )
+
+    return jsonify(job)
+
+
+@app.post("/d/<task_id>/transcode/job/<job_id>/heartbeat")
+@login_required
+def transcode_heartbeat(task_id, job_id):
+    """
+    Keep-alive ping sent by the player page every ~15 s.
+    If the server stops receiving heartbeats the watchdog kills the ffmpeg
+    process automatically (e.g. when the user navigates away).
+    """
+    job = _transcoding.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job.get("task_id") != task_id:
+        abort(403)
+    ok = _transcoding.touch_heartbeat(job_id)
+    return jsonify({"ok": ok})
+
+
+@app.post("/d/<task_id>/transcode/job/<job_id>/cancel")
+@login_required
+def transcode_cancel(task_id, job_id):
+    """
+    Cancel a running transcode job.  Called by the player page via
+    ``navigator.sendBeacon`` when the user navigates away, and by the
+    explicit cancel button.  Uses POST so sendBeacon can reach it.
+    """
+    job = _transcoding.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job.get("task_id") != task_id:
+        abort(403)
+    cancelled = _transcoding.cancel_job(job_id)
+    return jsonify({"cancelled": cancelled})
+
+
+@app.get("/hls/<job_id>/<path:filename>")
+@login_required
+def serve_hls(job_id, filename):
+    """Serve HLS playlist or segment files.
+
+    Files are served as soon as they exist on disk — the job does not need
+    to be fully complete.  This enables progressive / live-transcode playback:
+    the browser fetches the playlist, discovers new segments as ffmpeg writes
+    them, and plays without waiting for the entire transcode to finish.
+
+    Cache policy:
+    - While transcoding the m3u8 playlist must not be cached (it changes).
+    - After completion the playlist is static and may be cached.
+    - Segment (.ts) files are immutable once written and are always cacheable.
+    """
+    job = _transcoding.get_job(job_id)
+    if not job:
+        abort(404)
+
+    # Allow access whenever the job is transcoding or done
+    if job["status"] not in ("transcoding", "done"):
+        abort(404, "Transcode output not available")
+
+    out_dir = Path(job["output_dir"])
+    # Restrict to the job's own output directory (path-traversal guard)
+    try:
+        target = (out_dir / filename).resolve()
+        target.relative_to(out_dir.resolve())  # raises ValueError if escaping
+    except (ValueError, OSError):
+        abort(403)
+
+    if not target.exists():
+        abort(404)
+
+    # Choose the right MIME type and cache policy
+    if filename.endswith(".m3u8"):
+        mime = "application/vnd.apple.mpegurl"
+        if job["status"] == "transcoding":
+            # Live playlist — must not be cached; browser must re-fetch to get new segments
+            resp = make_response(send_file(target, mimetype=mime))
+            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+            return resp
+        # Completed — static, cacheable
+        return send_file(target, mimetype=mime, max_age=3600)
+    elif filename.endswith(".ts"):
+        # Segments are immutable once written
+        return send_file(target, mimetype="video/MP2T", max_age=86400)
+    else:
+        return send_file(target, mimetype="application/octet-stream", max_age=3600)
+
 
 # ------------------------------------------------------------------------------
 # Dev server entrypoint

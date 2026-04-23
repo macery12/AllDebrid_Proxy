@@ -9,8 +9,8 @@ RUN groupadd -g 1000 appuser && useradd -u 1000 -g 1000 -m -s /bin/bash appuser
 
 WORKDIR /app
 
-# System deps (curl for healthcheck)
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# System deps: curl (healthcheck) + ffmpeg (transcoding)
+RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for layer cache
 COPY requirements.txt ./requirements.txt
@@ -23,9 +23,7 @@ COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
 # Copy frontend
-COPY frontend/app.py ./frontend/app.py
-COPY frontend/templates ./frontend/templates
-
+COPY frontend/ ./frontend/
 # Hand ownership to appuser before dropping privileges
 RUN chown -R appuser:appuser /app
 

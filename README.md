@@ -139,6 +139,10 @@ All configuration is driven by environment variables defined in `.env` (or passe
 | `RETENTION_DAYS` | `7` | Days before completed tasks are auto-purged. A background cleanup job runs every hour to remove expired tasks and their files. |
 | `PARTIAL_MAX_AGE_HOURS` | `24` | Hours before incomplete/stalled downloads are cleaned up. |
 | `CORS_ORIGINS` | _(empty — deny all)_ | Comma-separated list of allowed cross-origin request origins. Defaults to deny-all. Example: `https://app.example.com,https://other.example.com`. |
+| `FFMPEG_BIN` | `ffmpeg` | Path to the ffmpeg binary used for browser transcoding. Defaults to `ffmpeg` on `$PATH`. |
+| `MAX_CONCURRENT_TRANSCODES` | `2` | Maximum simultaneous HLS transcode jobs. Increase with caution on low-core servers. |
+| `TRANSCODE_MAX_LOAD` | `3.0` | Refuse new transcode jobs when the server 1-minute load average exceeds this threshold. |
+| `TRANSCODE_TTL_HOURS` | `4` | Hours to retain completed HLS transcode output before automatic cleanup. |
 
 ---
 
