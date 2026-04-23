@@ -441,5 +441,113 @@ class TestPlayableThreshold(unittest.TestCase):
             self.assertEqual(tc.get_job(jid)["segments_ready"], 2)
 
 
+class TestHeartbeatAndCancel(unittest.TestCase):
+    def setUp(self):
+        tc._reset_for_testing()
+        self._make_job("hb01", "transcoding")
+
+    def _make_job(self, jid, status):
+        with tc._jobs_lock:
+            tc._jobs[jid] = {
+                "job_id": jid,
+                "task_id": "t",
+                "relpath": "v.mkv",
+                "status": status,
+                "queued_at": time.time(),
+                "started_at": time.time(),
+                "finished_at": None,
+                "transcoded_seconds": 0.0,
+                "segments_ready": 0,
+                "playable": False,
+                "output_dir": "/tmp/fake",
+                "playlist": None,
+                "error": None,
+                "pid": None,
+                "last_heartbeat": time.time(),
+            }
+
+    def test_touch_heartbeat_updates_timestamp(self):
+        before = time.time()
+        time.sleep(0.01)
+        ok = tc.touch_heartbeat("hb01")
+        self.assertTrue(ok)
+        with tc._jobs_lock:
+            hb = tc._jobs["hb01"]["last_heartbeat"]
+        self.assertGreater(hb, before)
+
+    def test_touch_heartbeat_returns_false_for_unknown(self):
+        self.assertFalse(tc.touch_heartbeat("no-such-job"))
+
+    def test_cancel_job_marks_cancelled(self):
+        result = tc.cancel_job("hb01")
+        self.assertTrue(result)
+        job = tc.get_job("hb01")
+        self.assertEqual(job["status"], "cancelled")
+        self.assertIsNotNone(job["finished_at"])
+
+    def test_cancel_job_no_pid_still_works(self):
+        # Job has no pid yet (still queued)
+        self._make_job("hb02", "queued")
+        result = tc.cancel_job("hb02")
+        self.assertTrue(result)
+        self.assertEqual(tc.get_job("hb02")["status"], "cancelled")
+
+    def test_cancel_job_returns_false_for_done(self):
+        self._make_job("hb03", "done")
+        with tc._jobs_lock:
+            tc._jobs["hb03"]["finished_at"] = time.time()
+        result = tc.cancel_job("hb03")
+        self.assertFalse(result)
+
+    def test_cancel_job_returns_false_for_unknown(self):
+        self.assertFalse(tc.cancel_job("no-such-job"))
+
+    def test_stale_heartbeat_kills_job(self):
+        # Set last_heartbeat to far in the past
+        with tc._jobs_lock:
+            tc._jobs["hb01"]["last_heartbeat"] = time.time() - tc.HEARTBEAT_TIMEOUT - 10
+        tc._kill_stale_jobs()
+        self.assertEqual(tc.get_job("hb01")["status"], "cancelled")
+
+    def test_fresh_heartbeat_not_killed(self):
+        # Recent heartbeat — must not be cancelled
+        tc._kill_stale_jobs()
+        self.assertEqual(tc.get_job("hb01")["status"], "transcoding")
+
+    def test_no_heartbeat_field_not_killed(self):
+        # Job without last_heartbeat (e.g. created without heartbeat field)
+        with tc._jobs_lock:
+            tc._jobs["hb01"].pop("last_heartbeat")
+        tc._kill_stale_jobs()
+        self.assertEqual(tc.get_job("hb01")["status"], "transcoding")
+
+    def test_cleanup_removes_cancelled_jobs(self):
+        old_time = time.time() - tc.TRANSCODE_TTL_SECONDS - 10
+        with tc._jobs_lock:
+            tc._jobs["hb01"]["status"] = "cancelled"
+            tc._jobs["hb01"]["finished_at"] = old_time
+            tc._jobs["hb01"]["output_dir"] = "/nonexistent"
+        removed = tc.cleanup_old_jobs()
+        self.assertEqual(removed, 1)
+        self.assertNotIn("hb01", tc._jobs)
+
+    def test_new_job_has_last_heartbeat(self):
+        tc._reset_for_testing()
+        import tempfile
+        before = time.time()
+        with patch.object(tc, "ffmpeg_available", return_value=True), \
+             patch.object(tc, "is_overloaded", return_value=False), \
+             patch.object(tc, "active_job_count", return_value=0), \
+             patch.object(tc, "cleanup_old_jobs", return_value=0), \
+             patch("threading.Thread") as mock_thread:
+            mock_thread.return_value = MagicMock()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                src = pathlib.Path(tmpdir) / "video.mkv"
+                src.write_bytes(b"x")
+                job = tc.start_transcode("t", "video.mkv", src)
+        self.assertIn("last_heartbeat", job)
+        self.assertGreaterEqual(job["last_heartbeat"], before)
+
+
 if __name__ == "__main__":
     unittest.main()

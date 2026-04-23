@@ -1281,6 +1281,40 @@ def transcode_job_status(task_id, job_id):
     return jsonify(job)
 
 
+@app.post("/d/<task_id>/transcode/job/<job_id>/heartbeat")
+@login_required
+def transcode_heartbeat(task_id, job_id):
+    """
+    Keep-alive ping sent by the player page every ~15 s.
+    If the server stops receiving heartbeats the watchdog kills the ffmpeg
+    process automatically (e.g. when the user navigates away).
+    """
+    job = _transcoding.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job.get("task_id") != task_id:
+        abort(403)
+    ok = _transcoding.touch_heartbeat(job_id)
+    return jsonify({"ok": ok})
+
+
+@app.post("/d/<task_id>/transcode/job/<job_id>/cancel")
+@login_required
+def transcode_cancel(task_id, job_id):
+    """
+    Cancel a running transcode job.  Called by the player page via
+    ``navigator.sendBeacon`` when the user navigates away, and by the
+    explicit cancel button.  Uses POST so sendBeacon can reach it.
+    """
+    job = _transcoding.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    if job.get("task_id") != task_id:
+        abort(403)
+    cancelled = _transcoding.cancel_job(job_id)
+    return jsonify({"cancelled": cancelled})
+
+
 @app.get("/hls/<job_id>/<path:filename>")
 @login_required
 def serve_hls(job_id, filename):
