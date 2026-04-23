@@ -23,9 +23,7 @@ COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
 # Copy frontend
-COPY frontend/app.py ./frontend/app.py
-COPY frontend/templates ./frontend/templates
-
+COPY frontend/ ./frontend/
 # Hand ownership to appuser before dropping privileges
 RUN chown -R appuser:appuser /app
 
