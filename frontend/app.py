@@ -1115,6 +1115,7 @@ def play_video(task_id, relpath):
         has_ffmpeg=has_ffmpeg,
         job_id=job_id,
         existing_job=existing_job,
+        min_segments_to_play=_transcoding.MIN_SEGMENTS_TO_PLAY,
     )
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
@@ -1267,8 +1268,9 @@ def transcode_job_status(task_id, job_id):
     if job.get("task_id") != task_id:
         abort(403)
 
-    # Build HLS URL if done
-    if job["status"] == "done":
+    # Expose the HLS URL as soon as enough segments are ready to start playing,
+    # not just when the full transcode is complete.
+    if job.get("playable"):
         job["hls_url"] = url_for(
             "serve_hls",
             job_id=job_id,
@@ -1282,16 +1284,28 @@ def transcode_job_status(task_id, job_id):
 @app.get("/hls/<job_id>/<path:filename>")
 @login_required
 def serve_hls(job_id, filename):
-    """Serve HLS playlist or segment files for a completed transcode."""
+    """Serve HLS playlist or segment files.
+
+    Files are served as soon as they exist on disk — the job does not need
+    to be fully complete.  This enables progressive / live-transcode playback:
+    the browser fetches the playlist, discovers new segments as ffmpeg writes
+    them, and plays without waiting for the entire transcode to finish.
+
+    Cache policy:
+    - While transcoding the m3u8 playlist must not be cached (it changes).
+    - After completion the playlist is static and may be cached.
+    - Segment (.ts) files are immutable once written and are always cacheable.
+    """
     job = _transcoding.get_job(job_id)
     if not job:
         abort(404)
 
-    if job["status"] != "done":
-        abort(404, "Transcode not yet complete")
+    # Allow access whenever the job is transcoding or done
+    if job["status"] not in ("transcoding", "done"):
+        abort(404, "Transcode output not available")
 
     out_dir = Path(job["output_dir"])
-    # Restrict to the job's own output directory
+    # Restrict to the job's own output directory (path-traversal guard)
     try:
         target = (out_dir / filename).resolve()
         target.relative_to(out_dir.resolve())  # raises ValueError if escaping
@@ -1301,15 +1315,23 @@ def serve_hls(job_id, filename):
     if not target.exists():
         abort(404)
 
-    # Choose the right MIME type
+    # Choose the right MIME type and cache policy
     if filename.endswith(".m3u8"):
         mime = "application/vnd.apple.mpegurl"
+        if job["status"] == "transcoding":
+            # Live playlist — must not be cached; browser must re-fetch to get new segments
+            resp = make_response(send_file(target, mimetype=mime))
+            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+            return resp
+        # Completed — static, cacheable
+        return send_file(target, mimetype=mime, max_age=3600)
     elif filename.endswith(".ts"):
-        mime = "video/MP2T"
+        # Segments are immutable once written
+        return send_file(target, mimetype="video/MP2T", max_age=86400)
     else:
-        mime = "application/octet-stream"
-
-    return send_file(target, mimetype=mime, max_age=3600)
+        return send_file(target, mimetype="application/octet-stream", max_age=3600)
 
 
 # ------------------------------------------------------------------------------
