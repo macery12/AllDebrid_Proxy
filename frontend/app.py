@@ -1250,7 +1250,7 @@ def start_transcode(task_id, relpath):
         job = _transcoding.start_transcode(task_id, relpath, full)
     except RuntimeError as exc:
         # exc.args[0] is a controlled message we set in start_transcode
-        return jsonify({"error": exc.args[0] if exc.args else "Transcode unavailable"}), 503
+        return jsonify({"error": exc.args[0] if exc.args else "Transcoding service is currently unavailable"}), 503
 
     return jsonify(job), 202
 
