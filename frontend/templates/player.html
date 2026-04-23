@@ -86,6 +86,10 @@
   border-color: var(--accent-2);
   background: rgba(40, 167, 69, 0.06);
 }
+.transcode-panel.live-panel {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.06);
+}
 .transcode-panel h3 {
   font-size: 15px;
   font-weight: 600;
@@ -98,6 +102,21 @@
   margin: 4px 0;
   font-size: 13px;
   color: var(--muted);
+}
+/* Pulsing live indicator dot */
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-pulse 1.5s ease-in-out infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
 }
 .transcode-progress-bar-wrap {
   height: 6px;
@@ -196,7 +215,7 @@
         </div>
       </div>
 
-      <!-- State: transcoding queued / in progress -->
+      <!-- State: transcoding queued / in progress (waiting for first segments) -->
       <div id="tpProgress" style="display:none">
         <h3>⏳ <span id="tpProgressTitle">Transcoding…</span></h3>
         <p id="tpProgressMsg">Preparing ffmpeg…</p>
@@ -206,10 +225,20 @@
         <p class="small muted" id="tpProgressTime">Elapsed: 0s</p>
       </div>
 
+      <!-- State: playable while still transcoding (live streaming mode) -->
+      <div id="tpLive" class="live-panel" style="display:none">
+        <h3><span class="live-dot"></span> <span id="tpLiveTitle">Live — transcoding in progress</span></h3>
+        <p id="tpLiveMsg">Playback has started. More content is being transcoded in the background.</p>
+        <div class="transcode-progress-bar-wrap">
+          <div id="tpLiveBar" class="transcode-progress-bar" style="width:5%"></div>
+        </div>
+        <p class="small muted" id="tpLiveTime">Transcoded: 0s</p>
+      </div>
+
       <!-- State: transcode done -->
       <div id="tpDone" class="success" style="display:none">
         <h3 style="color:var(--accent-2)">✅ Transcode complete</h3>
-        <p>The video has been converted and is ready to play.</p>
+        <p>The video has been fully transcoded. Full seek support is now available.</p>
       </div>
 
       <!-- State: transcode error -->
@@ -296,6 +325,7 @@
   const tpError   = document.getElementById('tpError');
   const tpBusy    = document.getElementById('tpBusy');
   const tpNoFfmpeg= document.getElementById('tpNoFfmpeg');
+  const tpLive    = document.getElementById('tpLive');
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -307,7 +337,7 @@
   }
 
   function showPanel(which) {
-    [tpWarning, tpProgress, tpDone, tpError, tpBusy, tpNoFfmpeg].forEach(el => {
+    [tpWarning, tpProgress, tpLive, tpDone, tpError, tpBusy, tpNoFfmpeg].forEach(el => {
       if (el) el.style.display = (el === which) ? '' : 'none';
     });
     if (panel) panel.style.display = which ? '' : 'none';
@@ -426,6 +456,7 @@
   // ---------------------------------------------------------------------------
   let pollTimer = null;
   let transcodeStartWallTime = null;
+  let isLivePlaying = false;  // true once we've switched the player to live HLS
 
   function handleTranscodeError(message) {
     const isBusy = message.toLowerCase().includes('busy') ||
@@ -442,26 +473,44 @@
   }
 
   function updateProgressUI(job) {
-    const barEl   = document.getElementById('tpBar');
-    const msgEl   = document.getElementById('tpProgressMsg');
-    const timeEl  = document.getElementById('tpProgressTime');
-    const titleEl = document.getElementById('tpProgressTitle');
-
+    const secs        = job.transcoded_seconds || 0;
+    const segReady    = job.segments_ready || 0;
     const wallElapsed = transcodeStartWallTime
       ? Math.round((Date.now() - transcodeStartWallTime) / 1000) : 0;
-    if (timeEl) timeEl.textContent = `Elapsed: ${wallElapsed}s`;
 
-    if (job.status === 'queued') {
-      if (titleEl) titleEl.textContent = 'Waiting in queue…';
-      if (msgEl)   msgEl.textContent   = 'Waiting for a free transcode slot…';
-      if (barEl)   { barEl.classList.add('indeterminate'); barEl.style.width = '0%'; }
-    } else if (job.status === 'transcoding') {
-      if (titleEl) titleEl.textContent = 'Transcoding…';
-      const secs = job.transcoded_seconds || 0;
-      if (msgEl)   msgEl.textContent   = `Transcoded: ${formatTime(secs)}`;
-      if (barEl) {
-        barEl.classList.remove('indeterminate');
-        barEl.style.width = Math.min(95, Math.max(5, secs > 0 ? 50 : 10)) + '%';
+    if (isLivePlaying) {
+      // Update the live panel while playback is ongoing
+      const liveBarEl  = document.getElementById('tpLiveBar');
+      const liveMsgEl  = document.getElementById('tpLiveMsg');
+      const liveTimeEl = document.getElementById('tpLiveTime');
+      const liveTitleEl= document.getElementById('tpLiveTitle');
+      if (liveTitleEl) liveTitleEl.textContent = 'Live — transcoding in progress';
+      if (liveMsgEl)   liveMsgEl.textContent   =
+        `Playing ${segReady} segment(s) already available. More content arriving…`;
+      if (liveTimeEl)  liveTimeEl.textContent  = `Transcoded: ${formatTime(secs)}`;
+      if (liveBarEl) {
+        liveBarEl.style.width = Math.min(95, Math.max(5, secs > 0 ? 50 : 10)) + '%';
+      }
+    } else {
+      // Still waiting for the first playable segments
+      const barEl   = document.getElementById('tpBar');
+      const msgEl   = document.getElementById('tpProgressMsg');
+      const timeEl  = document.getElementById('tpProgressTime');
+      const titleEl = document.getElementById('tpProgressTitle');
+      if (timeEl) timeEl.textContent = `Elapsed: ${wallElapsed}s`;
+      if (job.status === 'queued') {
+        if (titleEl) titleEl.textContent = 'Waiting in queue…';
+        if (msgEl)   msgEl.textContent   = 'Waiting for a free transcode slot…';
+        if (barEl)   { barEl.classList.add('indeterminate'); barEl.style.width = '0%'; }
+      } else {
+        if (titleEl) titleEl.textContent = 'Transcoding… preparing to play';
+        if (msgEl)   msgEl.textContent   =
+          `Preparing segments (${segReady} ready, need ${MIN_SEGMENTS_TO_PLAY})…`;
+        if (barEl) {
+          barEl.classList.remove('indeterminate');
+          barEl.style.width = Math.min(95, Math.max(5,
+            (segReady / MIN_SEGMENTS_TO_PLAY) * 80)) + '%';
+        }
       }
     }
   }
@@ -469,23 +518,38 @@
   function pollJob(job) {
     clearTimeout(pollTimer);
 
-    if (job.status === 'done') {
-      const barEl = document.getElementById('tpBar');
-      if (barEl) { barEl.classList.remove('indeterminate'); barEl.style.width = '100%'; }
-      showPanel(tpDone);
-      updateStatus('Transcode complete — playing', 'var(--accent-2)');
-      showVideo(job.hls_url || `/hls/${JOB_ID}/index.m3u8`, 'application/vnd.apple.mpegurl');
-      return;
-    }
-
+    // ---- Terminal states ----
     if (job.status === 'error') {
       document.getElementById('tpErrorMsg').textContent = job.error || 'Unknown error';
       showPanel(tpError);
       updateStatus('Transcode failed', 'var(--danger)');
+      isLivePlaying = false;
       return;
     }
 
-    // Still in progress — update the UI then re-poll
+    if (job.status === 'done') {
+      const barEl = document.getElementById('tpBar');
+      if (barEl) { barEl.classList.remove('indeterminate'); barEl.style.width = '100%'; }
+      if (!isLivePlaying) {
+        // Was waiting — now switch to HLS directly
+        showVideo(job.hls_url || `/hls/${JOB_ID}/index.m3u8`, 'application/vnd.apple.mpegurl');
+      }
+      showPanel(tpDone);
+      updateStatus('Transcode complete — full seek available', 'var(--accent-2)');
+      isLivePlaying = false;
+      return;  // stop polling
+    }
+
+    // ---- Playable while still transcoding (live mode) ----
+    if (job.playable && !isLivePlaying) {
+      isLivePlaying = true;
+      const hlsUrl = job.hls_url || `/hls/${JOB_ID}/index.m3u8`;
+      showVideo(hlsUrl, 'application/vnd.apple.mpegurl');
+      showPanel(tpLive);
+      updateStatus('▶ Playing (live transcode)', 'var(--accent)');
+    }
+
+    // Still in progress — update UI and re-poll
     updateProgressUI(job);
     pollTimer = setTimeout(fetchAndPoll, 2000);
   }
@@ -501,6 +565,7 @@
     showPanel(tpProgress);
     updateStatus('Transcoding…', 'var(--accent)');
     transcodeStartWallTime = Date.now();
+    isLivePlaying = false;
 
     fetch(TRANSCODE_URL, {
       method: 'POST',
@@ -520,38 +585,41 @@
   };
 
   window.retryTranscode = function() {
+    isLivePlaying = false;
     showPanel(tpWarning);
     updateStatus('Ready to transcode');
   };
 
+  // Minimum segments threshold passed from server config
+  const MIN_SEGMENTS_TO_PLAY = {{ min_segments_to_play|tojson }};
+
   // ---------------------------------------------------------------------------
-  // On load: if a completed job already exists, switch to HLS immediately
+  // On load: handle in-progress or already-playable existing jobs
   // ---------------------------------------------------------------------------
   if (EXISTING_JOB && EXISTING_JOB.status === 'done') {
-    // player.html already set video src to HLS in the template
     showPanel(tpDone);
-    updateStatus('Playing (transcoded)', 'var(--accent-2)');
+    updateStatus('Transcode complete — full seek available', 'var(--accent-2)');
+  } else if (EXISTING_JOB && EXISTING_JOB.playable) {
+    // A prior transcode is still running but already playable — start live play
+    isLivePlaying = true;
+    showVideo(EXISTING_JOB.hls_url || `/hls/${JOB_ID}/index.m3u8`, 'application/vnd.apple.mpegurl');
+    showPanel(tpLive);
+    updateStatus('▶ Playing (live transcode)', 'var(--accent)');
+    transcodeStartWallTime = Date.now();
+    fetchAndPoll();
   } else if (EXISTING_JOB && (EXISTING_JOB.status === 'queued' || EXISTING_JOB.status === 'transcoding')) {
     showPanel(tpProgress);
     updateStatus('Transcoding in progress…', 'var(--accent)');
     transcodeStartWallTime = Date.now();
-    // Resume polling
-    fetch(JOB_STATUS_URL, { credentials: 'same-origin' })
-      .then(r => r.json())
-      .then(pollJob)
-      .catch(() => showPanel(tpWarning));
+    fetchAndPoll();
   } else if (NEEDS_TRANSCODE && !HAS_FFMPEG) {
     showPanel(tpNoFfmpeg);
     updateStatus('Format not supported — no transcoder available', 'var(--danger)');
   } else if (NEEDS_TRANSCODE && HAS_FFMPEG) {
-    // Show warning; let user click or let the video error handler auto-trigger
     showPanel(tpWarning);
     updateStatus('Checking direct playback…', 'var(--muted)');
-    // Attempt direct play anyway — some "incompatible" containers (e.g. MKV + H.264)
-    // actually play fine in Chrome/Firefox; only transcode if the browser errors.
     video.style.display = 'block';
   } else {
-    // Native format — hide the panel entirely
     if (panel) panel.style.display = 'none';
   }
 
