@@ -933,7 +933,8 @@ def links_txt(task_id):
             continue
         if p.is_file() and _should_include_file(p):
             rel = p.relative_to(base).as_posix()
-            out.write(f"/d/{task_id}/raw/{rel}\n")
+            base_url = request.host_url.rstrip("/")
+            out.write(f"{base_url}/d/{task_id}/raw/{rel}\n")
     return out.getvalue(), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 @app.get("/d/<task_id>.tar.gz")
