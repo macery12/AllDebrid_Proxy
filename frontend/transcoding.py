@@ -44,7 +44,8 @@ FFMPEG_THREADS: int = max(0, int(os.environ.get("FFMPEG_THREADS", "0")))
 
 # Heartbeat: if no heartbeat is received within this many seconds the ffmpeg
 # process is killed automatically (guards against browser navigating away).
-HEARTBEAT_TIMEOUT: int = max(15, int(os.environ.get("HEARTBEAT_TIMEOUT", "45")))
+# Minimum is 30 s to allow two heartbeat intervals (15 s each) before killing.
+HEARTBEAT_TIMEOUT: int = max(30, int(os.environ.get("HEARTBEAT_TIMEOUT", "45")))
 
 # Number of completed .ts segments before the player may start.
 # Each segment is 6 s → 2 segments = 12 s of pre-buffered content.
