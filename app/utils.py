@@ -1,4 +1,4 @@
-import re, os, shutil, json, time, hashlib
+import re, os, shutil, json, time, hashlib, io
 from typing import Optional
 from app.validation import validate_infohash
 from app.constants import Patterns
@@ -174,9 +174,8 @@ def torrent_to_magnet(torrent_data: bytes) -> str:
     if not HAS_TORF:
         raise ValueError("torf library is required to parse torrent files")
     
-    import io as _io
     try:
-        torrent = _torf.Torrent.read_stream(_io.BytesIO(torrent_data), validate=False)
+        torrent = _torf.Torrent.read_stream(io.BytesIO(torrent_data), validate=False)
     except Exception as e:
         raise ValueError(f"Failed to decode torrent file: {e}")
     

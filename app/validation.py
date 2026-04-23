@@ -2,6 +2,7 @@
 # Provides security against common attacks like path traversal, SQL injection, etc
 
 import re
+import io
 import os
 from typing import Optional
 from pathlib import Path
@@ -332,9 +333,8 @@ def validate_torrent_file_data(file_data: bytes, filename: str) -> None:
     if not HAS_TORF:
         raise ValidationError("Torrent parsing library not available")
     
-    import io as _io
     try:
-        torrent = _torf.Torrent.read_stream(_io.BytesIO(file_data), validate=False)
+        torrent = _torf.Torrent.read_stream(io.BytesIO(file_data), validate=False)
         
         # Verify it has a computable infohash (requires 'info' dict internally)
         if not torrent.infohash:

@@ -967,7 +967,7 @@ def tar_all(task_id):
 
     # Stream the archive using a background thread + queue so the entire
     # compressed output is never buffered in memory at once.
-    chunk_queue: "queue.Queue[bytes | None]" = queue.Queue(maxsize=32)
+    chunk_queue: queue.Queue = queue.Queue(maxsize=32)
 
     class _QueueWriter:
         def write(self, data: bytes) -> int:
@@ -980,7 +980,7 @@ def tar_all(task_id):
 
     def _pack() -> None:
         try:
-            with tarfile.open(fileobj=writer, mode="w|gz") as tar:  # type: ignore[arg-type]
+            with tarfile.open(fileobj=writer, mode="w|gz") as tar:  # type: ignore[arg-type]  # _QueueWriter satisfies write() protocol
                 tar.add(base, arcname=f"{task_id}/files", filter=safe_tar_filter)
         finally:
             writer.close()
