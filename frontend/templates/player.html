@@ -149,8 +149,9 @@
 </style>
 
 <!-- hls.js: enables HLS playback in Chrome, Firefox and other browsers that
-     lack native HLS support.  Safari uses its built-in HLS engine instead. -->
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+     lack native HLS support.  Safari uses its built-in HLS engine instead.
+     Served locally to avoid external CDN dependencies. -->
+<script src="/static/hls.min.js"></script>
 
 <div class="player-container">
   <div class="player-header">
@@ -363,7 +364,13 @@
 
     if (type === 'application/vnd.apple.mpegurl') {
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        // Chrome / Firefox — use hls.js
+        // Chrome / Firefox — use hls.js.
+        // Clear the native <source> src so that when hls.js is later destroyed
+        // (e.g. on page unload) the browser doesn't fall back to fetching the
+        // original video_url (which would fire a spurious error event).
+        srcEl.src = '';
+        srcEl.removeAttribute('src');
+
         hlsInstance = new Hls({
           // For a live-transcode stream we want quick recovery if a segment
           // is not yet written.  hls.js will retry fragment loads automatically.
@@ -379,15 +386,24 @@
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => {});
         });
-        // hls.js handles its own error recovery; fatal errors are re-thrown
-        // so the video element error event will pick them up as usual.
+        // Handle fatal hls.js errors (e.g. manifest permanently unavailable).
+        // These do NOT propagate to the video element's error event reliably.
+        hlsInstance.on(Hls.Events.ERROR, (_e, data) => {
+          if (data.fatal) {
+            log('hls.js fatal error', data.type, data.details);
+            destroyHls();
+            // Don't call startTranscode() — the job is still valid; the user
+            // can refresh to retry playback.
+            updateStatus('HLS playback error — try refreshing', 'var(--danger)');
+          }
+        });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         // Safari — native HLS
         srcEl.src = src;
         srcEl.type = type;
         video.load();
       } else {
-        // No HLS support
+        // No HLS support at all
         video.style.display = 'none';
         updateStatus('Your browser does not support HLS playback', 'var(--danger)');
       }
@@ -396,6 +412,12 @@
       if (type) srcEl.type = type;
       video.load();
     }
+  }
+
+  function log(...args) {
+    // Minimal debug logger — forwards to console only
+    // eslint-disable-next-line no-console
+    if (typeof console !== 'undefined') console.log('[player]', ...args);
   }
 
   // ---------------------------------------------------------------------------
@@ -468,12 +490,11 @@
     clearTimeout(bufferingTimeout);
     video.style.opacity = '1';
 
-    // During live transcoding the browser may fire transient errors while
-    // ffmpeg is still writing segments (e.g. a 404 on a segment that is not
-    // yet available).  hls.js handles retries internally; the video element
-    // error event here is usually spurious.  Suppress it so we don't disrupt
-    // the live-play loop or reset isLivePlaying.
-    if (isLivePlaying) return;
+    // During live transcoding (or after a transcode has started) the browser
+    // may fire transient errors while ffmpeg is still writing segments, or
+    // while hls.js is managing playback.  Suppress these so we don't disrupt
+    // the live-play loop, reset isLivePlaying, or restart a new transcode.
+    if (isLivePlaying || transcodeHasStarted) return;
 
     const code = video.error ? video.error.code : 0;
     if (code === 4 || code === 3) {
@@ -512,6 +533,9 @@
   let pollTimer = null;
   let transcodeStartWallTime = null;
   let isLivePlaying = false;  // true once we've switched the player to live HLS
+  // One-shot flag: prevents the error handler or retry button from calling
+  // startTranscode() a second time while a job is already in progress/done.
+  let transcodeHasStarted = false;
 
   // ---------------------------------------------------------------------------
   // Heartbeat — keeps the server-side ffmpeg process alive while the player
@@ -540,9 +564,12 @@
   window.addEventListener('beforeunload', function() {
     stopHeartbeat();
     destroyHls();
-    if (CANCEL_URL) {
-      navigator.sendBeacon(CANCEL_URL);
-    }
+    // NOTE: we intentionally do NOT send a cancel beacon here.
+    // `beforeunload` fires on BOTH page refresh AND navigation away, so
+    // sending a cancel would kill the ffmpeg process on every refresh.
+    // Instead we rely on the heartbeat watchdog: when the user navigates
+    // away the heartbeat stops and the watchdog terminates ffmpeg after
+    // HEARTBEAT_TIMEOUT seconds.
   });
 
   function handleTranscodeError(message) {
@@ -605,6 +632,15 @@
   function pollJob(job) {
     clearTimeout(pollTimer);
 
+    // Guard against malformed responses (e.g. 404 → {error: "Job not found"}).
+    // If the job object has no `status` field it is not a valid job response.
+    if (!job || !job.status) {
+      // Retry after a short back-off; the job might reappear after a server
+      // restart or brief unavailability.
+      pollTimer = setTimeout(fetchAndPoll, 5000);
+      return;
+    }
+
     // ---- Terminal states ----
     if (job.status === 'error') {
       document.getElementById('tpErrorMsg').textContent = job.error || 'Unknown error';
@@ -633,7 +669,9 @@
       }
       showPanel(tpDone);
       updateStatus('Transcode complete — full seek available', 'var(--accent-2)');
-      isLivePlaying = false;
+      // Do NOT reset isLivePlaying here. Keeping it true prevents the video
+      // error handler from firing startTranscode() while hls.js is still
+      // playing the now-complete stream.
       stopHeartbeat();
       return;  // stop polling
     }
@@ -654,12 +692,22 @@
 
   function fetchAndPoll() {
     fetch(JOB_STATUS_URL, { credentials: 'same-origin' })
-      .then(r => r.json())
-      .then(pollJob)
+      .then(r => {
+        if (!r.ok) {
+          // Non-2xx response (e.g. 404 if the job was lost after a server
+          // restart).  Don't pass this to pollJob — retry silently.
+          pollTimer = setTimeout(fetchAndPoll, 5000);
+          return null;
+        }
+        return r.json();
+      })
+      .then(job => { if (job !== null && job !== undefined) pollJob(job); })
       .catch(() => { pollTimer = setTimeout(fetchAndPoll, 3000); });
   }
 
   window.startTranscode = function() {
+    if (transcodeHasStarted) return;  // idempotent — prevent double-start
+    transcodeHasStarted = true;
     showPanel(tpProgress);
     updateStatus('Transcoding…', 'var(--accent)');
     transcodeStartWallTime = Date.now();
@@ -685,6 +733,7 @@
 
   window.retryTranscode = function() {
     isLivePlaying = false;
+    transcodeHasStarted = false;  // allow restart after explicit user retry
     showPanel(tpWarning);
     updateStatus('Ready to transcode');
   };
@@ -696,10 +745,12 @@
   // On load: handle in-progress or already-playable existing jobs
   // ---------------------------------------------------------------------------
   if (EXISTING_JOB && EXISTING_JOB.status === 'done') {
+    transcodeHasStarted = true;
     showPanel(tpDone);
     updateStatus('Transcode complete — full seek available', 'var(--accent-2)');
   } else if (EXISTING_JOB && EXISTING_JOB.playable) {
     // A prior transcode is still running but already playable — start live play
+    transcodeHasStarted = true;
     isLivePlaying = true;
     showVideo(EXISTING_JOB.hls_url || `/hls/${JOB_ID}/index.m3u8`, 'application/vnd.apple.mpegurl');
     showPanel(tpLive);
@@ -708,11 +759,16 @@
     startHeartbeat();
     fetchAndPoll();
   } else if (EXISTING_JOB && (EXISTING_JOB.status === 'queued' || EXISTING_JOB.status === 'transcoding')) {
+    transcodeHasStarted = true;
     showPanel(tpProgress);
     updateStatus('Transcoding in progress…', 'var(--accent)');
     transcodeStartWallTime = Date.now();
     startHeartbeat();
     fetchAndPoll();
+  } else if (EXISTING_JOB && EXISTING_JOB.status === 'cancelled') {
+    // Job was cancelled (e.g. by the watchdog). Offer a fresh transcode.
+    showPanel(tpWarning);
+    updateStatus('Previous transcode was cancelled — transcode again?', 'var(--warn)');
   } else if (NEEDS_TRANSCODE && !HAS_FFMPEG) {
     showPanel(tpNoFfmpeg);
     updateStatus('Format not supported — no transcoder available', 'var(--danger)');
