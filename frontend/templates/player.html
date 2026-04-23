@@ -392,9 +392,11 @@
           if (data.fatal) {
             log('hls.js fatal error', data.type, data.details);
             destroyHls();
-            // Don't call startTranscode() — the job is still valid; the user
-            // can refresh to retry playback.
-            updateStatus('HLS playback error — try refreshing', 'var(--danger)');
+            // Show the error panel with actionable options.
+            document.getElementById('tpErrorMsg').textContent =
+              'HLS playback error (' + data.details + '). Try refreshing the page.';
+            showPanel(tpError);
+            updateStatus('HLS playback error', 'var(--danger)');
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -690,15 +692,31 @@
     pollTimer = setTimeout(fetchAndPoll, 2000);
   }
 
+  // Counts consecutive non-200 responses from the status endpoint.
+  // After MAX_POLL_FAILURES the user is shown an error panel.
+  let pollFailures = 0;
+  const MAX_POLL_FAILURES = 5;
+
   function fetchAndPoll() {
     fetch(JOB_STATUS_URL, { credentials: 'same-origin' })
       .then(r => {
         if (!r.ok) {
           // Non-2xx response (e.g. 404 if the job was lost after a server
-          // restart).  Don't pass this to pollJob — retry silently.
-          pollTimer = setTimeout(fetchAndPoll, 5000);
+          // restart).  Retry a few times before surfacing an error.
+          pollFailures++;
+          if (pollFailures >= MAX_POLL_FAILURES) {
+            document.getElementById('tpErrorMsg').textContent =
+              'Could not reach the server (' + r.status + '). Refresh to retry.';
+            showPanel(tpError);
+            updateStatus('Server error', 'var(--danger)');
+            isLivePlaying = false;
+            stopHeartbeat();
+          } else {
+            pollTimer = setTimeout(fetchAndPoll, 5000);
+          }
           return null;
         }
+        pollFailures = 0;
         return r.json();
       })
       .then(job => { if (job !== null && job !== undefined) pollJob(job); })
