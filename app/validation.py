@@ -2,6 +2,7 @@
 # Provides security against common attacks like path traversal, SQL injection, etc
 
 import re
+import io
 import os
 from typing import Optional
 from pathlib import Path
@@ -9,10 +10,10 @@ from app.constants import Patterns, Limits
 from app.exceptions import ValidationError
 
 try:
-    import bencodepy
-    HAS_BENCODEPY = True
+    import torf as _torf
+    HAS_TORF = True
 except ImportError:
-    HAS_BENCODEPY = False
+    HAS_TORF = False
 
 
 def validate_task_id(task_id: str) -> str:
@@ -329,14 +330,14 @@ def validate_torrent_file_data(file_data: bytes, filename: str) -> None:
         raise ValidationError("Invalid torrent file format (not bencoded)")
     
     # Try to decode it
-    if not HAS_BENCODEPY:
+    if not HAS_TORF:
         raise ValidationError("Torrent parsing library not available")
     
     try:
-        torrent_dict = bencodepy.decode(file_data)
+        torrent = _torf.Torrent.read_stream(io.BytesIO(file_data), validate=False)
         
-        # Verify it has the required 'info' key
-        if b'info' not in torrent_dict:
+        # Verify it has a computable infohash (requires 'info' dict internally)
+        if not torrent.infohash:
             raise ValidationError("Invalid torrent file: missing 'info' dictionary")
     except ValidationError:
         raise

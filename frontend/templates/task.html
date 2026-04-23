@@ -184,6 +184,15 @@
   background: linear-gradient(90deg, var(--accent), #60a5fa);
   transition: width 0.25s ease;
 }
+.progress-bar.indeterminate .progress-fill {
+  width: 40%;
+  animation: indeterminate-slide 1.4s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+@keyframes indeterminate-slide {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(350%); }
+}
 .progress-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -338,6 +347,7 @@
               {% set progress_pct = ((downloaded_bytes * 100 / size_bytes)|round|int) if size_bytes > 0 else 0 %}
               {% if progress_pct < 0 %}{% set progress_pct = 0 %}{% endif %}
               {% if progress_pct > 100 %}{% set progress_pct = 100 %}{% endif %}
+              {% set is_resolving = (size_bytes == 0) and ((f.state or '')|lower == 'downloading') %}
               <tr data-file-id="{{ f.fileId }}">
                 {% if (mode == 'select') and not is_final %}
                   <td class="checkbox-cell">
@@ -352,11 +362,19 @@
                 </td>
                 <td class="progress-cell">
                   <div class="progress-wrap">
-                    <div class="progress-bar">
+                    <div class="progress-bar{% if is_resolving %} indeterminate{% endif %}">
+                      {% if not is_resolving %}
                       <div class="progress-fill" style="width: {{ progress_pct }}%"></div>
+                      {% else %}
+                      <div class="progress-fill"></div>
+                      {% endif %}
                     </div>
                     <div class="progress-metrics">
+                      {% if is_resolving %}
+                      <span class="metric-transfer" style="color: var(--muted);">Resolving…</span>
+                      {% else %}
                       <span class="metric-transfer">{{ downloaded_bytes|hbytes }} / {{ size_bytes|hbytes }}</span>
+                      {% endif %}
                       <span class="metric-rate">{{ speed_bps|hbytes ~ '/s' if speed_bps > 0 else '—/s' }}</span>
                       <span class="metric-eta">{{ 'ETA ' ~ eta_seconds ~ 's' if eta_seconds is not none and eta_seconds > 0 else 'ETA —' }}</span>
                     </div>
@@ -580,11 +598,23 @@
       sizeCell.textContent = formatBytes(sizeBytes);
     }
 
+    const progressBar = tr.querySelector('.progress-bar');
+    const isResolving = sizeBytes === 0 && state === 'downloading';
+
+    if (progressBar) {
+      if (isResolving) {
+        progressBar.classList.add('indeterminate');
+      } else {
+        progressBar.classList.remove('indeterminate');
+      }
+    }
     if (progressFill) {
-      progressFill.style.width = `${percent}%`;
+      progressFill.style.width = isResolving ? '' : `${percent}%`;
     }
     if (metricTransfer) {
-      metricTransfer.textContent = `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)}`;
+      metricTransfer.textContent = isResolving
+        ? 'Resolving\u2026'
+        : `${formatBytes(downloaded)} / ${formatBytes(sizeBytes)}`;
     }
     if (metricRate) {
       metricRate.textContent = formatRate(speedBps);

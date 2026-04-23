@@ -170,7 +170,7 @@ Paste a direct URL. AllDebrid unlocks it (removing rate limits and captchas from
 
 ### Torrent File Upload
 - Drag-and-drop or select one or more `.torrent` files (max 10 MB each).
-- The backend parses the file **entirely in memory** using `bencodepy`, extracts the SHA-1 infohash and all tracker tiers, builds a magnet URI, and discards the original bytes — the `.torrent` file is never written to disk or stored in the database.
+- The backend parses the file **entirely in memory** using `torf`, extracts the SHA-1 infohash and all tracker tiers, builds a magnet URI, and discards the original bytes — the `.torrent` file is never written to disk or stored in the database.
 
 ### Admin File Upload
 - Available only to **admin** users from the main page.

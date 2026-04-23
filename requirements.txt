@@ -10,6 +10,6 @@ python-dotenv==1.0.1
 requests==2.32.3
 flask==3.0.3
 flask-login==0.6.3
-bencodepy==0.9.5
+torf==4.3.1
 python-multipart==0.0.9
 
