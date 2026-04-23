@@ -1,8 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort, make_response, session, Response, stream_with_context
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from pathlib import Path
 from dotenv import load_dotenv
-import os, io, tarfile, logging, requests, mimetypes, hashlib, secrets, re
+import os, io, tarfile, logging, requests, mimetypes, hashlib, secrets, re, threading, queue
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
@@ -933,14 +933,14 @@ def links_txt(task_id):
             continue
         if p.is_file() and _should_include_file(p):
             rel = p.relative_to(base).as_posix()
-            out.write(f"/d/{task_id}/raw/{rel}\n")
+            base_url = request.host_url.rstrip("/")
+            out.write(f"{base_url}/d/{task_id}/raw/{rel}\n")
     return out.getvalue(), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 @app.get("/d/<task_id>.tar.gz")
 @login_required
 def tar_all(task_id):
     base = safe_task_base(task_id)
-    mem = io.BytesIO()
 
     def safe_tar_filter(tarinfo):
         """Exclude .aria2 control files and any symlinks (which could point
@@ -953,10 +953,59 @@ def tar_all(task_id):
             return None
         return tarinfo
 
-    with tarfile.open(fileobj=mem, mode="w:gz") as tar:
-        tar.add(base, arcname=f"{task_id}/files", filter=safe_tar_filter)
-    mem.seek(0)
-    return send_file(mem, mimetype="application/gzip", as_attachment=True, download_name=f"{task_id}.tar.gz")
+    # Build an ETag from the most-recent mtime of any file in the task dir.
+    try:
+        mtimes = [f.stat().st_mtime for f in base.rglob("*") if f.is_file()]
+        latest_mtime = max(mtimes) if mtimes else base.stat().st_mtime
+        etag = f'"{task_id}-{int(latest_mtime)}"'
+    except Exception:
+        etag = f'"{task_id}"'
+
+    # Honour conditional GET (If-None-Match).
+    inm = request.headers.get("If-None-Match", "").strip()
+    if inm and inm == etag:
+        return Response("", 304, headers={"ETag": etag})
+
+    # Stream the archive using a background thread + queue so the entire
+    # compressed output is never buffered in memory at once.
+    chunk_queue: queue.Queue = queue.Queue(maxsize=32)
+
+    class _QueueWriter:
+        def write(self, data: bytes) -> int:
+            chunk_queue.put(bytes(data))
+            return len(data)
+        def close(self) -> None:
+            chunk_queue.put(None)  # sentinel
+
+    writer = _QueueWriter()
+
+    def _pack() -> None:
+        try:
+            with tarfile.open(fileobj=writer, mode="w|gz") as tar:  # type: ignore[arg-type]  # _QueueWriter satisfies write() protocol
+                tar.add(base, arcname=f"{task_id}/files", filter=safe_tar_filter)
+        finally:
+            writer.close()
+
+    pack_thread = threading.Thread(target=_pack, daemon=True)
+    pack_thread.start()
+
+    def generate():
+        while True:
+            chunk = chunk_queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{task_id}.tar.gz"',
+        "ETag": etag,
+        "Cache-Control": "private, no-transform",
+    }
+    return Response(
+        stream_with_context(generate()),
+        mimetype="application/gzip",
+        headers=headers,
+    )
 
 def _safe_resolve_relpath(base: Path, relpath: str) -> Path:
     """Resolve *relpath* under *base* and verify it stays within *base*.

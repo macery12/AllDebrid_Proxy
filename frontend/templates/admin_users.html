@@ -300,9 +300,9 @@
             <form method="POST" action="{{ url_for('set_role_route', user_id=user.id) }}" style="display: inline-flex; align-items: center; gap: 4px;">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <select name="role" style="padding:5px 8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; cursor:pointer;">
-                <option value="user" {{ 'selected' if user.role == 'user' else '' }}>User</option>
-                <option value="member" {{ 'selected' if user.role == 'member' else '' }}>Member</option>
-                <option value="admin" {{ 'selected' if user.role == 'admin' else '' }}>Admin</option>
+                <option value="user" {{ 'selected' if user.role == 'user' else '' }}>User (download-only)</option>
+                <option value="member" {{ 'selected' if user.role == 'member' else '' }}>Member (home + tasks)</option>
+                <option value="admin" {{ 'selected' if user.role == 'admin' else '' }}>Admin (full access)</option>
               </select>
               <button type="submit" class="btn" style="padding:5px 10px; font-size:12px;">Set Role</button>
             </form>
