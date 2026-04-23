@@ -3,9 +3,7 @@ Tests for frontend/transcoding.py
 """
 import pathlib
 import sys
-import threading
 import time
-import types
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -97,7 +95,7 @@ class TestSystemLoad(unittest.TestCase):
 class TestFfmpegAvailability(unittest.TestCase):
     def setUp(self):
         # Reset the cache before each test
-        tc._ffmpeg_cache = (None, 0.0)
+        tc._reset_for_testing()
 
     def test_ffmpeg_available_true_when_binary_works(self):
         mock_result = MagicMock()
@@ -108,14 +106,14 @@ class TestFfmpegAvailability(unittest.TestCase):
     def test_ffmpeg_available_false_when_not_found(self):
         with patch("subprocess.run", side_effect=FileNotFoundError):
             # Force cache miss
-            tc._ffmpeg_cache = (None, 0.0)
+            tc._reset_for_testing()
             self.assertFalse(tc.ffmpeg_available())
 
     def test_ffmpeg_available_false_on_nonzero_exit(self):
         mock_result = MagicMock()
         mock_result.returncode = 1
         with patch("subprocess.run", return_value=mock_result):
-            tc._ffmpeg_cache = (None, 0.0)
+            tc._reset_for_testing()
             self.assertFalse(tc.ffmpeg_available())
 
     def test_ffmpeg_cache_is_used(self):
@@ -129,8 +127,7 @@ class TestFfmpegAvailability(unittest.TestCase):
 
 class TestActiveJobCount(unittest.TestCase):
     def setUp(self):
-        with tc._jobs_lock:
-            tc._jobs.clear()
+        tc._reset_for_testing()
 
     def test_empty_registry_gives_zero(self):
         self.assertEqual(tc.active_job_count(), 0)
@@ -158,8 +155,7 @@ class TestActiveJobCount(unittest.TestCase):
 
 class TestGetJob(unittest.TestCase):
     def setUp(self):
-        with tc._jobs_lock:
-            tc._jobs.clear()
+        tc._reset_for_testing()
 
     def test_returns_none_for_unknown(self):
         self.assertIsNone(tc.get_job("nonexistent"))
@@ -177,11 +173,7 @@ class TestGetJob(unittest.TestCase):
 
 class TestStartTranscode(unittest.TestCase):
     def setUp(self):
-        with tc._jobs_lock:
-            tc._jobs.clear()
-        # Reset semaphore to max
-        tc._semaphore = threading.Semaphore(tc.MAX_CONCURRENT_TRANSCODES)
-        tc._ffmpeg_cache = (None, 0.0)
+        tc._reset_for_testing()
 
     def _fake_source(self, tmp_path, name="test.mkv"):
         p = pathlib.Path(tmp_path) / name
@@ -251,8 +243,7 @@ class TestStartTranscode(unittest.TestCase):
 
 class TestCleanupOldJobs(unittest.TestCase):
     def setUp(self):
-        with tc._jobs_lock:
-            tc._jobs.clear()
+        tc._reset_for_testing()
 
     def test_removes_old_done_job(self):
         import tempfile

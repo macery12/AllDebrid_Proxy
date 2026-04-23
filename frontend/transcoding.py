@@ -350,3 +350,16 @@ def cleanup_old_jobs() -> int:
     if removed:
         log.info("Cleaned up %d expired transcode job(s)", removed)
     return removed
+
+
+# ---------------------------------------------------------------------------
+# Test helpers (not for production use)
+# ---------------------------------------------------------------------------
+
+def _reset_for_testing() -> None:
+    """Clear all state for a clean test environment. Do not call in production."""
+    global _ffmpeg_cache, _semaphore
+    with _jobs_lock:
+        _jobs.clear()
+    _ffmpeg_cache = (None, 0.0)
+    _semaphore = threading.Semaphore(MAX_CONCURRENT_TRANSCODES)
