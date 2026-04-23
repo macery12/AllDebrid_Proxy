@@ -826,6 +826,17 @@ def task_view(task_id):
     return render_template("task.html", task_id=task_id, t=t, mode=mode, 
                          sse_token=sse_token)
 
+@app.get("/tasks/<task_id>/data")
+@member_required
+def task_data(task_id):
+    """JSON endpoint for polling task state (SSE fallback)."""
+    t, err = get_task(task_id)
+    if err:
+        msg, code = err
+        log.warning(f"task_data fetch failed for {task_id}: {msg}")
+        return jsonify({"error": "Failed to load task"}), code
+    return jsonify(t or {})
+
 @app.post("/tasks/<task_id>/select")
 @member_required
 def task_select(task_id):

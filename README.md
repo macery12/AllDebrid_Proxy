@@ -136,8 +136,9 @@ All configuration is driven by environment variables defined in `.env` (or passe
 | `API_PORT` | `9731` | Host port exposed for the FastAPI service. |
 | `FRONTEND_PORT` | `9732` | Host port exposed for the Flask frontend. |
 | `ARIA2_RPC_PORT` | `16800` | Host port exposed for the aria2 RPC interface. |
-| `RETENTION_DAYS` | `7` | Days before completed tasks are auto-purged. |
+| `RETENTION_DAYS` | `7` | Days before completed tasks are auto-purged. A background cleanup job runs every hour to remove expired tasks and their files. |
 | `PARTIAL_MAX_AGE_HOURS` | `24` | Hours before incomplete/stalled downloads are cleaned up. |
+| `CORS_ORIGINS` | _(empty — deny all)_ | Comma-separated list of allowed cross-origin request origins. Defaults to deny-all. Example: `https://app.example.com,https://other.example.com`. |
 
 ---
 

@@ -1,6 +1,6 @@
 
-import os, time, uuid, threading, logging, traceback, urllib.error, json
-from datetime import datetime, timezone
+import os, time, uuid, threading, logging, traceback, urllib.error, json, shutil
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
@@ -582,10 +582,82 @@ def start_next_files(session, task: Task, client):
         publish(task.id, {"type": EventType.STATE, "status": TaskStatus.READY})
         _log(task.id, LogLevel.INFO, "task_ready_all_done", total=len(files))
 
+def _retention_cleanup_loop():
+    """
+    Background loop that purges tasks (and their files) that are older than
+    RETENTION_DAYS.  Runs once per hour.  Only completed/terminal tasks are
+    considered; in-progress or queued tasks are never removed.
+    """
+    PURGE_STATUSES = TaskStatus.COMPLETED_STATUSES + [TaskStatus.FAILED, TaskStatus.CANCELED]
+    CLEANUP_INTERVAL_SEC = 3600  # run once per hour
+
+    _log("", LogLevel.INFO, "retention_cleanup_loop_started",
+         retention_days=settings.RETENTION_DAYS)
+
+    while True:
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=settings.RETENTION_DAYS)
+            with SessionLocal() as s:
+                expired = s.execute(
+                    select(Task)
+                    .where(Task.status.in_(PURGE_STATUSES))
+                    .where(Task.updated_at < cutoff)
+                ).scalars().all()
+
+                tasks_to_delete = []
+                for task in expired:
+                    task_dir = os.path.join(settings.STORAGE_ROOT, task.id)
+                    try:
+                        if os.path.isdir(task_dir):
+                            shutil.rmtree(task_dir, ignore_errors=True)
+                    except Exception as e:
+                        _log(task.id, LogLevel.ERROR, "retention_cleanup_fs_error", err=str(e))
+                    # Queue the DB delete regardless of filesystem outcome; the
+                    # filesystem entry is already gone or never existed.
+                    tasks_to_delete.append(task)
+
+                if tasks_to_delete:
+                    for task in tasks_to_delete:
+                        try:
+                            s.delete(task)
+                        except Exception as e:
+                            _log(task.id, LogLevel.ERROR, "retention_cleanup_db_error", err=str(e))
+                    try:
+                        s.commit()
+                    except Exception as e:
+                        s.rollback()
+                        _log("", LogLevel.ERROR, "retention_cleanup_commit_error", err=str(e))
+                    else:
+                        for task in tasks_to_delete:
+                            _log(task.id, LogLevel.INFO, "retention_cleanup_purged",
+                                 status=task.status, updated_at=str(task.updated_at))
+                        _log("", LogLevel.INFO, "retention_cleanup_cycle_done",
+                             purged=len(tasks_to_delete), retention_days=settings.RETENTION_DAYS)
+        except Exception as e:
+            _log("", LogLevel.ERROR, "retention_cleanup_loop_error",
+                 err=str(e), tb=traceback.format_exc())
+
+        time.sleep(CLEANUP_INTERVAL_SEC)
+
+_cleanup_started = False
+_cleanup_lock = threading.Lock()
+
+def _start_cleanup_once():
+    """Start the retention cleanup thread if not already started."""
+    global _cleanup_started
+    with _cleanup_lock:
+        if _cleanup_started:
+            return
+        _cleanup_started = True
+    threading.Thread(target=_retention_cleanup_loop, daemon=True).start()
+    _log("", LogLevel.INFO, "retention_cleanup_thread_started")
+
+
 def worker_loop():
     # Main worker loop: processes queued tasks and starts downloads
     # Runs continuously, polling database for work
     _start_monitor_once()
+    _start_cleanup_once()
     client = get_client()
 
     # One-time aria2 RPC version check
