@@ -1,0 +1,27 @@
+.wrapper {
+  overflow-x: auto;
+}
+
+.fileName {
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.progressCell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.progressMeta {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.rowSelected {
+  background: rgba(88, 166, 255, 0.05) !important;
+}

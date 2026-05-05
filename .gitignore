@@ -207,3 +207,13 @@ marimo/_lsp/
 __marimo__/
 test_user_system.py
 test_users.db
+
+# Vite / Node (frontend-v2)
+frontend-v2/node_modules/
+frontend-v2/dist/
+
+# Vite build output baked into Flask static dir
+frontend/static/dist/
+
+# TypeScript build info
+*.tsbuildinfo
