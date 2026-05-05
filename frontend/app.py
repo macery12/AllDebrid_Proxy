@@ -1204,6 +1204,306 @@ def stream_video(task_id, relpath):
     except (ValueError, IndexError):
         abort(416, "Invalid Range header")
 
+# ==============================================================================
+# JSON API v2  — consumed by the Vite + React frontend
+# ==============================================================================
+# These endpoints mirror the existing template-based routes but respond with
+# JSON only, enabling the new frontend-v2 SPA to communicate over fetch().
+# All state-changing endpoints use Flask session auth (same cookie the SPA
+# receives on login) — no CSRF tokens are needed because the SPA uses
+# application/json with credentials:include (not form submissions).
+# ==============================================================================
+
+from werkzeug.exceptions import HTTPException as _HTTPException
+
+
+@app.get("/v2/auth/setup-status")
+def v2_setup_status():
+    """Check whether first-time admin setup is still required."""
+    check_data, check_err = w_request("GET", "/api/users/check")
+    is_first_time = (not check_err) and (not check_data.get("has_users", True))
+    return jsonify({"first_time_setup": is_first_time})
+
+
+@app.post("/v2/auth/login")
+def v2_login():
+    """JSON login — supports both first-time setup and normal login."""
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+
+    # Inline rate-limiting (same window/limit as the template login route)
+    ip = request.remote_addr or "unknown"
+    now = _time.time()
+    window_start = now - _LOGIN_WINDOW
+    ip_attempts = [ts for ts in _login_attempts.get(ip, []) if ts > window_start]
+    if len(ip_attempts) >= _LOGIN_MAX_ATTEMPTS:
+        log.warning("v2 login rate limit exceeded for IP %s", ip)
+        return jsonify({"error": "Too many login attempts. Please wait a few minutes."}), 429
+    ip_attempts.append(now)
+    _login_attempts[ip] = ip_attempts
+
+    # First-time setup check
+    check_data, check_err = w_request("GET", "/api/users/check")
+    is_first_time = (not check_err) and (not check_data.get("has_users", True))
+
+    if is_first_time:
+        body, err = w_request(
+            "POST", "/api/users",
+            json_body={"username": username, "password": password, "is_admin": True},
+        )
+        if err:
+            return jsonify({"error": str(err[0])}), err[1]
+        return jsonify({
+            "first_time_setup": True,
+            "message": f"Admin account '{username}' created. Please log in.",
+        }), 201
+
+    body, err = w_request(
+        "POST", "/api/auth/verify",
+        json_body={"username": username, "password": password},
+    )
+    if err or not body:
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    user = User(body["id"], body["username"], body["is_admin"], body.get("role", "user"))
+    login_user(user)
+    return jsonify({
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "is_admin": user.is_admin,
+            "role": user.role,
+        }
+    })
+
+
+@app.post("/v2/auth/logout")
+@login_required
+def v2_logout():
+    """JSON logout."""
+    logout_user()
+    return jsonify({"ok": True})
+
+
+@app.get("/v2/auth/me")
+@login_required
+def v2_me():
+    """Return the current authenticated user."""
+    return jsonify({
+        "id": current_user.id,
+        "username": current_user.username,
+        "is_admin": current_user.is_admin,
+        "role": current_user.role,
+    })
+
+
+@app.get("/v2/health")
+def v2_health():
+    """Proxy the FastAPI health endpoint. Returns JSON."""
+    body, err = w_request("GET", "/health")
+    if err:
+        return jsonify({"status": "down", "error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.get("/v2/tasks")
+@member_required
+def v2_list_tasks():
+    """List tasks — admins see all, members see only their own."""
+    limit = max(1, min(request.args.get("limit", 20, type=int), 100))
+    offset = max(0, request.args.get("offset", 0, type=int))
+    params = {"limit": limit, "offset": offset}
+    if not current_user.is_admin:
+        params["user_id"] = current_user.id
+    body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/tasks")
+@member_required
+def v2_create_task():
+    """Create a task from a magnet / URL. Accepts JSON. Returns JSON."""
+    data = request.get_json(silent=True) or {}
+    source = (data.get("source") or "").strip()
+    mode = (data.get("mode") or "auto").strip()
+    label = (data.get("label") or "").strip() or None
+
+    if not source:
+        return jsonify({"error": "source is required"}), 400
+    if len(source) > MAX_SOURCE_LENGTH:
+        return jsonify({"error": f"source too long (max {MAX_SOURCE_LENGTH} chars)"}), 400
+    if mode not in ("auto", "select"):
+        return jsonify({"error": "mode must be 'auto' or 'select'"}), 400
+    if label and len(label) > MAX_LABEL_LENGTH:
+        return jsonify({"error": f"label too long (max {MAX_LABEL_LENGTH} chars)"}), 400
+
+    payload = {"mode": mode, "source": source, "user_id": current_user.id}
+    if label:
+        payload["label"] = label
+
+    body, err = w_request("POST", "/api/tasks", json_body=payload)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/tasks/from-torrent")
+@member_required
+def v2_create_task_from_torrent():
+    """Create a task by uploading a .torrent file. Converts to magnet link."""
+    mode = request.form.get("mode", "auto")
+    label = (request.form.get("label") or "").strip() or None
+
+    if mode not in ("auto", "select"):
+        return jsonify({"error": "mode must be 'auto' or 'select'"}), 400
+
+    file = request.files.get("torrent_file")
+    if not file or not file.filename:
+        return jsonify({"error": "torrent_file is required"}), 400
+
+    try:
+        file_data = file.read()
+        validate_torrent_file_data(file_data, file.filename)
+        magnet = torrent_to_magnet(file_data)
+    except Exception as exc:
+        return jsonify({"error": f"Invalid torrent file: {exc}"}), 400
+
+    payload = {"mode": mode, "source": magnet, "user_id": current_user.id}
+    if label:
+        payload["label"] = label
+
+    body, err = w_request("POST", "/api/tasks", json_body=payload)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.get("/v2/tasks/<task_id>")
+@member_required
+def v2_get_task(task_id):
+    """Return full task data as JSON."""
+    body, err = w_request("GET", f"/api/tasks/{task_id}")
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/tasks/<task_id>/sse-token")
+@member_required
+def v2_sse_token(task_id):
+    """Obtain a short-lived SSE token for the given task.
+    The SPA uses this token to open an EventSource directly against
+    /api/tasks/{task_id}/events?token=... (FastAPI, via nginx)."""
+    body, err = w_request("POST", f"/api/tasks/{task_id}/sse-token")
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/tasks/<task_id>/select")
+@member_required
+def v2_select_files(task_id):
+    """Submit file selection. Accepts JSON {fileIds: [...]}."""
+    data = request.get_json(silent=True) or {}
+    file_ids = data.get("fileIds") or []
+    if not file_ids:
+        return jsonify({"error": "fileIds must be a non-empty list"}), 400
+    body, err = w_request(
+        "POST", f"/api/tasks/{task_id}/select",
+        json_body={"fileIds": file_ids},
+    )
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/tasks/<task_id>/cancel")
+@member_required
+def v2_cancel_task(task_id):
+    """Cancel a running task."""
+    body, err = w_request("POST", f"/api/tasks/{task_id}/cancel")
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.delete("/v2/tasks/<task_id>")
+@member_required
+def v2_delete_task(task_id):
+    """Delete a task. Pass ?purge_files=true to also remove downloaded files."""
+    purge = request.args.get("purge_files", "false").lower() == "true"
+    body, err = w_request(
+        "DELETE", f"/api/tasks/{task_id}",
+        params={"purge_files": purge},
+    )
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body or {"ok": True})
+
+
+@app.get("/v2/tasks/<task_id>/files")
+@login_required
+def v2_task_files(task_id):
+    """Return the filesystem file listing for a task as JSON."""
+    try:
+        base = safe_task_base(task_id)
+    except _HTTPException as exc:
+        return jsonify({"error": exc.description or "Not found"}), exc.code
+    except Exception:
+        return jsonify({"error": "Task files not found"}), 404
+
+    items = []
+    try:
+        for p in sorted(base.rglob("*")):
+            if p.is_symlink() and not p.resolve().is_relative_to(base):
+                continue
+            if p.is_file() and _should_include_file(p):
+                rel = p.relative_to(base).as_posix()
+                items.append({
+                    "rel": rel,
+                    "size": p.stat().st_size,
+                    "is_video": _is_video(p.name),
+                    "is_downloading": _is_still_downloading(p),
+                })
+    except Exception as exc:
+        log.error("v2_task_files error: %s", exc)
+        return jsonify({"error": "Failed to list files"}), 500
+
+    return jsonify({"entries": items})
+
+
+# ==============================================================================
+# Serve the Vite React SPA (production)
+# ==============================================================================
+# In development the Vite dev server (port 5173) proxies /v2/ and /d/ to Flask.
+# In production, `vite build` outputs to frontend/static/dist/. Flask serves
+# that directory for all SPA routes so that client-side routing works correctly.
+# ==============================================================================
+
+_DIST_DIR = Path(__file__).parent / "static" / "dist"
+
+
+@app.get("/app/")
+@app.get("/app/<path:path>")
+def serve_vite_spa(path: str = ""):
+    """Serve the built Vite SPA under /app/. Falls back gracefully if the
+    build directory does not exist (development mode)."""
+    if not _DIST_DIR.exists():
+        return jsonify({"error": "SPA not built. Run: cd frontend-v2 && npm run build"}), 404
+    from flask import send_from_directory as _sfd
+    # Serve real assets (JS/CSS/images) from dist/; everything else → index.html
+    asset = _DIST_DIR / path
+    if path and asset.exists() and asset.is_file():
+        return _sfd(str(_DIST_DIR), path)
+    return _sfd(str(_DIST_DIR), "index.html")
+
+
 # ------------------------------------------------------------------------------
 # Dev server entrypoint
 # ------------------------------------------------------------------------------

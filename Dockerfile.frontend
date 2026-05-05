@@ -1,3 +1,24 @@
+# =============================================================================
+# Stage 1 — Build the Vite React SPA
+# =============================================================================
+FROM node:20-alpine AS vite-builder
+
+WORKDIR /build
+
+# Install deps first (better layer caching)
+COPY frontend-v2/package.json frontend-v2/package-lock.json ./frontend-v2/
+RUN cd frontend-v2 && npm ci
+
+# Copy source and build
+# The vite.config outDir is ../frontend/static/dist (relative to frontend-v2/)
+COPY frontend-v2 ./frontend-v2/
+RUN mkdir -p ./frontend/static/dist \
+    && cd frontend-v2 \
+    && npm run build
+
+# =============================================================================
+# Stage 2 — Flask frontend + built SPA
+# =============================================================================
 FROM python:3.12-slim
 
 # Avoid Python buffering and bytecode
@@ -22,9 +43,12 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
-# Copy frontend
+# Copy frontend Python app + templates
 COPY frontend/app.py ./frontend/app.py
 COPY frontend/templates ./frontend/templates
+
+# Copy built Vite SPA from stage 1
+COPY --from=vite-builder /build/frontend/static/dist ./frontend/static/dist
 
 # Hand ownership to appuser before dropping privileges
 RUN chown -R appuser:appuser /app
