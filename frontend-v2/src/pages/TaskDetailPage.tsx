@@ -4,13 +4,13 @@ import { tasksApi } from '../api/tasks';
 import { APIError } from '../api/client';
 import { useTask } from '../hooks/useTask';
 import { useTaskStream } from '../hooks/useTaskStream';
-import { isFinalState } from '../lib/utils';
+import { isFinalState, formatModeLabel, formatBytes, formatSpeed } from '../lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { StreamIndicator } from '../components/StreamIndicator';
-import { FileTable } from '../components/FileTable';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { EmptyState } from '../components/EmptyState';
+import { FileTable } from '../components/FileTable';
 import type { Task } from '../types';
 import styles from './TaskDetailPage.module.css';
 
@@ -138,102 +138,18 @@ export function TaskDetailPage() {
   const isFinal = isFinalState(task.status);
 
   return (
-    <div>
-      {/* ─── Page header ─── */}
-      <div className={styles.header}>
-        <div>
-          <h1 className={styles.taskTitle}>
-            Task Details
-            <span className={styles.taskId}>{task.taskId}</span>
-          </h1>
-
-          <div className={styles.metaRow}>
-            <div className={styles.metaItem}>
-              <strong>Status</strong>
-              <StatusBadge status={task.status} />
-            </div>
-            <div className={styles.metaItem}>
-              <strong>Mode</strong>
-              <span className="pill neutral">{task.mode}</span>
-            </div>
-            {task.label && (
-              <div className={styles.metaItem}>
-                <strong>Label</strong>
-                <span>{task.label}</span>
-              </div>
-            )}
-            {task.infohash && (
-              <div className={styles.metaItem}>
-                <strong>Hash</strong>
-                <kbd>{task.infohash.substring(0, 16)}…</kbd>
-              </div>
-            )}
-            <div className={styles.metaItem}>
-              <StreamIndicator status={streamStatus} />
-            </div>
-          </div>
+    <div className={styles.page}>
+      <section className={styles.actionsBar}>
+        <div className={styles.actionsLeft}>
+          <h1 className={styles.taskTitle}>Task</h1>
+          <span className={styles.taskId}>{task.taskId}</span>
         </div>
 
         <div className={styles.headerActions}>
-          <Link to="/" className="btn">← Home</Link>
-          {!isFinal && (
-            <Link to={`/tasks/${task.taskId}/files`} className="btn btn-good">
-              Open Files
-            </Link>
-          )}
-          {isFinal && (
-            <Link to={`/tasks/${task.taskId}/files`} className="btn btn-good">
-              Browse Files
-            </Link>
-          )}
-        </div>
-      </div>
-
-      <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />
-
-      {/* ─── Files section ─── */}
-      <div className="card mt-4">
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>
-            Files
-            <span className={styles.fileCount}>({task.files.length} files)</span>
-          </span>
-        </div>
-
-        {/* Selection toolbar */}
-        {isSelectable && (
-          <div className={styles.selectionBar}>
-            <span className={styles.selectionCount}>
-              {selectedIds.size} of {task.files.length} selected
-            </span>
-            <button className="btn btn-sm" onClick={() => handleToggleAll(true)}>
-              Select All
-            </button>
-            <button className="btn btn-sm" onClick={() => handleToggleAll(false)}>
-              Clear All
-            </button>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={handleSubmitSelection}
-              disabled={selectedIds.size === 0 || submittingSelect}
-            >
-              {submittingSelect && <span className="spinner" />}
-              Submit Selection ({selectedIds.size})
-            </button>
-          </div>
-        )}
-
-        <FileTable
-          files={task.files}
-          selectable={isSelectable}
-          selectedIds={selectedIds}
-          onToggle={handleToggleFile}
-          onToggleAll={handleToggleAll}
-          loading={task.files.length === 0 && !isFinal}
-        />
-
-        {/* Action toolbar */}
-        <div className={styles.toolbar}>
+          <Link to="/" className="btn">Home</Link>
+          <Link to={`/tasks/${task.taskId}/files`} className="btn btn-good">
+            Open Files
+          </Link>
           {!isFinal && (
             <button
               className="btn btn-warn"
@@ -250,16 +166,122 @@ export function TaskDetailPage() {
             disabled={deleting}
           >
             {deleting && <span className="spinner" />}
-            Delete + Purge
+            Delete
           </button>
-          <Link to={`/tasks/${task.taskId}/files`} className="btn btn-good">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-            Open Files
-          </Link>
         </div>
-      </div>
+      </section>
+
+      <details className={styles.detailsPanel}>
+        <summary>Task details</summary>
+        <div className={styles.detailsGrid}>
+          <div className={styles.detailItem}>
+            <span>Status</span>
+            <StatusBadge status={task.status} />
+          </div>
+          <div className={styles.detailItem}>
+            <span>Mode</span>
+            <span className="pill neutral">{formatModeLabel(task.mode)}</span>
+          </div>
+          <div className={styles.detailItem}>
+            <span>Stream</span>
+            <StreamIndicator status={streamStatus} />
+          </div>
+          <div className={styles.detailItem}>
+            <span>Label</span>
+            <strong>{task.label ?? 'None'}</strong>
+          </div>
+          {task.infohash && (
+            <div className={`${styles.detailItem} ${styles.spanAll}`}>
+              <span>Infohash</span>
+              <strong className={styles.hash}>{task.infohash}</strong>
+            </div>
+          )}
+          <div className={styles.detailItem}>
+            <span>Files</span>
+            <strong>{task.files.length}</strong>
+          </div>
+        </div>
+      </details>
+
+      <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />
+
+      <section className={styles.mainPanel}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>Files</span>
+          <span className={styles.fileCount}>{task.files.length} total</span>
+        </div>
+
+        {isSelectable && (
+          <div className={styles.selectionBar}>
+            <span className={styles.selectionCount}>{selectedIds.size} selected</span>
+            <button className="btn btn-sm" onClick={() => handleToggleAll(true)}>
+              Select all
+            </button>
+            <button className="btn btn-sm" onClick={() => handleToggleAll(false)}>
+              Clear
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleSubmitSelection}
+              disabled={selectedIds.size === 0 || submittingSelect}
+            >
+              {submittingSelect && <span className="spinner" />}
+              Apply ({selectedIds.size})
+            </button>
+          </div>
+        )}
+
+        {task.files.length === 0 && !isFinal ? (
+          <div>
+            {task.providerProgress ? (
+              <div className={styles.providerProgress}>
+                <div className={styles.providerProgressHeader}>
+                  <span className="spinner" />
+                  <strong>AllDebrid: {task.providerProgress.statusText}</strong>
+                </div>
+                {task.providerProgress.filename && (
+                  <div className={styles.providerProgressRow}>
+                    <span className="muted">File</span>
+                    <span>{task.providerProgress.filename}</span>
+                  </div>
+                )}
+                {task.providerProgress.totalSize > 0 && (
+                  <div className={styles.providerProgressRow}>
+                    <span className="muted">Progress</span>
+                    <span>
+                      {formatBytes(task.providerProgress.downloaded)} / {formatBytes(task.providerProgress.totalSize)}
+                    </span>
+                  </div>
+                )}
+                {task.providerProgress.downloadSpeed > 0 && (
+                  <div className={styles.providerProgressRow}>
+                    <span className="muted">Speed</span>
+                    <span>{formatSpeed(task.providerProgress.downloadSpeed)}</span>
+                  </div>
+                )}
+                {task.providerProgress.seeders > 0 && (
+                  <div className={styles.providerProgressRow}>
+                    <span className="muted">Seeders</span>
+                    <span>{task.providerProgress.seeders}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <EmptyState message="Waiting for file list…" />
+            )}
+          </div>
+        ) : task.files.length === 0 ? (
+          <EmptyState message="No files in this task." />
+        ) : (
+          <FileTable
+            files={task.files}
+            selectable={isSelectable}
+            selectedIds={selectedIds}
+            onToggle={handleToggleFile}
+            onToggleAll={handleToggleAll}
+          />
+        )}
+      </section>
 
       {/* ─── Confirm delete dialog ─── */}
       <ConfirmDialog

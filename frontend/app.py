@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os, io, tarfile, logging, requests, mimetypes, hashlib, secrets, re, threading, queue
 from datetime import datetime
+from urllib.parse import quote
 
 # ------------------------------------------------------------------------------
 # Bootstrapping / App setup
@@ -304,6 +305,9 @@ def _should_include_file(filepath: Path) -> bool:
 # ------------------------------------------------------------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if request.method == "GET":
+        return redirect("/app/login")
+
     # Check if this is first-time setup (no users exist)
     check_data, check_err = w_request("GET", "/api/users/check")
     is_first_time = (not check_err) and (not check_data.get("has_users", True))
@@ -345,7 +349,7 @@ def login():
 def logout():
     logout_user()
     flash("Logged out successfully!", "success")
-    return redirect(url_for("index"))
+    return redirect("/app/login")
 
 @app.route('/test-task')
 @admin_required
@@ -362,7 +366,7 @@ def test_task_view():
 @app.get("/")
 @member_required
 def index():
-    return render_template("index.html")
+    return redirect("/app/")
 
 @app.post("/tasks/new")
 @member_required
@@ -620,11 +624,7 @@ def upload_file():
 @app.get("/admin")
 @admin_required
 def admin_page():
-    """Admin dashboard to view and manage all tasks"""
-    log.info("Admin page accessed")
-    # Don't pass worker_key to frontend - it's a security risk
-    # Frontend will use session-based auth to request data from backend
-    return render_template("admin.html")
+    return redirect("/app/admin")
 
 @app.get("/admin/tasks")
 @admin_required
@@ -684,14 +684,7 @@ def get_stats():
 @app.get("/admin/users")
 @admin_required
 def admin_users_page():
-    """Admin page for user management"""
-    data, err = w_request("GET", "/api/users")
-    if err:
-        flash(f"Failed to load users: {err[0]}", "error")
-        users = []
-    else:
-        users = [_UserData(u) for u in data.get("users", [])]
-    return render_template("admin_users.html", users=users)
+    return redirect("/app/admin/users")
 
 @app.post("/admin/users/create")
 @admin_required
@@ -810,21 +803,7 @@ def get_task(task_id: str):
 @app.get("/tasks/<task_id>")
 @member_required
 def task_view(task_id):
-    t, err = get_task(task_id)
-    if err:
-        flash(f"Load failed: {err[0]}", "error")
-        t = None
-    
-    # Generate a secure SSE token (never expose WORKER_API_KEY to frontend)
-    sse_token = None
-    token_response, token_err = w_request("POST", f"/api/tasks/{task_id}/sse-token")
-    if not token_err and token_response:
-        sse_token = token_response.get("token")
-    
-    mode = (t or {}).get("mode") or request.args.get("mode", "auto")
-    # Pass secure SSE token to template (use relative URL /api for nginx proxy)
-    return render_template("task.html", task_id=task_id, t=t, mode=mode, 
-                         sse_token=sse_token)
+    return redirect(f"/app/tasks/{task_id}")
 
 @app.get("/tasks/<task_id>/data")
 @member_required
@@ -906,21 +885,7 @@ def safe_task_base(task_id: str) -> Path:
 @app.get("/d/<task_id>/")
 @login_required
 def list_folder(task_id):
-    base = safe_task_base(task_id)
-    items = []
-    for p in sorted(base.rglob("*")):
-        # Skip symlinks that escape the base directory (traversal via symlink)
-        if p.is_symlink() and not p.resolve().is_relative_to(base):
-            continue
-        if p.is_file() and _should_include_file(p):
-            rel = p.relative_to(base).as_posix()
-            items.append({
-                "rel": rel,
-                "size": p.stat().st_size,
-                "is_video": _is_video(p.name),
-                "is_downloading": _is_still_downloading(p)
-            })
-    return render_template("folder.html", task_id=task_id, entries=items)
+    return redirect(f"/app/tasks/{task_id}/files")
 
 @app.get("/d/<task_id>/links.txt")
 @login_required
@@ -1091,20 +1056,7 @@ def play_video(task_id, relpath):
         flash("This file is not a video", "error")
         return redirect(url_for("list_folder", task_id=task_id))
 
-    st = full.stat()
-    mime = _guess_mime(full.name)
-
-    return render_template(
-        "player.html",
-        task_id=task_id,
-        relpath=relpath,
-        filename=full.name,
-        size=st.st_size,
-        mime_type=mime,
-        video_url=url_for("stream_video", task_id=task_id, relpath=relpath),
-        download_url=url_for("raw_file", task_id=task_id, relpath=relpath),
-        back_url=url_for("list_folder", task_id=task_id)
-    )
+    return redirect(f"/app/tasks/{task_id}/player?file={quote(relpath, safe='')}")
 
 @app.get("/d/<task_id>/stream/<path:relpath>")
 @login_required
@@ -1313,12 +1265,10 @@ def v2_health():
 @app.get("/v2/tasks")
 @member_required
 def v2_list_tasks():
-    """List tasks — admins see all, members see only their own."""
+    """List tasks for member-tier users (admin/member)."""
     limit = max(1, min(request.args.get("limit", 20, type=int), 100))
     offset = max(0, request.args.get("offset", 0, type=int))
     params = {"limit": limit, "offset": offset}
-    if not current_user.is_admin:
-        params["user_id"] = current_user.id
     body, err = w_request("GET", "/api/tasks", params=params)
     if err:
         return jsonify({"error": err[0]}), err[1]
@@ -1476,6 +1426,136 @@ def v2_task_files(task_id):
         return jsonify({"error": "Failed to list files"}), 500
 
     return jsonify({"entries": items})
+
+
+def _v2_admin_forbidden():
+    return jsonify({"error": "Admin access required"}), 403
+
+
+@app.get("/v2/admin/tasks")
+@login_required
+def v2_admin_tasks():
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+
+    status = request.args.get("status")
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+
+    params = {"limit": limit, "offset": offset}
+    if status:
+        params["status"] = status
+
+    body, err = w_request("GET", "/api/tasks", params=params)
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.get("/v2/admin/stats")
+@login_required
+def v2_admin_stats():
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+
+    body, err = w_request("GET", "/api/stats")
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.get("/v2/admin/users")
+@login_required
+def v2_admin_users():
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+
+    body, err = w_request("GET", "/api/users")
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/admin/users")
+@login_required
+def v2_admin_create_user():
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    role = (data.get("role") or "user").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    if role not in ("admin", "member", "user"):
+        return jsonify({"error": "Invalid role"}), 400
+
+    body, err = w_request(
+        "POST",
+        "/api/users",
+        json_body={"username": username, "password": password, "role": role},
+    )
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body), 201
+
+
+@app.delete("/v2/admin/users/<int:user_id>")
+@login_required
+def v2_admin_delete_user(user_id: int):
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+    if user_id == current_user.id:
+        return jsonify({"error": "You cannot delete your own account"}), 400
+
+    body, err = w_request("DELETE", f"/api/users/{user_id}")
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body or {"ok": True})
+
+
+@app.post("/v2/admin/users/<int:user_id>/role")
+@login_required
+def v2_admin_set_role(user_id: int):
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+    if user_id == current_user.id:
+        return jsonify({"error": "You cannot modify your own role"}), 400
+
+    data = request.get_json(silent=True) or {}
+    role = (data.get("role") or "").strip()
+    if role not in ("admin", "member", "user"):
+        return jsonify({"error": "Invalid role"}), 400
+
+    body, err = w_request("POST", f"/api/users/{user_id}/set-role", json_body={"role": role})
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
+
+
+@app.post("/v2/admin/users/<int:user_id>/reset-password")
+@login_required
+def v2_admin_reset_password(user_id: int):
+    if not current_user.is_admin:
+        return _v2_admin_forbidden()
+    if user_id == current_user.id:
+        return jsonify({"error": "You cannot reset your own password here"}), 400
+
+    data = request.get_json(silent=True) or {}
+    password = (data.get("password") or "").strip()
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
+
+    body, err = w_request(
+        "POST",
+        f"/api/users/{user_id}/reset-password",
+        json_body={"password": password},
+    )
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body or {"ok": True})
 
 
 # ==============================================================================

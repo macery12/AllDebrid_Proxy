@@ -155,16 +155,21 @@ export function CreateTaskPage() {
   };
 
   return (
-    <div>
-      <h1 className={styles.pageTitle}>New Download Task</h1>
-      <p className={styles.pageSubtitle}>
-        Submit a magnet link, direct URL, or upload a .torrent file.
-      </p>
+    <div className={styles.page}>
+      <section className={styles.actionsBar}>
+        <div className={styles.actionsLeft}>
+          <h1 className={styles.pageTitle}>Create Task</h1>
+          <span className={styles.pageSubtitle}>Magnet, URL, or torrent file</span>
+        </div>
+        <div className={styles.headerActions}>
+          <Link to="/" className="btn">Home</Link>
+        </div>
+      </section>
 
       <div className={styles.layout}>
         {/* ─── Main form ─── */}
-        <div>
-          <form className="card" onSubmit={submit} noValidate>
+        <div className={styles.mainPanel}>
+          <form onSubmit={submit} noValidate>
             <ErrorBanner message={error} onDismiss={() => setError(null)} className="mb-4" />
 
             <div className="field">
@@ -262,7 +267,7 @@ export function CreateTaskPage() {
             <div className="mt-5">
               <button
                 type="submit"
-                className="btn btn-primary btn-lg"
+                className={`btn ${styles.submitButton}`}
                 disabled={submitting}
                 style={{ width: '100%', justifyContent: 'center' }}
               >
@@ -274,7 +279,7 @@ export function CreateTaskPage() {
 
           {/* Results after multi-task submission */}
           {results.length > 0 && (
-            <div className={`card mt-5`}>
+            <div className={styles.resultsPanel}>
               <p className="card-title">Tasks Created</p>
               <div className={styles.resultList}>
                 {results.map((r) => (
@@ -293,7 +298,7 @@ export function CreateTaskPage() {
         </div>
 
         {/* ─── Sidebar: recent tasks ─── */}
-        <div className="card">
+        <div className={styles.sidePanel}>
           <p className="card-title">Recent Tasks</p>
           {recentLoading ? (
             <div className="flex gap-2 items-center muted small">

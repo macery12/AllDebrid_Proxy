@@ -39,7 +39,7 @@ async function request<T>(
   const response = await fetch(url.toString(), init);
 
   if (response.status === 401) {
-    window.location.href = '/login';
+    window.location.href = '/app/login';
     throw new APIError('Unauthorized', 401);
   }
 

@@ -21,6 +21,15 @@ export function TopBar() {
         AllDebrid Proxy
       </Link>
       <nav className={styles.nav}>
+        {user?.role === 'admin' && (
+          <>
+            <Link to="/admin" className={styles.navLink}>Admin</Link>
+            <Link to="/admin/users" className={styles.navLink}>Users</Link>
+          </>
+        )}
+        {(user?.role === 'admin' || user?.role === 'member') && (
+          <Link to="/" className={styles.navLink}>Tasks</Link>
+        )}
         <HealthBadge />
         {user && (
           <>

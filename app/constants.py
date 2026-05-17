@@ -83,6 +83,34 @@ class EventType:
     FILE_DONE = "file.done"
     FILE_FAILED = "file.failed"
     FILES_LISTED = "files.listed"
+    PROVIDER_PROGRESS = "provider.progress"
+
+
+# AllDebrid magnet processing status codes
+class AllDebridStatus:
+    IN_QUEUE = 0
+    DOWNLOADING = 1
+    COMPRESSING = 2
+    UPLOADING = 3
+    READY = 4
+
+    # All processing (non-error, non-ready) codes
+    PROCESSING_CODES = [0, 1, 2, 3]
+
+    # Error codes and their human-readable messages
+    ERROR_MESSAGES = {
+        5:  "Upload failed on AllDebrid",
+        6:  "Internal error during unpacking",
+        7:  "Not downloaded within 20 minutes",
+        8:  "File too large for AllDebrid",
+        9:  "Internal AllDebrid error",
+        10: "Download took more than 72 hours",
+        11: "Deleted from the hosting website",
+        12: "Processing failed",
+        13: "Processing failed",
+        14: "Error contacting tracker",
+        15: "File not available — no peers",
+    }
 
 
 # Limits and thresholds

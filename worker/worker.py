@@ -6,7 +6,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.models import Task, TaskFile, UserStats
 from app.utils import ensure_task_dirs, append_log, write_metadata
-from app.constants import TaskStatus, FileState, EventType, Limits, LogLevel, SourceType
+from app.constants import TaskStatus, FileState, EventType, Limits, LogLevel, SourceType, AllDebridStatus
 from app.logging_config import setup_logging, get_logger, log_task_event, log_worker_event, log_error
 from app.validation import validate_file_name
 from worker.scheduler import publish, can_start_task, count_active_and_queued
@@ -346,13 +346,77 @@ def resolve_task(session, task: Task, client):
         _log(task.id, LogLevel.INFO, "task_resolving_magnet")
 
         # Poll AllDebrid for files (up to ~20 minutes)
+        # Track last published provider status to avoid redundant SSE events
+        _last_provider_status_code = None
+
         for _ in range(Limits.MAX_RESOLVE_ATTEMPTS):
             try:
                 status = client.get_magnet_status(task.provider_ref)
                 if DEBUG:
                     _log(task.id, LogLevel.DEBUG, "ad_status_raw", payload=status.get("raw"))
 
+                status_code = status.get("statusCode")
+                status_text = status.get("status_text") or ""
+
+                # ── Immediate failure on AllDebrid-side error codes ──────────────
+                if status_code is not None and status_code in AllDebridStatus.ERROR_MESSAGES:
+                    error_msg = AllDebridStatus.ERROR_MESSAGES[status_code]
+                    task.status = TaskStatus.FAILED
+                    session.commit()
+                    publish(task.id, {
+                        "type": EventType.STATE,
+                        "status": TaskStatus.FAILED,
+                        "reason": f"alldebrid_error: {error_msg} (code {status_code})",
+                    })
+                    _log(task.id, LogLevel.ERROR, "ad_magnet_error_status",
+                         statusCode=status_code, message=error_msg)
+                    return
+
+                # ── Publish provider progress while AllDebrid is still working ───
+                if status_code is not None and status_code in AllDebridStatus.PROCESSING_CODES:
+                    progress_evt = {
+                        "type": EventType.PROVIDER_PROGRESS,
+                        "statusCode": status_code,
+                        "statusText": status_text,
+                        "filename": status.get("filename", ""),
+                        "totalSize": status.get("total_size", 0),
+                        "downloaded": status.get("downloaded", 0),
+                        "seeders": status.get("seeders", 0),
+                        "downloadSpeed": status.get("downloadSpeed", 0),
+                        "uploadSpeed": status.get("uploadSpeed", 0),
+                    }
+                    # Only re-publish when status code changes to avoid SSE noise
+                    if status_code != _last_provider_status_code:
+                        publish(task.id, progress_evt)
+                        _log(task.id, LogLevel.INFO, "ad_provider_progress",
+                             statusCode=status_code, statusText=status_text,
+                             downloaded=progress_evt["downloaded"],
+                             seeders=progress_evt["seeders"],
+                             speed=progress_evt["downloadSpeed"])
+                        _last_provider_status_code = status_code
+                    elif DEBUG:
+                        # Still log at DEBUG so progress numbers are visible in logs
+                        _log(task.id, LogLevel.DEBUG, "ad_provider_progress_update",
+                             statusCode=status_code, statusText=status_text,
+                             downloaded=progress_evt["downloaded"],
+                             seeders=progress_evt["seeders"],
+                             speed=progress_evt["downloadSpeed"])
+
                 files = status.get("files") or []
+
+                # ── v4.1: files live on a separate endpoint once ready ───────────
+                # When AllDebrid reports statusCode 4 (Ready) but the status
+                # response carries no files (expected in v4.1), fetch them via
+                # the dedicated /v4/magnet/files endpoint.
+                if not files and status_code == AllDebridStatus.READY:
+                    try:
+                        files = client.get_magnet_files(task.provider_ref)
+                        if files:
+                            _log(task.id, LogLevel.INFO, "ad_files_fetched_from_files_endpoint",
+                                 count=len(files))
+                    except Exception as fe:
+                        _log(task.id, LogLevel.WARNING, "ad_get_magnet_files_error", error=str(fe))
+
                 if files:
                     existing = {f.index: f for f in session.execute(
                         select(TaskFile).where(TaskFile.task_id == task.id)

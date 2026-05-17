@@ -160,29 +160,41 @@ class AllDebrid:
 
     def get_magnet_status(self, magnet_id: str) -> Dict[str, Any]:
         """
-        GET /magnet/status?id=<magnet_id>
-        Returns {"raw": <full payload>, "files": [{name,size,link?}, ...]}
-        Handles:
-          - data.magnets (dict or list)
-          - data.files / data.links (top level)
+        POST /v4.1/magnet/status?id=<magnet_id>
+        Returns a rich dict:
+          {
+            "raw":          <full API payload>,
+            "files":        [{name, size, link?}, ...],   # non-empty when statusCode == 4
+            "statusCode":   int | None,
+            "status_text":  str,   # e.g. "Downloading", "In Queue", "Ready"
+            "filename":     str,
+            "total_size":   int,   # bytes reported by AllDebrid
+            "downloaded":   int,   # bytes downloaded so far on AD side
+            "seeders":      int,
+            "downloadSpeed": int,  # bytes/s on AD side
+            "uploadSpeed":  int,
+          }
+        Handles data.magnets as either a dict or list.
         """
         data = self._get("/magnet/status", id=str(magnet_id))
         files_out: List[Dict[str, Any]] = []
 
         mags = data.get("magnets")
+        mag_obj: Optional[Dict[str, Any]] = None
 
-        # magnets can be a dict (common) or a list (older/other paths)
+        # magnets can be a dict (single-ID query) or a list
         if isinstance(mags, dict):
+            mag_obj = mags
             if isinstance(mags.get("files"), list):
                 files_out.extend(self._normalize_items(mags["files"]))
             if isinstance(mags.get("links"), list):
                 files_out.extend(self._normalize_items(mags["links"]))
         elif isinstance(mags, list) and mags:
-            m = mags[0]
-            if isinstance(m.get("files"), list):
-                files_out.extend(self._normalize_items(m["files"]))
-            if isinstance(m.get("links"), list):
-                files_out.extend(self._normalize_items(m["links"]))
+            mag_obj = mags[0]
+            if isinstance(mag_obj.get("files"), list):
+                files_out.extend(self._normalize_items(mag_obj["files"]))
+            if isinstance(mag_obj.get("links"), list):
+                files_out.extend(self._normalize_items(mag_obj["links"]))
 
         # Safety fallbacks: sometimes present at top level
         if not files_out and isinstance(data.get("files"), list):
@@ -190,7 +202,48 @@ class AllDebrid:
         if not files_out and isinstance(data.get("links"), list):
             files_out.extend(self._normalize_items(data["links"]))
 
-        return {"raw": data, "files": files_out}
+        result: Dict[str, Any] = {"raw": data, "files": files_out}
+
+        # Expose processing fields so callers can show real-time AllDebrid state
+        if mag_obj:
+            result["statusCode"]   = mag_obj.get("statusCode")
+            result["status_text"]  = mag_obj.get("status") or ""
+            result["filename"]     = mag_obj.get("filename") or ""
+            result["total_size"]   = int(mag_obj.get("size") or 0)
+            result["downloaded"]   = int(mag_obj.get("downloaded") or 0)
+            result["seeders"]      = int(mag_obj.get("seeders") or 0)
+            result["downloadSpeed"] = int(mag_obj.get("downloadSpeed") or 0)
+            result["uploadSpeed"]  = int(mag_obj.get("uploadSpeed") or 0)
+
+        return result
+
+    def get_magnet_files(self, magnet_id: str) -> List[Dict[str, Any]]:
+        """
+        POST https://api.alldebrid.com/v4/magnet/files
+        Fetches the file tree for a *ready* magnet (statusCode 4).
+        In v4.1 the files were removed from the status response and live here instead.
+        Returns a normalised list of {name, size, link?}.
+        """
+        # This endpoint lives under /v4/, not /v4.1/
+        v4_base = self.base.replace("/v4.1", "/v4")
+        if "/v4.1" not in self.base:
+            # Already v4 or custom base — just append to root
+            v4_base = "https://api.alldebrid.com/v4"
+        url = f"{v4_base}/magnet/files"
+        payload = self._params({"id[0]": str(magnet_id)})
+        r = requests.post(url, data=payload, timeout=self._timeout)
+        r.raise_for_status()
+        resp = r.json()
+        if resp.get("status") != "success":
+            raise ADHTTPError(f"AllDebrid magnet/files error: {resp}")
+        magnets = (resp.get("data") or {}).get("magnets") or []
+        if isinstance(magnets, list):
+            for mag in magnets:
+                if str(mag.get("id")) == str(magnet_id):
+                    files = mag.get("files") or []
+                    if files:
+                        return self._normalize_items(files)
+        return []
 
     def download_link(self, magnet_id: str, file_index: int) -> str:
         """

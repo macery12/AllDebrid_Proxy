@@ -3,14 +3,22 @@ import { api } from '../api/client';
 
 type Health = 'loading' | 'ok' | 'down';
 
+type HealthResponse = {
+  ok?: boolean;
+  status?: string;
+};
+
 export function HealthBadge() {
   const [health, setHealth] = useState<Health>('loading');
 
   useEffect(() => {
     const check = () => {
       api
-        .get<{ status: string }>('/health')
-        .then((d) => setHealth(d.status === 'ok' ? 'ok' : 'down'))
+        .get<HealthResponse>('/health')
+        .then((d) => {
+          const healthy = d.ok === true || d.status === 'ok' || d.status === 'healthy';
+          setHealth(healthy ? 'ok' : 'down');
+        })
         .catch(() => setHealth('down'));
     };
     check();

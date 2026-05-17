@@ -114,9 +114,7 @@ export function FilesPage() {
                           {entry.is_video && taskId && (
                             <a
                               className="btn btn-good btn-sm"
-                              href={`/d/${taskId}/play/${entry.rel}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              href={`/app/tasks/${taskId}/player?file=${encodeURIComponent(entry.rel)}`}
                             >
                               ▶ Play
                             </a>

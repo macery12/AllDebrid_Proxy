@@ -38,6 +38,17 @@ export interface StorageInfo {
   willStartWhenFreeBytesAtLeast: number | null;
 }
 
+export interface ProviderProgress {
+  statusCode: number;
+  statusText: string;
+  filename: string;
+  totalSize: number;
+  downloaded: number;
+  seeders: number;
+  downloadSpeed: number;
+  uploadSpeed: number;
+}
+
 export interface Task {
   taskId: string;
   mode: TaskMode;
@@ -46,6 +57,8 @@ export interface Task {
   infohash: string;
   files: TaskFile[];
   storage: StorageInfo | null;
+  /** Transient: populated from provider.progress SSE events while resolving */
+  providerProgress?: ProviderProgress | null;
 }
 
 export interface TaskSummary {
@@ -66,6 +79,60 @@ export interface User {
   role: UserRole;
 }
 
+export interface UserStats {
+  total_magnets_processed: number;
+  total_downloads: number;
+  total_bytes_downloaded: number;
+}
+
+export interface AdminUser extends User {
+  created_at?: string | null;
+  last_login?: string | null;
+  stats?: UserStats | null;
+}
+
+export interface AdminStats {
+  tasks: {
+    total: number;
+    queued: number;
+    resolving: number;
+    downloading: number;
+    waiting_selection: number;
+    active: number;
+    completed: number;
+    failed: number;
+    canceled: number;
+  };
+  files: {
+    total: number;
+    downloading: number;
+    completed: number;
+    failed: number;
+  };
+  downloads: {
+    active_count: number;
+    total_bytes: number;
+    downloaded_bytes: number;
+    progress_pct: number;
+  };
+  storage: {
+    free_bytes: number;
+    reserved_bytes: number;
+    low_space_floor_bytes: number;
+  };
+  users: {
+    total_users: number;
+    aggregate_downloads: number;
+    aggregate_bytes_downloaded: number;
+  };
+  queue: {
+    length: number;
+  };
+  health: {
+    worker_healthy: boolean;
+  };
+}
+
 export interface FileEntry {
   rel: string;
   size: number;
@@ -81,7 +148,8 @@ export type SSEEventType =
   | 'file.progress'
   | 'file.done'
   | 'file.failed'
-  | 'files.listed';
+  | 'files.listed'
+  | 'provider.progress';
 
 export interface SSEEvent {
   type: SSEEventType | string;
@@ -96,5 +164,14 @@ export interface SSEEvent {
   progressPct?: number;
   name?: string;
   size?: number;
+  // provider.progress fields
+  statusCode?: number;
+  statusText?: string;
+  filename?: string;
+  totalSize?: number;
+  downloaded?: number;
+  seeders?: number;
+  downloadSpeed?: number;
+  uploadSpeed?: number;
   [key: string]: unknown;
 }
