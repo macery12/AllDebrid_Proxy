@@ -217,4 +217,4 @@ frontend/static/dist/
 # TypeScript build info
 *.tsbuildinfo
 Scraper/auth.json 
-Scraper/downloads.json 
+Scraper/downloaded.json 
