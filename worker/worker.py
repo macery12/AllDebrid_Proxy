@@ -1,5 +1,5 @@
 
-import os, time, uuid, threading, logging, traceback, urllib.error, json, shutil
+import os, time, uuid, threading, logging, traceback, urllib.error, json, shutil, random, random
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from app.config import settings
@@ -717,11 +717,242 @@ def _start_cleanup_once():
     _log("", LogLevel.INFO, "retention_cleanup_thread_started")
 
 
+# -------------------- BlueCog background worker --------------------
+# Handles RSS refresh (scheduled every 6 h and on manual Redis signal)
+# and single-URL torrent fetches queued by the API.
+
+BLUECOG_RSS_INTERVAL_SEC = 6 * 60 * 60   # 6 hours
+BLUECOG_LOOP_POLL_SEC    = 30             # poll Redis every 30 s
+
+_bluecog_started = False
+_bluecog_lock    = threading.Lock()
+_chdir_lock   = threading.Lock()        # serialise os.chdir() calls
+
+
+def _bluecog_scraper_dir() -> str:
+    return getattr(settings, "BLUECOG_SCRAPER_DIR", "/app/Scraper")
+
+
+def _bluecog_load_scraper():
+    """Add the Scraper directory to sys.path and import fetch/rss modules."""
+    import importlib
+    import sys
+    scraper_dir = _bluecog_scraper_dir()
+    if scraper_dir not in sys.path:
+        sys.path.insert(0, scraper_dir)
+    # Force a fresh import in case the modules were not yet loaded
+    fetch_mod = importlib.import_module("fetch")
+    rss_mod   = importlib.import_module("rss")
+    return fetch_mod, rss_mod
+
+
+def _bluecog_run_rss():
+    """Run the full RSS refresh using the Scraper/rss.py logic.
+
+    Changes the process working directory to the scraper dir (under a lock)
+    so that rss.py's relative-path assumptions (auth.json, downloads/) resolve
+    correctly, then restores it afterwards.
+    """
+    import redis as _redis
+    r2 = _redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    downloaded = 0
+    errors: list = []
+    progress: list = []
+    start_ts = datetime.now(timezone.utc).isoformat()
+
+    def _push(status_str: str):
+        r2.set("bluecog:rss:status", json.dumps({
+            "status":   status_str,
+            "lastRun":  start_ts,
+            "count":    downloaded,
+            "errors":   errors,
+            "progress": progress,
+        }))
+
+    _push("running")
+
+    try:
+        with _chdir_lock:
+            old_cwd = os.getcwd()
+            os.chdir(_bluecog_scraper_dir())
+            try:
+                fetch_mod, rss_mod = _bluecog_load_scraper()
+
+                items   = rss_mod.fetch_rss()
+                log     = rss_mod.load_log()
+                cookies = fetch_mod.load_cookies()
+                total   = len(items)
+
+                for idx, item in enumerate(items):
+                    existing     = log.get(item["link"])
+                    old_filename = existing["filename"] if existing else None
+                    title        = item["title"]
+
+                    # Append a live "fetching" entry; mutate it in-place when done
+                    entry = {"type": "item", "i": idx + 1, "n": total,
+                             "title": title, "step": "fetching"}
+                    progress.append(entry)
+                    _push("running")
+
+                    try:
+                        session, headers = fetch_mod.build_session(item["link"], cookies)
+                        filename, updated, error = rss_mod.download_torrent(
+                            item["link"], session, headers, old_filename
+                        )
+                        if error:
+                            entry.update({"step": "failed", "error": error})
+                            errors.append({"title": title, "error": error})
+                        elif updated is False:
+                            entry.update({"step": "skipped", "filename": filename})
+                        else:
+                            downloaded += 1
+                            entry.update({"step": "done", "filename": filename})
+                            log[item["link"]] = {
+                                "title":         title,
+                                "filename":      filename,
+                                "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                            rss_mod.save_log(log)
+                    except Exception as exc:
+                        entry.update({"step": "failed", "error": str(exc)})
+                        errors.append({"title": title, "error": str(exc)})
+
+                    _push("running")
+
+                    # Rate-limit cooldown between items.
+                    # Skipped items (file unchanged) didn't hit the uploads server
+                    # heavily, so a short fixed wait is enough.
+                    if idx < total - 1:
+                        wait_secs = 15 if entry.get("step") == "skipped" else random.randint(30, 60)
+                        wait_entry = {"type": "waiting", "seconds": wait_secs}
+                        progress.append(wait_entry)
+                        _push("running")
+                        time.sleep(wait_secs)
+                        progress.remove(wait_entry)
+
+            finally:
+                os.chdir(old_cwd)
+
+        _push("done")
+        _log("", LogLevel.INFO, "bluecog_rss_done", downloaded=downloaded, error_count=len(errors))
+
+    except Exception as exc:
+        _log("", LogLevel.ERROR, "bluecog_rss_error", err=str(exc), tb=traceback.format_exc())
+        r2.set("bluecog:rss:status", json.dumps({
+            "status":   "error",
+            "lastRun":  start_ts,
+            "count":    0,
+            "errors":   [{"title": "", "error": str(exc)}],
+            "progress": progress,
+        }))
+
+
+def _bluecog_run_fetch(request_id: str, url: str):
+    """Download a single torrent from an BlueCog source URL via Playwright.
+
+    Stores the result (or error) in Redis so the API endpoint can poll for it.
+    """
+    import redis as _redis
+    r2      = _redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    res_key = f"bluecog:fetch:res:{request_id}"
+
+    try:
+        with _chdir_lock:
+            old_cwd = os.getcwd()
+            os.chdir(_bluecog_scraper_dir())
+            try:
+                fetch_mod, _ = _bluecog_load_scraper()
+                filename, updated, error, page_title = fetch_mod.fetch_torrent(url)
+            finally:
+                os.chdir(old_cwd)
+
+        if error:
+            r2.setex(res_key, 300, json.dumps({"error": error}))
+        else:
+            # Upsert entry in downloaded.json so the RSS loop can detect updates
+            # for manually-imported URLs just like it does for RSS-discovered ones.
+            try:
+                log_path = os.path.join(_bluecog_scraper_dir(), "downloaded.json")
+                try:
+                    with open(log_path) as _f:
+                        _log_data = json.load(_f)
+                except (OSError, ValueError):
+                    _log_data = {}
+                _log_data[url] = {
+                    "title": page_title or filename.removesuffix(".torrent"),
+                    "filename": filename,
+                    "downloaded_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                }
+                with open(log_path, "w") as _f:
+                    json.dump(_log_data, _f, indent=2)
+            except Exception as _exc:
+                _log("", LogLevel.WARNING, "bluecog_log_write_failed", err=str(_exc))
+
+            r2.setex(res_key, 300, json.dumps({"filename": filename, "updated": updated}))
+
+    except Exception as exc:
+        _log("", LogLevel.ERROR, "bluecog_fetch_error", url=url, err=str(exc), tb=traceback.format_exc())
+        r2.setex(res_key, 300, json.dumps({"error": str(exc)}))
+
+
+def _bluecog_worker_loop():
+    """Background thread: handles BlueCog RSS refresh and URL fetch requests."""
+    import redis as _redis
+    r2 = _redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    last_rss_run = 0.0   # start clock at epoch so the first scheduled run waits 6 h
+
+    while True:
+        try:
+            now = time.time()
+
+            # 1. Manual RSS refresh requested via Redis
+            if r2.getdel("bluecog:rss:refresh_requested"):
+                _log("", LogLevel.INFO, "bluecog_rss_triggered", source="manual")
+                _bluecog_run_rss()
+                last_rss_run = time.time()
+
+            # 2. Scheduled RSS refresh every 6 hours
+            elif now - last_rss_run >= BLUECOG_RSS_INTERVAL_SEC:
+                _log("", LogLevel.INFO, "bluecog_rss_triggered", source="scheduled")
+                _bluecog_run_rss()
+                last_rss_run = time.time()
+
+            # 3. Drain the URL fetch queue
+            while True:
+                item_raw = r2.lpop("bluecog:fetch:queue")
+                if not item_raw:
+                    break
+                try:
+                    item = json.loads(item_raw)
+                    _bluecog_run_fetch(item["id"], item["url"])
+                except Exception as exc:
+                    _log("", LogLevel.ERROR, "bluecog_fetch_queue_error", err=str(exc))
+
+        except Exception as exc:
+            _log("", LogLevel.ERROR, "bluecog_worker_loop_error", err=str(exc), tb=traceback.format_exc())
+
+        time.sleep(BLUECOG_LOOP_POLL_SEC)
+
+
+def _start_bluecog_once():
+    """Start the BlueCog background worker thread (idempotent)."""
+    global _bluecog_started
+    with _bluecog_lock:
+        if _bluecog_started:
+            return
+        _bluecog_started = True
+    threading.Thread(target=_bluecog_worker_loop, daemon=True).start()
+    _log("", LogLevel.INFO, "bluecog_worker_thread_started")
+
+
 def worker_loop():
     # Main worker loop: processes queued tasks and starts downloads
     # Runs continuously, polling database for work
     _start_monitor_once()
     _start_cleanup_once()
+    _start_bluecog_once()
     client = get_client()
 
     # One-time aria2 RPC version check

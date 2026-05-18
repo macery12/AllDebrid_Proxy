@@ -6,15 +6,14 @@ FROM node:20-alpine AS vite-builder
 WORKDIR /build
 
 # Install deps first (better layer caching)
-COPY frontend-v2/package.json frontend-v2/package-lock.json ./frontend-v2/
-RUN cd frontend-v2 && npm ci
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci
 
 # Copy source and build
-# The vite.config outDir is ../frontend/static/dist (relative to frontend-v2/)
-COPY frontend-v2 ./frontend-v2/
-RUN mkdir -p ./frontend/static/dist \
-    && cd frontend-v2 \
-    && npm run build
+# The vite.config outDir is ./static/dist (relative to frontend/)
+COPY frontend/index.html frontend/tsconfig*.json frontend/vite.config.ts ./frontend/
+COPY frontend/src ./frontend/src
+RUN cd frontend && npm run build
 
 # =============================================================================
 # Stage 2 — Flask frontend + built SPA
@@ -43,9 +42,8 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
-# Copy frontend Python app + templates
+# Copy frontend Python app (V2 SPA — templates removed)
 COPY frontend/app.py ./frontend/app.py
-COPY frontend/templates ./frontend/templates
 
 # Copy built Vite SPA from stage 1
 COPY --from=vite-builder /build/frontend/static/dist ./frontend/static/dist

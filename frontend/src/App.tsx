@@ -9,6 +9,7 @@ import { PlayerPage } from './pages/PlayerPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AccessDeniedPage } from './pages/AccessDeniedPage';
+import { BlueCogPage } from './pages/BlueCogPage';
 import type { ReactNode } from 'react';
 import type { UserRole } from './types';
 
@@ -84,6 +85,17 @@ function AppRoutes() {
           <ProtectedRoute roles={['admin', 'member']}>
             <AppShell>
               <PlayerPage />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/bluecog"
+        element={
+          <ProtectedRoute roles={['admin', 'member']}>
+            <AppShell>
+              <BlueCogPage />
             </AppShell>
           </ProtectedRoute>
         }

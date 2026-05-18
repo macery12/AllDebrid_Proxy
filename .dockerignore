@@ -33,4 +33,4 @@ test_*.py
 .dockerignore
 
 # Node — regenerated inside the Docker build
-frontend-v2/node_modules/
+frontend/node_modules/

@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Optional Aria2 RPC settings
     ARIA2_RPC_URL: Optional[str] = Field(default=None)
     ARIA2_RPC_SECRET: Optional[str] = Field(default=None)
+
+    # BlueCog scraper directory (contains auth.json, downloaded.json, downloads/)
+    BLUECOG_SCRAPER_DIR: str = Field(default="/app/Scraper")
+    # BlueCog source base URL (required — set in .env)
+    BLUECOGURL: str = Field()
     
     @field_validator("WORKER_API_KEY")
     @classmethod

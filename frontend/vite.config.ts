@@ -26,8 +26,8 @@ export default defineConfig({
     },
   },
   build: {
-    // Output to frontend/static/dist so Flask can serve the built app
-    outDir: '../frontend/static/dist',
+    // Output to static/dist so Flask can serve the built app
+    outDir: './static/dist',
     emptyOutDir: true,
   },
 });

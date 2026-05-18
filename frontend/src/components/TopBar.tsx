@@ -28,7 +28,10 @@ export function TopBar() {
           </>
         )}
         {(user?.role === 'admin' || user?.role === 'member') && (
-          <Link to="/" className={styles.navLink}>Tasks</Link>
+          <>
+            <Link to="/" className={styles.navLink}>Tasks</Link>
+            <Link to="/bluecog" className={styles.navLink}>BlueCog</Link>
+          </>
         )}
         <HealthBadge />
         {user && (

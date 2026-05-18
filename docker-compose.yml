@@ -2,6 +2,12 @@
 x-storage-vol: &storage-vol
   - ${STORAGE_PATH:-/srv/storage}:/srv/storage
 
+# Combined volumes for services that also need the Scraper folder.
+# Override SCRAPER_PATH in .env to point to your Scraper directory on the host.
+x-main-vols: &main-vols
+  - ${STORAGE_PATH:-/srv/storage}:/srv/storage
+  - ${SCRAPER_PATH:-./Scraper}:/app/Scraper
+
 services:
   db:
     image: postgres:15
@@ -53,6 +59,7 @@ services:
     container_name: proxy_api
     environment:
       - PYTHONPATH=/app
+      - BLUECOG_SCRAPER_DIR=/app/Scraper
     env_file:
       - .env
     depends_on:
@@ -60,7 +67,7 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_started
-    volumes: *storage-vol
+    volumes: *main-vols
     ports:
       - "${API_PORT:-9731}:8080"
     networks:
@@ -82,6 +89,7 @@ services:
     container_name: proxy_worker
     environment:
       - PYTHONPATH=/app
+      - BLUECOG_SCRAPER_DIR=/app/Scraper
     env_file:
       - .env
     depends_on:
@@ -89,7 +97,7 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_started
-    volumes: *storage-vol
+    volumes: *main-vols
     networks:
       - backend
     restart: unless-stopped

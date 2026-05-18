@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.api import router as api_router, r
+from app.bluecog import router as bluecog_router
 from app.config import settings
 from app.ws_manager import ws_manager
 from app.exceptions import AppException, ValidationError, AuthenticationError, RateLimitError
@@ -127,3 +128,4 @@ def health():
     return JSONResponse({"ok": ok})
 
 app.include_router(api_router)
+app.include_router(bluecog_router)
