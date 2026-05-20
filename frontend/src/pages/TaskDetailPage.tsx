@@ -97,7 +97,7 @@ export function TaskDetailPage() {
     if (!taskId) return;
     setDeleting(true);
     try {
-      await tasksApi.delete(taskId, true /* purge files */);
+      await tasksApi.delete(taskId, true);
       navigate('/');
     } catch (e) {
       setActionError(e instanceof APIError ? e.message : 'Delete failed');

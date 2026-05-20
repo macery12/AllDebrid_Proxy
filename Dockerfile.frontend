@@ -5,14 +5,13 @@ FROM node:20-alpine AS vite-builder
 
 WORKDIR /build
 
-# Install deps first (better layer caching)
-COPY frontend/package.json frontend/package-lock.json ./frontend/
+# Copy entire frontend app
+COPY frontend ./frontend
+
+# Install dependencies
 RUN cd frontend && npm ci
 
-# Copy source and build
-# The vite.config outDir is ./static/dist (relative to frontend/)
-COPY frontend/index.html frontend/tsconfig*.json frontend/vite.config.ts ./frontend/
-COPY frontend/src ./frontend/src
+# Build Vite app
 RUN cd frontend && npm run build
 
 # =============================================================================

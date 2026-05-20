@@ -4,18 +4,25 @@ import time
 import random
 import requests
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 from datetime import datetime
 from fetch import get_uploads_url, build_session, load_cookies
 
-_bluecog_url = os.environ.get("BLUECOGURL")
-if not _bluecog_url:
-    raise SystemExit("BLUECOGURL environment variable is required but not set.")
-RSS_URL = _bluecog_url.rstrip("/") + "/rss.xml"
-DOWNLOAD_DIR = "./downloads"
-LOG_FILE = "./downloaded.json"
+# Two separate RSS feed URLs — both are optional; a missing URL skips that feed.
+RSS_UPDATES_URL = os.environ.get("RSS_UPDATES_URL", "").strip()
+RSS_RELEASES_URL = os.environ.get("RSS_RELEASES_URL", "").strip()
+
+if not RSS_UPDATES_URL and not RSS_RELEASES_URL:
+    raise SystemExit(
+        "At least one of RSS_UPDATES_URL or RSS_RELEASES_URL must be set."
+    )
+
+# Runtime data directory — same convention as fetch.py.
+_DATA_DIR = os.environ.get("SCRAPER_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+DOWNLOAD_DIR = os.path.join(_DATA_DIR, "downloads")
+LOG_FILE = os.path.join(_DATA_DIR, "downloaded.json")
 DELAY_MIN = 30  # minimum seconds between Playwright sessions
 DELAY_MAX = 60  # maximum seconds between Playwright sessions
+
 
 def load_log():
     if os.path.exists(LOG_FILE):
@@ -23,22 +30,33 @@ def load_log():
             return json.load(f)
     return {}
 
+
 def save_log(log):
     with open(LOG_FILE, "w") as f:
         json.dump(log, f, indent=2)
 
-def fetch_rss():
-    print(f"Fetching RSS: {RSS_URL}")
-    r = requests.get(RSS_URL)
+
+def fetch_rss(url):
+    print(f"Fetching RSS: {url}")
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
     soup = BeautifulSoup(r.content, "lxml-xml")
     items = []
     for item in soup.find_all("item"):
+        link_tag = item.find("link")
+        link = link_tag.text.strip() if link_tag and link_tag.text.strip() else ""
+        # lxml-xml sometimes parses <link> as a NavigableString with no text;
+        # fall back to the guid if needed.
+        if not link:
+            guid_tag = item.find("guid")
+            link = guid_tag.text.strip() if guid_tag else ""
         items.append({
-            "title": item.find("title").text.strip(),
-            "link": item.find("link").text.strip(),
+            "title": item.find("title").text.strip() if item.find("title") else "",
+            "link": link,
             "date": item.find("pubDate").text.strip() if item.find("pubDate") else "",
         })
-    return items
+    return [i for i in items if i["link"]]  # drop items with no link
+
 
 def download_torrent(page_url, session, headers, old_filename=None):
     uploads_url, _ = get_uploads_url(page_url)
@@ -86,6 +104,7 @@ def download_torrent(page_url, session, headers, old_filename=None):
 
     return filename, True, None
 
+
 def wait_with_countdown(seconds):
     print(f"  Waiting {seconds}s before next item...")
     for remaining in range(seconds, 0, -1):
@@ -93,15 +112,20 @@ def wait_with_countdown(seconds):
         time.sleep(1)
     print()
 
-def main():
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    log = load_log()
-    cookies = load_cookies()
 
-    items = fetch_rss()
-    print(f"\nFound {len(items)} items in RSS feed\n")
+def run_feed(feed_url, feed_label, log, cookies):
+    """Fetch one RSS feed and process every item.
 
-    # tag each item as new, needs update check, etc
+    Both feeds use the same logic:
+    - Item not in log  → always download (create).
+    - Item in log, torrent filename changed → download new, remove old (update).
+    - Item in log, torrent filename unchanged → skip.
+
+    Returns an updated copy of *log* and a results summary dict.
+    """
+    items = fetch_rss(feed_url)
+    print(f"\nFound {len(items)} items in {feed_label} feed\n")
+
     all_items = []
     for item in items:
         existing = log.get(item["link"])
@@ -111,7 +135,7 @@ def main():
 
     new_count = sum(1 for i in all_items if i["is_new"])
     check_count = sum(1 for i in all_items if not i["is_new"])
-    print(f"{new_count} new, {check_count} checking for updates\n")
+    print(f"  {new_count} new, {check_count} checking for updates\n")
 
     results = {"downloaded": [], "updated": [], "skipped": [], "failed": []}
 
@@ -146,19 +170,53 @@ def main():
         if i < len(all_items):
             wait_with_countdown(random.randint(DELAY_MIN, DELAY_MAX))
 
-    print("=" * 40)
-    print(f"Done. {len(results['downloaded'])} new, {len(results['updated'])} updated, "
-          f"{len(results['skipped'])} unchanged, {len(results['failed'])} failed.")
+    return log, results
 
+
+def print_summary(label, results):
+    print("=" * 40)
+    print(
+        f"[{label}] Done. "
+        f"{len(results['downloaded'])} new, "
+        f"{len(results['updated'])} updated, "
+        f"{len(results['skipped'])} unchanged, "
+        f"{len(results['failed'])} failed."
+    )
     if results["updated"]:
         print("\nUpdated:")
         for t in results["updated"]:
             print(f"  ↑ {t}")
-
     if results["failed"]:
         print("\nFailed:")
         for f in results["failed"]:
             print(f"  ✗ {f['title']}: {f['error']}")
+
+
+def main():
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    log = load_log()
+    cookies = load_cookies()
+
+    # --- Updates feed first (never run simultaneously with releases) ---
+    if RSS_UPDATES_URL:
+        print("\n" + "=" * 40)
+        print("PHASE 1: UPDATES FEED")
+        print("=" * 40)
+        log, results = run_feed(RSS_UPDATES_URL, "updates", log, cookies)
+        print_summary("UPDATES", results)
+    else:
+        print("RSS_UPDATES_URL not set — skipping updates feed.")
+
+    # --- Releases feed second ---
+    if RSS_RELEASES_URL:
+        print("\n" + "=" * 40)
+        print("PHASE 2: RELEASES FEED")
+        print("=" * 40)
+        log, results = run_feed(RSS_RELEASES_URL, "releases", log, cookies)
+        print_summary("RELEASES", results)
+    else:
+        print("RSS_RELEASES_URL not set — skipping releases feed.")
+
 
 if __name__ == "__main__":
     main()

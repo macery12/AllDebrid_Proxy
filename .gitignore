@@ -216,5 +216,14 @@ frontend/static/dist/
 
 # TypeScript build info
 *.tsbuildinfo
-Scraper/auth.json 
-Scraper/downloaded.json 
+
+# Scraper runtime data — sensitive files, never commit these.
+# Place auth.json, downloaded.json, and downloads/ inside scraper_data/
+# (or wherever SCRAPER_DATA_PATH points) which is bind-mounted into Docker.
+scraper_data/*
+!scraper_data/.gitkeep
+
+# Legacy locations — kept as a safety net in case old paths are ever used again
+Scraper/auth.json
+Scraper/downloaded.json
+Scraper/downloads/

@@ -4,7 +4,7 @@ import { tasksApi } from '../api/tasks';
 import { APIError } from '../api/client';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { EmptyState } from '../components/EmptyState';
-import { formatBytes } from '../lib/utils';
+import { encodePathSegments, formatBytes } from '../lib/utils';
 import type { FileEntry } from '../types';
 import styles from './PlayerPage.module.css';
 
@@ -97,8 +97,9 @@ export function PlayerPage() {
     return <EmptyState message="No file selected for playback." />;
   }
 
-  const streamUrl = taskId ? `/d/${taskId}/stream/${relpath}` : '';
-  const downloadUrl = taskId ? `/d/${taskId}/raw/${relpath}` : '';
+  const encodedRelpath = encodePathSegments(relpath);
+  const streamUrl = taskId ? `/d/${taskId}/stream/${encodedRelpath}` : '';
+  const downloadUrl = taskId ? `/d/${taskId}/raw/${encodedRelpath}` : '';
 
   return (
     <div className={styles.page}>

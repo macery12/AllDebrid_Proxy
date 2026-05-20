@@ -8,6 +8,8 @@ import styles from './BlueCogPage.module.css';
 
 const RSS_POLL_MS = 4_000;   // poll RSS status while running
 
+type CacheState = 'idle' | 'pending' | 'ok' | 'error';
+
 function humanBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -27,10 +29,40 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+type EnrichedEvent =
+  | RSSProgressEvent
+  | { type: 'feed_header'; label: string };
+
+function enrichEvents(events: RSSProgressEvent[]): EnrichedEvent[] {
+  const result: EnrichedEvent[] = [];
+  let currentFeed: string | undefined;
+  for (const ev of events) {
+    if (ev.type === 'item' && ev.feed && ev.feed !== currentFeed) {
+      currentFeed = ev.feed;
+      result.push({ type: 'feed_header', label: ev.feed });
+    }
+    result.push(ev);
+  }
+  return result;
+}
+
+const FEED_LABELS: Record<string, string> = {
+  updates:  '🔄 Updates Feed',
+  releases: '🆕 Releases Feed',
+};
+
 function RSSProgressLog({ events }: { events: RSSProgressEvent[] }) {
+  const enriched = enrichEvents(events);
   return (
     <div className={styles.rssLog}>
-      {events.map((ev, i) => {
+      {enriched.map((ev, i) => {
+        if (ev.type === 'feed_header') {
+          return (
+            <div key={`hdr-${i}`} className={styles.rssFeedHeader}>
+              {FEED_LABELS[ev.label] ?? ev.label}
+            </div>
+          );
+        }
         if (ev.type === 'waiting') {
           return (
             <div key={i} className={styles.rssLogRow}>
@@ -44,16 +76,16 @@ function RSSProgressLog({ events }: { events: RSSProgressEvent[] }) {
           ev.step === 'done'     ? '✓' :
           ev.step === 'failed'   ? '✗' : '—';
         const iconStyle =
-          ev.step === 'done'   ? { color: '#4caf7d' } :
-          ev.step === 'failed' ? { color: '#e05c5c' } :
-          ev.step === 'fetching' ? { color: '#ffc107' } : {};
+          ev.step === 'done'    ? { color: '#4caf7d' } :
+          ev.step === 'failed'  ? { color: '#e05c5c' } :
+          ev.step === 'fetching'? { color: '#ffc107' } : {};
         return (
           <div key={i} className={styles.rssLogRow}>
             <span className={styles.rssLogIcon} style={iconStyle}>{icon}</span>
             <span className={styles.rssLogCounter}>[{ev.i}/{ev.n}]</span>
             <span className={styles.rssLogTitle}>{ev.title}</span>
             {ev.filename && <span className={styles.rssLogFile}>→ {ev.filename}</span>}
-            {ev.error   && <span className={styles.rssLogErr}>→ {ev.error}</span>}
+            {ev.error    && <span className={styles.rssLogErr}>→ {ev.error}</span>}
           </div>
         );
       })}
@@ -77,6 +109,10 @@ export function BlueCogPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitResults, setSubmitResults] = useState<SubmitResult[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // ── Cache-only state (per torrent) ──────────────────────────────────────────
+  const [cacheMap, setCacheMap] = useState<Record<string, CacheState>>({});
+  const [cacheErrMap, setCacheErrMap] = useState<Record<string, string>>({});
 
   // ── Manual URL fetch state ──────────────────────────────────────────────────
   const [fetchUrl, setFetchUrl] = useState('');
@@ -138,20 +174,27 @@ export function BlueCogPage() {
     loadTorrents(val || undefined);
   };
 
-  // ── Selection ───────────────────────────────────────────────────────────────
+  // ── Selection (max 3 at a time) ─────────────────────────────────────────────
+  const MAX_SELECTION = 3;
+
   const toggleOne = (filename: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(filename) ? next.delete(filename) : next.add(filename);
+      if (next.has(filename)) {
+        next.delete(filename);
+      } else if (next.size < MAX_SELECTION) {
+        next.add(filename);
+      }
       return next;
     });
   };
 
   const toggleAll = () => {
-    if (selected.size === torrents.length) {
+    if (selected.size > 0) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(torrents.map((t) => t.filename)));
+      // Select up to MAX_SELECTION from the visible list
+      setSelected(new Set(torrents.slice(0, MAX_SELECTION).map((t) => t.filename)));
     }
   };
 
@@ -180,6 +223,22 @@ export function BlueCogPage() {
       setSubmitError(e instanceof APIError ? e.message : 'Submission failed');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ── Cache only ──────────────────────────────────────────────────────────────
+  const handleCache = async (filename: string) => {
+    setCacheMap((prev) => ({ ...prev, [filename]: 'pending' }));
+    setCacheErrMap((prev) => { const n = { ...prev }; delete n[filename]; return n; });
+    try {
+      await bluecogApi.cacheOne(filename);
+      setCacheMap((prev) => ({ ...prev, [filename]: 'ok' }));
+    } catch (e) {
+      setCacheMap((prev) => ({ ...prev, [filename]: 'error' }));
+      setCacheErrMap((prev) => ({
+        ...prev,
+        [filename]: e instanceof APIError ? e.message : 'Cache failed',
+      }));
     }
   };
 
@@ -219,8 +278,10 @@ export function BlueCogPage() {
   };
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const allSelected = torrents.length > 0 && selected.size === torrents.length;
-  const rssRunning  = rssStatus?.status === 'running';
+  const atLimit      = selected.size >= MAX_SELECTION;
+  // "all" means all visible torrents that could be selected are selected (capped at MAX)
+  const allSelected  = torrents.length > 0 && selected.size === Math.min(torrents.length, MAX_SELECTION);
+  const rssRunning   = rssStatus?.status === 'running';
 
   return (
     <div className={styles.page}>
@@ -319,16 +380,19 @@ export function BlueCogPage() {
                           type="checkbox"
                           checked={allSelected}
                           onChange={toggleAll}
-                          aria-label="Select all"
+                          aria-label="Select up to 3"
                         />
                       </th>
                       <th>Title</th>
                       <th style={{ width: 90 }}>Size</th>
                       <th style={{ width: 130 }}>Downloaded</th>
+                      <th style={{ width: 90 }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {torrents.map((t) => (
+                    {torrents.map((t) => {
+                      const cs = cacheMap[t.filename] ?? 'idle';
+                      return (
                       <tr
                         key={t.filename}
                         className={selected.has(t.filename) ? styles.rowSelected : ''}
@@ -340,6 +404,7 @@ export function BlueCogPage() {
                             type="checkbox"
                             checked={selected.has(t.filename)}
                             onChange={() => toggleOne(t.filename)}
+                            disabled={atLimit && !selected.has(t.filename)}
                           />
                         </td>
                         <td>
@@ -347,11 +412,25 @@ export function BlueCogPage() {
                           {t.title !== t.filename && (
                             <span className={styles.torrentFilename}>{t.filename}</span>
                           )}
+                          {cs === 'error' && cacheErrMap[t.filename] && (
+                            <span className={styles.cacheErr}> {cacheErrMap[t.filename]}</span>
+                          )}
                         </td>
                         <td className="muted">{humanBytes(t.sizeBytes)}</td>
                         <td className="muted">{fmtDate(t.downloadedAt)}</td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className={`btn btn-sm ${cs === 'ok' ? styles.cacheBtnOk : cs === 'error' ? styles.cacheBtnErr : ''}`}
+                            disabled={cs === 'pending'}
+                            onClick={() => handleCache(t.filename)}
+                            title={cs === 'ok' ? 'Sent to AllDebrid' : cs === 'error' ? cacheErrMap[t.filename] : 'Send to AllDebrid cache'}
+                          >
+                            {cs === 'pending' ? '…' : cs === 'ok' ? '✓ Cached' : cs === 'error' ? '✗ Retry' : 'Cache'}
+                          </button>
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -428,9 +507,12 @@ export function BlueCogPage() {
             <h2 className={styles.panelTitle}>
               Create Tasks
               {selected.size > 0 && (
-                <span className={styles.count}>{selected.size} selected</span>
+                <span className={styles.count}>{selected.size} / {MAX_SELECTION} selected</span>
               )}
             </h2>
+            {atLimit && (
+              <p className={styles.limitNote}>Max {MAX_SELECTION} tasks can be created at once.</p>
+            )}
 
             {submitResults.length > 0 && (
               <div className={styles.submitResults}>
@@ -505,7 +587,7 @@ export function BlueCogPage() {
               {submitting
                 ? 'Creating…'
                 : selected.size === 0
-                ? 'Select torrents to create tasks'
+                ? 'Select up to 3 torrents'
                 : `Create ${selected.size} task${selected.size !== 1 ? 's' : ''}`}
             </button>
           </section>

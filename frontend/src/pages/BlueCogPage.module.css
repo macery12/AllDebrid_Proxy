@@ -193,6 +193,23 @@
   margin-top: 2px;
 }
 
+.cacheErr {
+  display: block;
+  font-size: 11px;
+  color: var(--error, #e05c5c);
+  margin-top: 2px;
+}
+
+.cacheBtnOk {
+  color: #4caf7d;
+  border-color: #4caf7d;
+}
+
+.cacheBtnErr {
+  color: var(--error, #e05c5c);
+  border-color: var(--error, #e05c5c);
+}
+
 /* ── RSS panel ─────────────────────────────────────────────────────────────── */
 .rssStatus {
   margin-bottom: 10px;
@@ -287,6 +304,22 @@
 .rssLogErr   { color: #e05c5c; flex-shrink: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .rssLogWait  { color: var(--muted); font-style: italic; }
 
+.rssFeedHeader {
+  padding: 5px 8px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+.rssFeedHeader:not(:first-child) {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
 /* ── Submit results ────────────────────────────────────────────────────────── */
 .submitResults {
   display: grid;
@@ -375,4 +408,15 @@
   font-size: 11px;
   color: var(--muted);
   margin: 2px 0 0;
+}
+
+/* ── Selection limit note ──────────────────────────────────────────────────── */
+.limitNote {
+  font-size: 11px;
+  color: #ffc107;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.2);
 }

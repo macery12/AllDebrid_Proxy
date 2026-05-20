@@ -28,6 +28,7 @@ from app.constants import EventType, SourceType, TaskStatus
 from app.db import SessionLocal
 from app.exceptions import ValidationError
 from app.models import Task, UserStats
+from app.providers.alldebrid import AllDebrid, ADHTTPError
 from app.task_naming import generate_task_name
 from app.utils import (
     append_log,
@@ -59,13 +60,13 @@ FETCH_TIMEOUT_SEC = 120  # seconds to wait for a Playwright-driven fetch
 # ---------------------------------------------------------------------------
 
 def _downloads_dir() -> Path:
-    d = Path(settings.BLUECOG_SCRAPER_DIR) / "downloads"
+    d = Path(settings.SCRAPER_DATA_DIR) / "downloads"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _scraper_log() -> dict:
-    p = Path(settings.BLUECOG_SCRAPER_DIR) / "downloaded.json"
+    p = Path(settings.SCRAPER_DATA_DIR) / "downloaded.json"
     try:
         return json.loads(p.read_text()) if p.exists() else {}
     except Exception:
@@ -101,6 +102,10 @@ class SubmitRequest(BaseModel):
 
 class FetchUrlRequest(BaseModel):
     url: str
+
+
+class CacheRequest(BaseModel):
+    filename: str
 
 
 # ---------------------------------------------------------------------------
@@ -321,3 +326,37 @@ def submit_torrents(req: SubmitRequest):
             errors.append({"filename": filename, "error": str(exc)})
 
     return {"submitted": submitted, "errors": errors}
+
+
+@router.post("/cache", dependencies=[Depends(verify_worker_key)])
+def cache_torrent(req: CacheRequest):
+    """Upload a .torrent file to AllDebrid for caching only.
+
+    Converts the torrent to a magnet and calls AllDebrid's magnet/upload API.
+    Does NOT create a task, poll for status, or request download links.
+    Returns the AllDebrid magnet ID so the caller knows the upload was accepted.
+    """
+    torrent_path = _safe_torrent_path(req.filename)
+    torrent_data = torrent_path.read_bytes()
+
+    from app.validation import validate_torrent_file_data
+    from app.utils import torrent_to_magnet
+    validate_torrent_file_data(torrent_data, req.filename)
+    magnet = torrent_to_magnet(torrent_data)
+
+    if not settings.ALLDEBRID_API_KEY:
+        raise HTTPException(status_code=503, detail="AllDebrid API key not configured")
+
+    try:
+        ad = AllDebrid(
+            api_key=settings.ALLDEBRID_API_KEY,
+            agent=getattr(settings, "ALLDEBRID_AGENT", "alldebrid-proxy"),
+        )
+        ids = ad.upload_magnets([magnet])
+    except ADHTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AllDebrid upload failed: {exc}")
+
+    magnet_id = ids[0] if ids else None
+    return {"magnetId": magnet_id, "filename": req.filename}

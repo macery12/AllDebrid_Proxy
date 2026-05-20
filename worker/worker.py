@@ -726,11 +726,17 @@ BLUECOG_LOOP_POLL_SEC    = 30             # poll Redis every 30 s
 
 _bluecog_started = False
 _bluecog_lock    = threading.Lock()
-_chdir_lock   = threading.Lock()        # serialise os.chdir() calls
 
 
 def _bluecog_scraper_dir() -> str:
     return getattr(settings, "BLUECOG_SCRAPER_DIR", "/app/Scraper")
+
+
+def _bluecog_data_dir() -> str:
+    """Directory for runtime data files (auth.json, downloaded.json, downloads/).
+    Kept separate from the script directory so sensitive files never sit inside
+    the repository tree."""
+    return getattr(settings, "SCRAPER_DATA_DIR", "/app/scraper_data")
 
 
 def _bluecog_load_scraper():
@@ -749,12 +755,24 @@ def _bluecog_load_scraper():
 def _bluecog_run_rss():
     """Run the full RSS refresh using the Scraper/rss.py logic.
 
-    Changes the process working directory to the scraper dir (under a lock)
-    so that rss.py's relative-path assumptions (auth.json, downloads/) resolve
-    correctly, then restores it afterwards.
+    Processes updates feed first, then releases feed — never simultaneously.
+    Both URLs come from the RSS_UPDATES_URL / RSS_RELEASES_URL env vars.
     """
     import redis as _redis
     r2 = _redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    # Build ordered list of (label, url) — updates before releases.
+    feeds = []
+    updates_url  = os.environ.get("RSS_UPDATES_URL",  "").strip()
+    releases_url = os.environ.get("RSS_RELEASES_URL", "").strip()
+    if updates_url:
+        feeds.append(("updates",  updates_url))
+    if releases_url:
+        feeds.append(("releases", releases_url))
+
+    if not feeds:
+        _log("", LogLevel.WARNING, "bluecog_rss_skipped", reason="no feed URLs configured")
+        return
 
     downloaded = 0
     errors: list = []
@@ -773,66 +791,71 @@ def _bluecog_run_rss():
     _push("running")
 
     try:
-        with _chdir_lock:
-            old_cwd = os.getcwd()
-            os.chdir(_bluecog_scraper_dir())
+        fetch_mod, rss_mod = _bluecog_load_scraper()
+        log     = rss_mod.load_log()
+        cookies = fetch_mod.load_cookies()
+
+        for feed_label, feed_url in feeds:
+            _log("", LogLevel.INFO, "bluecog_rss_feed_start", feed=feed_label, url=feed_url)
+
             try:
-                fetch_mod, rss_mod = _bluecog_load_scraper()
+                items = rss_mod.fetch_rss(feed_url)
+            except Exception as exc:
+                _log("", LogLevel.ERROR, "bluecog_rss_feed_fetch_error",
+                     feed=feed_label, err=str(exc))
+                errors.append({"title": f"[{feed_label}] fetch failed", "error": str(exc)})
+                _push("running")
+                continue
 
-                items   = rss_mod.fetch_rss()
-                log     = rss_mod.load_log()
-                cookies = fetch_mod.load_cookies()
-                total   = len(items)
+            total = len(items)
 
-                for idx, item in enumerate(items):
-                    existing     = log.get(item["link"])
-                    old_filename = existing["filename"] if existing else None
-                    title        = item["title"]
+            for idx, item in enumerate(items):
+                existing     = log.get(item["link"])
+                old_filename = existing["filename"] if existing else None
+                title        = item["title"]
 
-                    # Append a live "fetching" entry; mutate it in-place when done
-                    entry = {"type": "item", "i": idx + 1, "n": total,
-                             "title": title, "step": "fetching"}
-                    progress.append(entry)
+                # Append a live "fetching" entry; mutate it in-place when done
+                entry = {"type": "item", "feed": feed_label,
+                         "i": idx + 1, "n": total,
+                         "title": title, "step": "fetching"}
+                progress.append(entry)
+                _push("running")
+
+                try:
+                    session, headers = fetch_mod.build_session(item["link"], cookies)
+                    filename, updated, error = rss_mod.download_torrent(
+                        item["link"], session, headers, old_filename
+                    )
+                    if error:
+                        entry.update({"step": "failed", "error": error})
+                        errors.append({"title": title, "error": error})
+                    elif updated is False:
+                        entry.update({"step": "skipped", "filename": filename})
+                    else:
+                        downloaded += 1
+                        entry.update({"step": "done", "filename": filename})
+                        log[item["link"]] = {
+                            "title":         title,
+                            "filename":      filename,
+                            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                        rss_mod.save_log(log)
+                except Exception as exc:
+                    entry.update({"step": "failed", "error": str(exc)})
+                    errors.append({"title": title, "error": str(exc)})
+
+                _push("running")
+
+                # Rate-limit cooldown between items.
+                # Skipped items (file unchanged) didn't hit the uploads server
+                # heavily, so a short fixed wait is enough.
+                if idx < total - 1:
+                    wait_secs = 15 if entry.get("step") == "skipped" else random.randint(30, 60)
+                    wait_entry = {"type": "waiting", "seconds": wait_secs}
+                    progress.append(wait_entry)
                     _push("running")
-
-                    try:
-                        session, headers = fetch_mod.build_session(item["link"], cookies)
-                        filename, updated, error = rss_mod.download_torrent(
-                            item["link"], session, headers, old_filename
-                        )
-                        if error:
-                            entry.update({"step": "failed", "error": error})
-                            errors.append({"title": title, "error": error})
-                        elif updated is False:
-                            entry.update({"step": "skipped", "filename": filename})
-                        else:
-                            downloaded += 1
-                            entry.update({"step": "done", "filename": filename})
-                            log[item["link"]] = {
-                                "title":         title,
-                                "filename":      filename,
-                                "downloaded_at": datetime.now(timezone.utc).isoformat(),
-                            }
-                            rss_mod.save_log(log)
-                    except Exception as exc:
-                        entry.update({"step": "failed", "error": str(exc)})
-                        errors.append({"title": title, "error": str(exc)})
-
-                    _push("running")
-
-                    # Rate-limit cooldown between items.
-                    # Skipped items (file unchanged) didn't hit the uploads server
-                    # heavily, so a short fixed wait is enough.
-                    if idx < total - 1:
-                        wait_secs = 15 if entry.get("step") == "skipped" else random.randint(30, 60)
-                        wait_entry = {"type": "waiting", "seconds": wait_secs}
-                        progress.append(wait_entry)
-                        _push("running")
-                        time.sleep(wait_secs)
-                        progress.remove(wait_entry)
-
-            finally:
-                os.chdir(old_cwd)
+                    time.sleep(wait_secs)
+                    progress.remove(wait_entry)
 
         _push("done")
         _log("", LogLevel.INFO, "bluecog_rss_done", downloaded=downloaded, error_count=len(errors))
@@ -858,14 +881,8 @@ def _bluecog_run_fetch(request_id: str, url: str):
     res_key = f"bluecog:fetch:res:{request_id}"
 
     try:
-        with _chdir_lock:
-            old_cwd = os.getcwd()
-            os.chdir(_bluecog_scraper_dir())
-            try:
-                fetch_mod, _ = _bluecog_load_scraper()
-                filename, updated, error, page_title = fetch_mod.fetch_torrent(url)
-            finally:
-                os.chdir(old_cwd)
+        fetch_mod, _ = _bluecog_load_scraper()
+        filename, updated, error, page_title = fetch_mod.fetch_torrent(url)
 
         if error:
             r2.setex(res_key, 300, json.dumps({"error": error}))
@@ -873,7 +890,7 @@ def _bluecog_run_fetch(request_id: str, url: str):
             # Upsert entry in downloaded.json so the RSS loop can detect updates
             # for manually-imported URLs just like it does for RSS-discovered ones.
             try:
-                log_path = os.path.join(_bluecog_scraper_dir(), "downloaded.json")
+                log_path = os.path.join(_bluecog_data_dir(), "downloaded.json")
                 try:
                     with open(log_path) as _f:
                         _log_data = json.load(_f)
@@ -901,7 +918,7 @@ def _bluecog_worker_loop():
     import redis as _redis
     r2 = _redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-    last_rss_run = 0.0   # start clock at epoch so the first scheduled run waits 6 h
+    last_rss_run = time.time()  # don't run on startup; first run after 6 h
 
     while True:
         try:

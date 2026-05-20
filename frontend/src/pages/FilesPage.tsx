@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { tasksApi } from '../api/tasks';
 import { APIError } from '../api/client';
-import { formatBytes } from '../lib/utils';
+import { encodePathSegments, formatBytes } from '../lib/utils';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import type { FileEntry } from '../types';
@@ -90,7 +90,9 @@ export function FilesPage() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry) => (
+                {entries.map((entry) => {
+                  const encodedRelpath = encodePathSegments(entry.rel);
+                  return (
                   <tr key={entry.rel}>
                     <td>
                       <span className={styles.fileName}>
@@ -122,7 +124,7 @@ export function FilesPage() {
                           {taskId && (
                             <a
                               className="btn btn-sm"
-                              href={`/d/${taskId}/raw/${entry.rel}`}
+                              href={`/d/${taskId}/raw/${encodedRelpath}`}
                               download={entry.rel.split('/').pop()}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -137,7 +139,8 @@ export function FilesPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </>

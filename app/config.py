@@ -34,8 +34,11 @@ class Settings(BaseSettings):
     ARIA2_RPC_URL: Optional[str] = Field(default=None)
     ARIA2_RPC_SECRET: Optional[str] = Field(default=None)
 
-    # BlueCog scraper directory (contains auth.json, downloaded.json, downloads/)
+    # BlueCog scraper directory (Python scripts only — no sensitive files live here)
     BLUECOG_SCRAPER_DIR: str = Field(default="/app/Scraper")
+    # Runtime data directory for scraper state files (auth.json, downloaded.json, downloads/)
+    # Keep this OUTSIDE the repository tree to prevent accidental commits of credentials.
+    SCRAPER_DATA_DIR: str = Field(default="/app/scraper_data")
     # BlueCog source base URL (required — set in .env)
     BLUECOGURL: str = Field()
     

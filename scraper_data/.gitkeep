@@ -1,0 +1,4 @@
+# This directory holds scraper runtime data that must NOT be committed.
+# Files stored here: auth.json (Playwright session), downloaded.json (state log), downloads/
+# The directory itself is tracked so Docker bind-mounts work out of the box;
+# its contents are excluded by .gitignore.

@@ -7,7 +7,12 @@ import requests
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-DOWNLOAD_DIR = "./downloads"
+# Runtime data directory: auth.json, downloads/, etc.
+# Defaults to the script directory only as a local-dev fallback; always set
+# SCRAPER_DATA_DIR in production so data never lands inside the repo tree.
+_DATA_DIR = os.environ.get("SCRAPER_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+DOWNLOAD_DIR = os.path.join(_DATA_DIR, "downloads")
+AUTH_FILE = os.path.join(_DATA_DIR, "auth.json")
 
 _bluecog_url = os.environ.get("BLUECOGURL")
 if not _bluecog_url:
@@ -39,7 +44,7 @@ def _get_with_retry(session, url, headers, retries=4, base_wait=10):
     return r
 
 def load_cookies():
-    with open("auth.json") as f:
+    with open(AUTH_FILE) as f:
         return json.load(f)["cookies"]
 
 def build_session(url, cookies):
@@ -67,7 +72,7 @@ def get_uploads_url(page_url):
                 "--disable-setuid-sandbox",
             ],
         )
-        context = browser.new_context(storage_state="auth.json")
+        context = browser.new_context(storage_state=AUTH_FILE)
         page = context.new_page()
 
         page.goto(page_url)

@@ -14,7 +14,7 @@ export interface BlueCogTorrentsResponse {
 }
 
 export type RSSProgressEvent =
-  | { type: 'item'; i: number; n: number; title: string;
+  | { type: 'item'; feed?: string; i: number; n: number; title: string;
       step: 'fetching' | 'done' | 'failed' | 'skipped';
       filename?: string; error?: string }
   | { type: 'waiting'; seconds: number };
@@ -44,6 +44,11 @@ export interface SubmitResponse {
   errors: Array<{ filename: string; error: string }>;
 }
 
+export interface CacheResponse {
+  magnetId: string | null;
+  filename: string;
+}
+
 export const bluecogApi = {
   listTorrents: (q?: string) =>
     api.get<BlueCogTorrentsResponse>('/bluecog/torrents', q ? { q } : undefined),
@@ -59,4 +64,7 @@ export const bluecogApi = {
 
   submit: (filenames: string[], mode: 'auto' | 'select', label?: string) =>
     api.post<SubmitResponse>('/bluecog/submit', { filenames, mode, label }),
+
+  cacheOne: (filename: string) =>
+    api.post<CacheResponse>('/bluecog/cache', { filename }),
 };

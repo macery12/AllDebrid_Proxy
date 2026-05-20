@@ -3,10 +3,12 @@ x-storage-vol: &storage-vol
   - ${STORAGE_PATH:-/srv/storage}:/srv/storage
 
 # Combined volumes for services that also need the Scraper folder.
-# Override SCRAPER_PATH in .env to point to your Scraper directory on the host.
+# SCRAPER_PATH  — path to Scraper scripts on the host (source code, read-only in production).
+# SCRAPER_DATA_PATH — path to scraper runtime data (auth.json, downloaded.json, downloads/).
 x-main-vols: &main-vols
   - ${STORAGE_PATH:-/srv/storage}:/srv/storage
   - ${SCRAPER_PATH:-./Scraper}:/app/Scraper
+  - ${SCRAPER_DATA_PATH:-./scraper_data}:/app/scraper_data
 
 services:
   db:
@@ -60,6 +62,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - BLUECOG_SCRAPER_DIR=/app/Scraper
+      - SCRAPER_DATA_DIR=/app/scraper_data
     env_file:
       - .env
     depends_on:
@@ -90,6 +93,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - BLUECOG_SCRAPER_DIR=/app/Scraper
+      - SCRAPER_DATA_DIR=/app/scraper_data
     env_file:
       - .env
     depends_on:
@@ -126,8 +130,8 @@ services:
     container_name: proxy_aria2
     restart: unless-stopped
     environment:
-      - PUID=1000         # set to your host user's UID (`id -u`)
-      - PGID=1000         # set to your host user's GID (`id -g`)
+      - PUID=1000
+      - PGID=1000
       - UMASK_SET=022
       - TZ=UTC
       - RPC_SECRET=${ARIA2_RPC_SECRET:-change-me}

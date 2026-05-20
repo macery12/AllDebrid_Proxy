@@ -261,8 +261,7 @@ def tar_all(task_id):
     base = safe_task_base(task_id)
 
     def safe_tar_filter(tarinfo):
-        """Exclude .aria2 control files and any symlinks (which could point
-        outside the base directory and leak filesystem paths/content)."""
+        # Exclude .aria2 files and symlinks that could expose paths outside the task directory.
         if not _should_include_file(Path(tarinfo.name)):
             return None
         # Drop symlinks entirely — a symlink's target is not verified to be
@@ -326,13 +325,7 @@ def tar_all(task_id):
     )
 
 def _safe_resolve_relpath(base: Path, relpath: str) -> Path:
-    """Resolve *relpath* under *base* and verify it stays within *base*.
-
-    Uses Path.is_relative_to() (Python 3.9+) instead of a plain startswith()
-    check to avoid the prefix-confusion bug where a path like
-    /base_extension/evil passes startswith(/base).
-    Aborts with 400 on traversal attempt, 404 if the file doesn't exist.
-    """
+    # Resolve the relative path under base and reject traversal or missing files.
     full = (base / relpath).resolve()
     if not full.is_relative_to(base):
         abort(400, "Invalid path")
@@ -682,9 +675,7 @@ def v2_get_task(task_id):
 @app.post("/v2/tasks/<task_id>/sse-token")
 @member_required
 def v2_sse_token(task_id):
-    """Obtain a short-lived SSE token for the given task.
-    The SPA uses this token to open an EventSource directly against
-    /api/tasks/{task_id}/events?token=... (FastAPI, via nginx)."""
+    # Return a short-lived token the SPA uses to open the FastAPI SSE stream.
     body, err = w_request("POST", f"/api/tasks/{task_id}/sse-token")
     if err:
         return jsonify({"error": err[0]}), err[1]
@@ -806,11 +797,7 @@ def v2_bluecog_rss_refresh():
 @app.post("/v2/bluecog/fetch-url")
 @member_required
 def v2_bluecog_fetch_url():
-    """Fetch a single BlueCog source URL — runs Playwright in the worker.
-
-    Uses a longer HTTP timeout because the Playwright fetch can take up to
-    2 minutes.
-    """
+    # Fetch one BlueCog source URL via the worker's Playwright-based fetch flow.
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").strip()
     if not url:
@@ -858,7 +845,20 @@ def v2_bluecog_submit():
     return jsonify(body)
 
 
+@app.post("/v2/bluecog/cache")
+@member_required
+def v2_bluecog_cache():
+    """Send a single .torrent file to AllDebrid for caching only (no task created)."""
+    data     = request.get_json(silent=True) or {}
+    filename = (data.get("filename") or "").strip()
 
+    if not filename:
+        return jsonify({"error": "filename is required"}), 400
+
+    body, err = w_request("POST", "/api/bluecog/cache", json_body={"filename": filename})
+    if err:
+        return jsonify({"error": err[0]}), err[1]
+    return jsonify(body)
 
 
 @app.get("/v2/admin/tasks")
@@ -1001,8 +1001,7 @@ _DIST_DIR = Path(__file__).parent / "static" / "dist"
 @app.get("/app/")
 @app.get("/app/<path:path>")
 def serve_vite_spa(path: str = ""):
-    """Serve the built Vite SPA under /app/. Falls back gracefully if the
-    build directory does not exist (development mode)."""
+    # Serve the built Vite SPA under /app/ and fall back cleanly in development.
     if not _DIST_DIR.exists():
         return jsonify({"error": "SPA not built. Run: cd frontend && npm run build"}), 404
     from flask import send_from_directory as _sfd

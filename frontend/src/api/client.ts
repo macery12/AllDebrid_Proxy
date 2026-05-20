@@ -39,7 +39,12 @@ async function request<T>(
   const response = await fetch(url.toString(), init);
 
   if (response.status === 401) {
-    window.location.href = '/app/login';
+    // Only redirect to login when we're not already there — otherwise every
+    // unauthenticated /auth/me call on the login page would trigger a reload
+    // loop.
+    if (!window.location.pathname.startsWith('/app/login')) {
+      window.location.href = '/app/login';
+    }
     throw new APIError('Unauthorized', 401);
   }
 

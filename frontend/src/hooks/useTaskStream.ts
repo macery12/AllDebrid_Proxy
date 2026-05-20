@@ -11,11 +11,7 @@ export type StreamStatus =
   | 'final'
   | 'closed';
 
-/**
- * Opens an SSE stream for a task once `enabled` is true.
- * Calls `onUpdate` with a functional state updater whenever events arrive.
- * Reconnects with exponential backoff on failure (max 5 attempts).
- */
+// Open an SSE stream once enabled and reconnect with capped backoff.
 export function useTaskStream(
   taskId: string | undefined,
   enabled: boolean,
