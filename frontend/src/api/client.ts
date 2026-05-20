@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/v2';
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api';
 
 export class APIError extends Error {
   constructor(
@@ -42,8 +42,8 @@ async function request<T>(
     // Only redirect to login when we're not already there — otherwise every
     // unauthenticated /auth/me call on the login page would trigger a reload
     // loop.
-    if (!window.location.pathname.startsWith('/app/login')) {
-      window.location.href = '/app/login';
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
     }
     throw new APIError('Unauthorized', 401);
   }

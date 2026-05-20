@@ -33,7 +33,6 @@ RUN playwright install chromium \
 
 COPY app app
 COPY worker worker
-COPY Scraper Scraper
 
 # Hand ownership of app files to appuser before dropping privileges
 RUN chown -R appuser:appuser /app

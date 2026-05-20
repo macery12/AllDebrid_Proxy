@@ -1,13 +1,10 @@
-# Reusable storage bind-mount.  Override STORAGE_PATH in .env to change the host path.
+# Reusable storage bind-mount. Override STORAGE_PATH in .env to change the host path.
 x-storage-vol: &storage-vol
   - ${STORAGE_PATH:-/srv/storage}:/srv/storage
 
-# Combined volumes for services that also need the Scraper folder.
-# SCRAPER_PATH  — path to Scraper scripts on the host (source code, read-only in production).
-# SCRAPER_DATA_PATH — path to scraper runtime data (auth.json, downloaded.json, downloads/).
+# Volumes for services that also need the scraper runtime data directory.
 x-main-vols: &main-vols
   - ${STORAGE_PATH:-/srv/storage}:/srv/storage
-  - ${SCRAPER_PATH:-./Scraper}:/app/Scraper
   - ${SCRAPER_DATA_PATH:-./scraper_data}:/app/scraper_data
 
 services:
@@ -61,7 +58,6 @@ services:
     container_name: proxy_api
     environment:
       - PYTHONPATH=/app
-      - BLUECOG_SCRAPER_DIR=/app/Scraper
       - SCRAPER_DATA_DIR=/app/scraper_data
     env_file:
       - .env
@@ -92,7 +88,6 @@ services:
     container_name: proxy_worker
     environment:
       - PYTHONPATH=/app
-      - BLUECOG_SCRAPER_DIR=/app/Scraper
       - SCRAPER_DATA_DIR=/app/scraper_data
     env_file:
       - .env
@@ -104,24 +99,6 @@ services:
     volumes: *main-vols
     networks:
       - backend
-    restart: unless-stopped
-    user: "1000:1000"
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    container_name: proxy_frontend
-    ports:
-      - "${FRONTEND_PORT:-5000}:5000"
-    env_file:
-      - .env
-    depends_on:
-      api:
-        condition: service_healthy
-    volumes: *storage-vol
-    networks:
-      - frontend
     restart: unless-stopped
     user: "1000:1000"
 

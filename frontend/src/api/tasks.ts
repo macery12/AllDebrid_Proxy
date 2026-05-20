@@ -20,13 +20,13 @@ export interface TaskListResponse {
   total: number;
 }
 
-export interface SseTokenResponse {
-  token: string;
-  expiresIn: number;
-}
-
 export interface FilesResponse {
   entries: FileEntry[];
+}
+
+export interface DownloadTokenResponse {
+  token: string;
+  expires_in: number;
 }
 
 export const tasksApi = {
@@ -37,9 +37,6 @@ export const tasksApi = {
     api.post<CreateTaskResponse>('/tasks', data),
 
   get: (taskId: string) => api.get<Task>(`/tasks/${taskId}`),
-
-  getSseToken: (taskId: string) =>
-    api.post<SseTokenResponse>(`/tasks/${taskId}/sse-token`),
 
   select: (taskId: string, fileIds: string[]) =>
     api.post<{ status: string }>(`/tasks/${taskId}/select`, { fileIds }),
@@ -52,4 +49,8 @@ export const tasksApi = {
 
   getFiles: (taskId: string) =>
     api.get<FilesResponse>(`/tasks/${taskId}/files`),
+
+  /** Obtain a short-lived download token for use in ?token= query params. */
+  getDownloadToken: (taskId: string) =>
+    api.post<DownloadTokenResponse>(`/files/${taskId}/dl-token`),
 };

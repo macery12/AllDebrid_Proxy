@@ -1,11 +1,31 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+# --- Auth schemas ---
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    remember_me: bool = False
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    is_admin: bool
+    role: str
+
+class LoginResponse(BaseModel):
+    user: Optional[UserOut] = None
+    first_time_setup: Optional[bool] = None
+    message: Optional[str] = None
+
+# --- Task schemas ---
+
 class CreateTaskRequest(BaseModel):
     mode: str = Field(pattern="^(auto|select)$")
     source: str
     label: Optional[str] = None
-    user_id: Optional[int] = None  # User ID for tracking
+    user_id: Optional[int] = None
 
 class FileItem(BaseModel):
     fileId: str
@@ -17,7 +37,7 @@ class FileItem(BaseModel):
     speedBps: int = 0
     etaSeconds: Optional[int] = None
     progressPct: int = 0
-    # localPath intentionally omitted – never expose server filesystem paths to clients
+    # localPath intentionally omitted — never expose server filesystem paths
 
 class StorageInfo(BaseModel):
     freeBytes: int
@@ -39,15 +59,13 @@ class TaskResponse(BaseModel):
 class SelectRequest(BaseModel):
     fileIds: List[str]
 
-class VerifyCredentialsRequest(BaseModel):
-    username: str
-    password: str
+# --- User management schemas ---
 
 class CreateUserRequest(BaseModel):
     username: str
     password: str
     is_admin: bool = False
-    role: Optional[str] = None  # If set, takes precedence over is_admin
+    role: Optional[str] = None
 
 class ResetPasswordRequest(BaseModel):
     password: str

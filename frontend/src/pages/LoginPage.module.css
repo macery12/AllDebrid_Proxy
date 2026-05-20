@@ -60,6 +60,23 @@
   margin-top: 4px;
 }
 
+.rememberMe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.rememberMe input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .setupBadge {
   margin-bottom: 20px;
 }

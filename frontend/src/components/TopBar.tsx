@@ -12,9 +12,11 @@ export function TopBar() {
     navigate('/login');
   };
 
+  const isUser = user?.role === 'user';
+
   return (
     <header className={styles.header}>
-      <Link to="/" className={styles.logo}>
+      <Link to={isUser ? '/downloads' : '/'} className={styles.logo}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
         </svg>
@@ -32,6 +34,9 @@ export function TopBar() {
             <Link to="/" className={styles.navLink}>Tasks</Link>
             <Link to="/bluecog" className={styles.navLink}>BlueCog</Link>
           </>
+        )}
+        {isUser && (
+          <Link to="/downloads" className={styles.navLink}>Downloads</Link>
         )}
         <HealthBadge />
         {user && (

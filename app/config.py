@@ -7,7 +7,11 @@ class Settings(BaseSettings):
 
     # Security
     WORKER_API_KEY: str = Field(default="change-me", min_length=8)
-    
+    JWT_SECRET: str = Field(default="change-me")
+    JWT_EXPIRY_HOURS: int = Field(default=8, ge=1, le=720)
+    # Long-lived session when "Remember me" is checked at login
+    JWT_REMEMBER_ME_HOURS: int = Field(default=168, ge=1, le=720)  # 7 days
+
     # AllDebrid provider
     ALLDEBRID_API_KEY: str = Field(default="")
     ALLDEBRID_AGENT: str = Field(default="alldebrid-proxy", min_length=1)
@@ -29,42 +33,45 @@ class Settings(BaseSettings):
     # Database and cache
     DATABASE_URL: str = Field(default="postgresql+psycopg2://alldebrid:alldebrid@db:5432/alldebrid")
     REDIS_URL: str = Field(default="redis://redis:6379/0")
-    
+
     # Optional Aria2 RPC settings
     ARIA2_RPC_URL: Optional[str] = Field(default=None)
     ARIA2_RPC_SECRET: Optional[str] = Field(default=None)
 
-    # BlueCog scraper directory (Python scripts only — no sensitive files live here)
-    BLUECOG_SCRAPER_DIR: str = Field(default="/app/Scraper")
-    # Runtime data directory for scraper state files (auth.json, downloaded.json, downloads/)
-    # Keep this OUTSIDE the repository tree to prevent accidental commits of credentials.
+    # Scraper runtime data (auth.json, downloaded.json, downloads/) — bind-mounted in production
     SCRAPER_DATA_DIR: str = Field(default="/app/scraper_data")
     # BlueCog source base URL (required — set in .env)
     BLUECOGURL: str = Field()
-    
+
     @field_validator("WORKER_API_KEY")
     @classmethod
     def validate_worker_api_key(cls, v: str) -> str:
-        """Ensure worker API key is not the default insecure value in production"""
         if v == "change-me":
             import os
             if os.getenv("ENVIRONMENT", "development") == "production":
                 raise ValueError("WORKER_API_KEY must be changed from default in production")
         return v
-    
+
+    @field_validator("JWT_SECRET")
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        if len(v) < 32:
+            import os
+            if os.getenv("ENVIRONMENT", "development") == "production":
+                raise ValueError("JWT_SECRET must be at least 32 characters in production")
+        return v
+
     @field_validator("ALLDEBRID_API_KEY")
     @classmethod
     def validate_alldebrid_key(cls, v: str) -> str:
-        """Warn if AllDebrid API key is not set"""
         if not v:
             import warnings
             warnings.warn("ALLDEBRID_API_KEY is not set - provider operations will fail")
         return v
-    
+
     @field_validator("DATABASE_URL", "REDIS_URL")
     @classmethod
     def validate_urls(cls, v: str) -> str:
-        """Validate database and Redis URLs"""
         if not v:
             raise ValueError("Database URL and Redis URL are required")
         return v

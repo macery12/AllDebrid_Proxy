@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { api } from '../api/client';
 
 type Health = 'loading' | 'ok' | 'down';
 
@@ -12,13 +11,11 @@ export function HealthBadge() {
   const [health, setHealth] = useState<Health>('loading');
 
   useEffect(() => {
+    // Call /health directly — not through the /api prefix wrapper
     const check = () => {
-      api
-        .get<HealthResponse>('/health')
-        .then((d) => {
-          const healthy = d.ok === true || d.status === 'ok' || d.status === 'healthy';
-          setHealth(healthy ? 'ok' : 'down');
-        })
+      fetch('/health', { credentials: 'include' })
+        .then((r) => r.json() as Promise<HealthResponse>)
+        .then((d) => setHealth(d.ok === true ? 'ok' : 'down'))
         .catch(() => setHealth('down'));
     };
     check();

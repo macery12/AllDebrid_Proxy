@@ -12,6 +12,7 @@ export function LoginPage() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isFirstTime, setIsFirstTime] = useState(false);
@@ -42,7 +43,7 @@ export function LoginPage() {
     setSetupSuccess(null);
 
     try {
-      const res = await authApi.login({ username: username.trim(), password: password.trim() });
+      const res = await authApi.login({ username: username.trim(), password: password.trim(), remember_me: rememberMe });
 
       if (res.first_time_setup) {
         // Admin account created — prompt to log in
@@ -50,7 +51,7 @@ export function LoginPage() {
         setIsFirstTime(false);
         setPassword('');
       } else {
-        await login({ username: username.trim(), password: password.trim() });
+        await login({ username: username.trim(), password: password.trim(), remember_me: rememberMe });
         navigate('/', { replace: true });
       }
     } catch (e) {
@@ -126,6 +127,18 @@ export function LoginPage() {
             {loading && <span className="spinner" />}
             {isFirstTime ? 'Create Admin Account' : 'Sign In'}
           </button>
+
+          {!isFirstTime && (
+            <label className={styles.rememberMe}>
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                disabled={loading}
+              />
+              Remember me for 7 days
+            </label>
+          )}
         </form>
       </div>
     </div>

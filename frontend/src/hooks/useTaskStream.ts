@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Task, SSEEvent } from '../types';
-import { tasksApi } from '../api/tasks';
 import { isFinalState, mergeTaskEvent } from '../lib/utils';
 
 export type StreamStatus =
@@ -40,13 +39,7 @@ export function useTaskStream(
       if (!active) return;
 
       try {
-        const { token } = await tasksApi.getSseToken(taskId!);
-        if (!active) return;
-
-        const url =
-          `/api/tasks/${encodeURIComponent(taskId!)}/events` +
-          `?token=${encodeURIComponent(token)}`;
-
+        const url = `/api/tasks/${encodeURIComponent(taskId!)}/events`;
         es = new EventSource(url);
         setStatus('connecting');
 

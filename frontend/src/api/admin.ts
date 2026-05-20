@@ -19,20 +19,22 @@ export interface CreateAdminUserPayload {
 export const adminApi = {
   stats: () => api.get<AdminStats>('/admin/stats'),
 
+  // Tasks live at /api/tasks (admin sees all tasks via require_member which includes admin)
   tasks: (params?: { status?: string; limit?: number; offset?: number }) =>
-    api.get<AdminTasksResponse>('/admin/tasks', params),
+    api.get<AdminTasksResponse>('/tasks', params),
 
-  users: () => api.get<AdminUsersResponse>('/admin/users'),
+  // User management lives at /api/users (already admin-only via require_admin)
+  users: () => api.get<AdminUsersResponse>('/users'),
 
   createUser: (data: CreateAdminUserPayload) =>
-    api.post<AdminUser>('/admin/users', data),
+    api.post<AdminUser>('/users', data),
 
   setRole: (userId: number, role: UserRole) =>
-    api.post<{ role: UserRole; is_admin: boolean }>(`/admin/users/${userId}/role`, { role }),
+    api.post<{ role: UserRole; is_admin: boolean }>(`/users/${userId}/role`, { role }),
 
   resetPassword: (userId: number, password: string) =>
-    api.post<{ ok: boolean }>(`/admin/users/${userId}/reset-password`, { password }),
+    api.post<{ ok: boolean }>(`/users/${userId}/reset-password`, { password }),
 
   deleteUser: (userId: number) =>
-    api.delete<{ ok: boolean }>(`/admin/users/${userId}`),
+    api.delete<{ ok: boolean }>(`/users/${userId}`),
 };

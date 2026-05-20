@@ -1,33 +1,42 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Header, Request, status
-from fastapi.responses import JSONResponse
+import os
+import time
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from app.api import router as api_router, r
-from app.bluecog import router as bluecog_router
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
-from app.ws_manager import ws_manager
 from app.exceptions import AppException, ValidationError, AuthenticationError, RateLimitError
 from app.logging_config import setup_logging, get_logger
-import asyncio, json, os, time
+from app.routers import auth, tasks, users, admin, files, bluecog
 
-# Setup logging
 logger = setup_logging(
     level=os.getenv("LOG_LEVEL", "INFO"),
     structured=bool(int(os.getenv("STRUCTURED_LOGS", "0"))),
-    logger_name="api"
+    logger_name="api",
 )
+
+# CORS: deny-all by default; set CORS_ORIGINS=https://... to opt in
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if _cors_origins:
+        logger.info(f"CORS enabled for origins: {_cors_origins}")
+    else:
+        logger.info("CORS: deny-all (set CORS_ORIGINS to allow cross-origin requests)")
+    logger.info("Application started successfully")
+    yield
+    logger.info("Application shutting down")
+
 
 app = FastAPI(
     title="AllDebrid Proxy",
     description="Secure proxy for AllDebrid downloads with task management",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan,
 )
-
-# Add CORS middleware - deny all cross-origin requests by default.
-# Set CORS_ORIGINS to a comma-separated list of allowed origins to opt in.
-# Example: CORS_ORIGINS=https://app.example.com,https://other.example.com
-_cors_origins_raw = os.getenv("CORS_ORIGINS", "")
-_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,88 +46,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add request ID middleware for tracking
+
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
-    # Add unique request ID for logging and debugging
     request_id = f"{time.time()}-{id(request)}"
     request.state.request_id = request_id
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
 
-# Global exception handlers
+
 @app.exception_handler(ValidationError)
 async def validation_error_handler(request: Request, exc: ValidationError):
-    # Handle validation errors with 400 Bad Request
     logger.warning(f"Validation error: {exc.message}", extra={"path": request.url.path})
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": "Validation failed", "detail": exc.message}
-    )
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Validation failed", "detail": exc.message})
+
 
 @app.exception_handler(AuthenticationError)
 async def authentication_error_handler(request: Request, exc: AuthenticationError):
-    # Handle authentication errors with 401 Unauthorized
     logger.warning(f"Authentication error: {exc.message}", extra={"path": request.url.path})
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"error": "Authentication failed", "detail": exc.message}
-    )
+    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"error": "Authentication failed", "detail": exc.message})
+
 
 @app.exception_handler(RateLimitError)
 async def rate_limit_error_handler(request: Request, exc: RateLimitError):
-    # Handle rate limit errors with 429 Too Many Requests
     logger.warning(f"Rate limit exceeded: {exc.message}", extra={"path": request.url.path})
-    return JSONResponse(
-        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        content={"error": "Rate limit exceeded", "detail": exc.message},
-        headers={"Retry-After": "60"}
-    )
+    return JSONResponse(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content={"error": "Rate limit exceeded", "detail": exc.message}, headers={"Retry-After": "60"})
+
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    # Handle generic application errors with 500 Internal Server Error
     logger.error(f"Application error: {exc.message}", exc_info=exc, extra={"path": request.url.path})
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"error": "Internal server error", "detail": "An error occurred processing your request"}
-    )
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": "Internal server error"})
+
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
-    # Handle unexpected errors - don't leak details to client
-    logger.error(f"Unexpected error: {str(exc)}", exc_info=exc, extra={"path": request.url.path})
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"error": "Internal server error", "detail": "An unexpected error occurred"}
-    )
+    logger.error(f"Unexpected error: {exc}", exc_info=exc, extra={"path": request.url.path})
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": "Internal server error"})
 
-@app.on_event("startup")
-async def startup():
-    # Launch pubsub listener in background
-    logger.info("Starting application...")
-    loop = asyncio.get_event_loop()
-    loop.create_task(ws_manager.start_pubsub_loop())
-    if _cors_origins:
-        logger.info(f"CORS enabled for origins: {_cors_origins}")
-    else:
-        logger.info("CORS: deny-all (set CORS_ORIGINS to allow cross-origin requests)")
-    logger.info("Application started successfully")
-
-@app.on_event("shutdown")
-async def shutdown():
-    # Graceful shutdown
-    logger.info("Shutting down application...")
 
 @app.get("/health")
 def health():
-    # Health check endpoint with storage write test
-    # Returns: {ok: true/false} based on system health
     ok = True
-    storage = settings.STORAGE_ROOT
     try:
-        test_path = os.path.join(storage, ".healthcheck")
+        test_path = os.path.join(settings.STORAGE_ROOT, ".healthcheck")
         with open(test_path, "w") as fh:
             fh.write("ok")
         os.remove(test_path)
@@ -127,5 +99,30 @@ def health():
         ok = False
     return JSONResponse({"ok": ok})
 
-app.include_router(api_router)
-app.include_router(bluecog_router)
+
+# Register all API and file routers
+app.include_router(auth.router, prefix="/api/auth")
+app.include_router(tasks.router, prefix="/api/tasks")
+app.include_router(users.router, prefix="/api/users")
+app.include_router(admin.router, prefix="/api/admin")
+app.include_router(bluecog.router, prefix="/api/bluecog")
+app.include_router(files.router, prefix="/files")
+
+# SPA serving — assets get efficient StaticFiles, everything else gets index.html
+_spa_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+_spa_assets = os.path.join(_spa_dir, "assets")
+if os.path.isdir(_spa_assets):
+    app.mount("/assets", StaticFiles(directory=_spa_assets), name="spa-assets")
+
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    # Serve real files that exist at the root of dist (favicon.ico, manifest etc.)
+    candidate = os.path.join(_spa_dir, full_path)
+    if full_path and os.path.isfile(candidate):
+        return FileResponse(candidate)
+    # All other paths get the SPA shell
+    index = os.path.join(_spa_dir, "index.html")
+    if os.path.isfile(index):
+        return FileResponse(index)
+    return JSONResponse(status_code=404, content={"error": "Frontend not built"})

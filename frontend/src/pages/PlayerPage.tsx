@@ -98,8 +98,8 @@ export function PlayerPage() {
   }
 
   const encodedRelpath = encodePathSegments(relpath);
-  const streamUrl = taskId ? `/d/${taskId}/stream/${encodedRelpath}` : '';
-  const downloadUrl = taskId ? `/d/${taskId}/raw/${encodedRelpath}` : '';
+  const streamUrl = taskId ? `/files/${taskId}/stream/${encodedRelpath}` : '';
+  const downloadUrl = taskId ? `/files/${taskId}/raw/${encodedRelpath}` : '';
 
   return (
     <div className={styles.page}>

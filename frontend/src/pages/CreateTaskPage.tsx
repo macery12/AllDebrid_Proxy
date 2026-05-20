@@ -118,7 +118,7 @@ export function CreateTaskPage() {
       if (label) form.append('label', label);
 
       try {
-        const res = await fetch('/v2/tasks/from-torrent', {
+        const res = await fetch('/api/tasks/from-torrent', {
           method: 'POST',
           credentials: 'include',
           body: form,

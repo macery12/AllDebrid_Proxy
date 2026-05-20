@@ -227,3 +227,6 @@ scraper_data/*
 Scraper/auth.json
 Scraper/downloaded.json
 Scraper/downloads/
+
+# Planning / design scratch docs — not part of the deliverable codebase
+tmp/

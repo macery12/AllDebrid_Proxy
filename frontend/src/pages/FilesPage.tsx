@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { tasksApi } from '../api/tasks';
 import { APIError } from '../api/client';
@@ -25,6 +25,30 @@ export function FilesPage() {
       .finally(() => setLoading(false));
   }, [taskId]);
 
+  /**
+   * Fetch a short-lived download token for this task, then trigger the
+   * download using a tokenized URL so download managers can use it too.
+   * Falls back to a plain URL (cookie auth) if the token request fails.
+   */
+  const handleDownload = useCallback(
+    async (plainUrl: string, filename?: string) => {
+      let url = plainUrl;
+      try {
+        const { token } = await tasksApi.getDownloadToken(taskId!);
+        url = `${plainUrl}?token=${encodeURIComponent(token)}`;
+      } catch {
+        // cookie auth still works for in-browser downloads — proceed with plain URL
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      if (filename) a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    },
+    [taskId],
+  );
+
   return (
     <div>
       <div className={styles.header}>
@@ -37,10 +61,9 @@ export function FilesPage() {
 
         {taskId && (
           <div className={styles.actions}>
-            <a
+            <button
               className="btn"
-              href={`/d/${taskId}.tar.gz`}
-              download
+              onClick={() => handleDownload(`/files/${taskId}/archive`, `${taskId}.tar.gz`)}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -48,8 +71,8 @@ export function FilesPage() {
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               Download All (.tar.gz)
-            </a>
-            <a className="btn" href={`/d/${taskId}/links.txt`} target="_blank" rel="noopener noreferrer">
+            </button>
+            <a className="btn" href={`/files/${taskId}/links.txt`} target="_blank" rel="noopener noreferrer">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -116,16 +139,20 @@ export function FilesPage() {
                           {entry.is_video && taskId && (
                             <a
                               className="btn btn-good btn-sm"
-                              href={`/app/tasks/${taskId}/player?file=${encodeURIComponent(entry.rel)}`}
+                              href={`/tasks/${taskId}/player?file=${encodeURIComponent(entry.rel)}`}
                             >
                               ▶ Play
                             </a>
                           )}
                           {taskId && (
-                            <a
+                            <button
                               className="btn btn-sm"
-                              href={`/d/${taskId}/raw/${encodedRelpath}`}
-                              download={entry.rel.split('/').pop()}
+                              onClick={() =>
+                                handleDownload(
+                                  `/files/${taskId}/raw/${encodedRelpath}`,
+                                  entry.rel.split('/').pop(),
+                                )
+                              }
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -133,7 +160,7 @@ export function FilesPage() {
                                 <line x1="12" y1="15" x2="12" y2="3" />
                               </svg>
                               Download
-                            </a>
+                            </button>
                           )}
                         </div>
                       )}

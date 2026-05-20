@@ -10,6 +10,7 @@ import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AccessDeniedPage } from './pages/AccessDeniedPage';
 import { BlueCogPage } from './pages/BlueCogPage';
+import { DownloadsPage } from './pages/DownloadsPage';
 import type { ReactNode } from 'react';
 import type { UserRole } from './types';
 
@@ -28,6 +29,12 @@ function ProtectedRoute({ children, roles }: { children: ReactNode; roles?: User
     return <Navigate to="/access-denied" replace />;
   }
   return <>{children}</>;
+}
+
+function RoleAwareRedirect() {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={user.role === 'user' ? '/downloads' : '/'} replace />;
 }
 
 function AppRoutes() {
@@ -71,7 +78,7 @@ function AppRoutes() {
       <Route
         path="/tasks/:taskId/files"
         element={
-          <ProtectedRoute roles={['admin', 'member']}>
+          <ProtectedRoute roles={['admin', 'member', 'user']}>
             <AppShell>
               <FilesPage />
             </AppShell>
@@ -82,7 +89,7 @@ function AppRoutes() {
       <Route
         path="/tasks/:taskId/player"
         element={
-          <ProtectedRoute roles={['admin', 'member']}>
+          <ProtectedRoute roles={['admin', 'member', 'user']}>
             <AppShell>
               <PlayerPage />
             </AppShell>
@@ -123,14 +130,25 @@ function AppRoutes() {
         }
       />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="/downloads"
+        element={
+          <ProtectedRoute roles={['admin', 'member', 'user']}>
+            <AppShell>
+              <DownloadsPage />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="*" element={<RoleAwareRedirect />} />
     </Routes>
   );
 }
 
 export default function App() {
   return (
-    <BrowserRouter basename="/app">
+    <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>

@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from app.config import settings
 from app.db import SessionLocal
+from app.scraper import fetch as fetch_mod, rss as rss_mod
 from app.models import Task, TaskFile, UserStats
 from app.utils import ensure_task_dirs, append_log, write_metadata
 from app.constants import TaskStatus, FileState, EventType, Limits, LogLevel, SourceType, AllDebridStatus
@@ -728,28 +729,9 @@ _bluecog_started = False
 _bluecog_lock    = threading.Lock()
 
 
-def _bluecog_scraper_dir() -> str:
-    return getattr(settings, "BLUECOG_SCRAPER_DIR", "/app/Scraper")
-
-
 def _bluecog_data_dir() -> str:
-    """Directory for runtime data files (auth.json, downloaded.json, downloads/).
-    Kept separate from the script directory so sensitive files never sit inside
-    the repository tree."""
+    # Runtime data directory for scraper state files
     return getattr(settings, "SCRAPER_DATA_DIR", "/app/scraper_data")
-
-
-def _bluecog_load_scraper():
-    """Add the Scraper directory to sys.path and import fetch/rss modules."""
-    import importlib
-    import sys
-    scraper_dir = _bluecog_scraper_dir()
-    if scraper_dir not in sys.path:
-        sys.path.insert(0, scraper_dir)
-    # Force a fresh import in case the modules were not yet loaded
-    fetch_mod = importlib.import_module("fetch")
-    rss_mod   = importlib.import_module("rss")
-    return fetch_mod, rss_mod
 
 
 def _bluecog_run_rss():
@@ -780,18 +762,24 @@ def _bluecog_run_rss():
     start_ts = datetime.now(timezone.utc).isoformat()
 
     def _push(status_str: str):
-        r2.set("bluecog:rss:status", json.dumps({
+        payload = json.dumps({
             "status":   status_str,
             "lastRun":  start_ts,
             "count":    downloaded,
             "errors":   errors,
             "progress": progress,
-        }))
+        })
+        if status_str == "running":
+            # TTL of 2 hours: if the worker is killed mid-run the key expires
+            # automatically rather than staying stuck on "running" forever.
+            r2.setex("bluecog:rss:status", 7200, payload)
+        else:
+            # Terminal states (done / error) persist indefinitely.
+            r2.set("bluecog:rss:status", payload)
 
     _push("running")
 
     try:
-        fetch_mod, rss_mod = _bluecog_load_scraper()
         log     = rss_mod.load_log()
         cookies = fetch_mod.load_cookies()
 
@@ -862,13 +850,8 @@ def _bluecog_run_rss():
 
     except Exception as exc:
         _log("", LogLevel.ERROR, "bluecog_rss_error", err=str(exc), tb=traceback.format_exc())
-        r2.set("bluecog:rss:status", json.dumps({
-            "status":   "error",
-            "lastRun":  start_ts,
-            "count":    0,
-            "errors":   [{"title": "", "error": str(exc)}],
-            "progress": progress,
-        }))
+        errors.append({"title": "", "error": str(exc)})
+        _push("error")
 
 
 def _bluecog_run_fetch(request_id: str, url: str):
@@ -881,7 +864,6 @@ def _bluecog_run_fetch(request_id: str, url: str):
     res_key = f"bluecog:fetch:res:{request_id}"
 
     try:
-        fetch_mod, _ = _bluecog_load_scraper()
         filename, updated, error, page_title = fetch_mod.fetch_torrent(url)
 
         if error:
@@ -960,6 +942,25 @@ def _start_bluecog_once():
         if _bluecog_started:
             return
         _bluecog_started = True
+
+    # Clear any stale "running" status left over from a previous crashed/killed worker.
+    try:
+        import redis as _redis
+        _r_init = _redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        raw = _r_init.get("bluecog:rss:status")
+        if raw:
+            try:
+                current = json.loads(raw)
+                if current.get("status") == "running":
+                    current["status"] = "interrupted"
+                    _r_init.set("bluecog:rss:status", json.dumps(current))
+                    _log("", LogLevel.WARNING, "bluecog_rss_status_reset",
+                         reason="stale running status cleared on worker startup")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     threading.Thread(target=_bluecog_worker_loop, daemon=True).start()
     _log("", LogLevel.INFO, "bluecog_worker_thread_started")
 
